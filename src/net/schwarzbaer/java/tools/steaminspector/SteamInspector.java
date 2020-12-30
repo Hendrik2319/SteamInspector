@@ -14,6 +14,7 @@ import javax.swing.Icon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
+import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTextArea;
@@ -39,6 +40,7 @@ class SteamInspector {
 	private StandardMainWindow mainWindow;
 	private JTree tree;
 	private JTextArea textOutput;
+	private JScrollPane textOutputScrollPane;
 
 	private void createGUI() {
 		
@@ -69,7 +71,7 @@ class SteamInspector {
 		
 		
 		textOutput = new JTextArea();
-		JScrollPane textOutputScrollPane = new JScrollPane(textOutput);
+		textOutputScrollPane = new JScrollPane(textOutput);
 		
 		JPanel fileContentPanel = new JPanel(new BorderLayout(3,3));
 		fileContentPanel.setBorder(BorderFactory.createTitledBorder("File Content"));
@@ -91,16 +93,48 @@ class SteamInspector {
 			if (contentType!=null)
 				switch (contentType) {
 				case PlainText:
-					textOutput.setText(baseTreeNode.getContentAsText());
+					setTextOutput(baseTreeNode.getContentAsText());
 					hideOutput = false;
 					break;
 				case HexText:
-					textOutput.setText(toHexView(baseTreeNode.getContentAsBytes()));
+					setTextOutput(toHexView(baseTreeNode.getContentAsBytes()));
 					hideOutput = false;
 					break;
 				}
 		}
 		textOutput.setVisible(!hideOutput);
+	}
+
+	private void setTextOutput(String text) {
+		float pos = getVertScrollbarPos(textOutputScrollPane);
+		System.out.printf("setTextOutput: VertScrollbarPos -> %f%n", pos);
+		textOutput.setText(text);
+		setVertScrollbarPos(textOutputScrollPane,pos);
+		pos = getVertScrollbarPos(textOutputScrollPane);
+		System.out.printf("setTextOutput: %f -> VertScrollbarPos%n", pos);
+		System.out.println();
+	}
+
+	private float getVertScrollbarPos(JScrollPane scrollPane) {
+		JScrollBar scrollBar = scrollPane.getVerticalScrollBar();
+		if (scrollBar==null) return Float.NaN;
+		int min = scrollBar.getMinimum();
+		int max = scrollBar.getMaximum();
+		int ext = scrollBar.getVisibleAmount();
+		int val = scrollBar.getValue();
+		return (float)val / (max - min - ext);
+	}
+
+	private void setVertScrollbarPos(JScrollPane scrollPane, float pos) {
+		JScrollBar scrollBar = scrollPane.getVerticalScrollBar();
+		if (scrollBar==null || Float.isNaN(pos)) return;
+		if (pos<0) pos=0;
+		if (pos>1) pos=1;
+		int min = scrollBar.getMinimum();
+		int max = scrollBar.getMaximum();
+		int ext = scrollBar.getVisibleAmount();
+		int val = (int) (pos * (max - min - ext));
+		scrollBar.setValue(val);
 	}
 
 	private String toHexView(byte[] bytes) {
@@ -128,7 +162,7 @@ class SteamInspector {
 					}
 				}
 				
-				text += String.format("%08X: %s  |  %s%n", hex, plain);
+				text += String.format("%08X: %s  |  %s%n", lineStart, hex, plain);
 			}
 		
 		return text;

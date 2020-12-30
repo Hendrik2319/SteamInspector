@@ -180,6 +180,10 @@ class FolderStructure {
 						
 						if (VDF_File.isVDFFile(file))
 							children.add(new VDF_File(this, file));
+						
+						else if (TextFile.isTextFile(file))
+							children.add(new TextFile(this, file));
+						
 						else
 							children.add(new FileNode(this, file));
 					}
@@ -208,6 +212,20 @@ class FolderStructure {
 					throw new IllegalStateException("Can't create a UserDataFileNode from nonexisting file or nonfile");
 			}
 
+			@Override
+			public String toString() {
+				return String.format("%s (%s)", file.getName(), getSize(file));
+			}
+
+			static String getSize(File file) {
+				long length = file.length();
+				if (length               <1100) return String.format("%d B"    , length);
+				if (length/1024          <1100) return String.format("%1.1f kB", length/1024f);
+				if (length/1024/1024     <1100) return String.format("%1.1f MB", length/1024f/1024f);
+				if (length/1024/1024/1024<1100) return String.format("%1.1f GB", length/1024f/1024f/1024f);
+				return "["+length+"]";
+			}
+
 			@Override protected Vector<UserDataNode> createChildren() {
 				throw new UnsupportedOperationException("Call of UserDataFileNode.createChildren() is not supported.");
 			}
@@ -225,7 +243,29 @@ class FolderStructure {
 			}
 		}
 
-		static class VDF_File extends FileNode {
+		static class TextFile extends FileNode {
+			
+			TextFile(TreeNode parent, File file) {
+				super(parent, file);
+			}
+		
+			static boolean isTextFile(File file) {
+				String name = file.getName();
+				return name.endsWith(".json");
+			}
+		
+			@Override ContentType getContentType() {
+				return ContentType.PlainText;
+			}
+		
+			@Override String getContentAsText() {
+				byte[] bytes = getContentAsBytes();
+				if (bytes==null) return "Can't read content";
+				return new String(bytes);
+			}
+		}
+
+		static class VDF_File extends TextFile {
 			
 			VDF_File(TreeNode parent, File file) {
 				super(parent, file);
@@ -234,16 +274,6 @@ class FolderStructure {
 			static boolean isVDFFile(File file) {
 				String name = file.getName();
 				return name.endsWith(".vdf");
-			}
-
-			@Override ContentType getContentType() {
-				return ContentType.PlainText;
-			}
-
-			@Override String getContentAsText() {
-				byte[] bytes = getContentAsBytes();
-				if (bytes==null) return "Can't read content";
-				return new String(bytes);
 			}
 		}
 	}
