@@ -19,6 +19,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTextArea;
 import javax.swing.JTree;
+import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
 import javax.swing.tree.DefaultTreeCellRenderer;
@@ -27,20 +28,30 @@ import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 
+import net.schwarzbaer.gui.IconSource;
+import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.gui.StandardMainWindow;
 
 class SteamInspector {
 
+	enum TreeIcons { GeneralFile, TextFile, VDFFile, Folder }
+	static CachedIcons<TreeIcons> TreeIconsIS;
+	
 	public static void main(String[] args) {
 		try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
 		catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {}
+		
+		TreeIconsIS = IconSource.createCachedIcons(16, 16, "/images/TreeIcons.png", TreeIcons.values());
+		
 		new SteamInspector().createGUI();
 	}
-
+	
 	private StandardMainWindow mainWindow;
 	private JTree tree;
-	private JTextArea textOutput;
-	private JScrollPane textOutputScrollPane;
+	private TextOutput textOutput;
+	private OutputDummy outputDummy;
+	private FileContentOutput lastFileContentOutput;
+	private JPanel fileContentPanel;
 
 	private void createGUI() {
 		
@@ -69,15 +80,15 @@ class SteamInspector {
 		treePanel2.add(optionPanel, BorderLayout.NORTH);
 		treePanel2.add(treePanel, BorderLayout.CENTER);
 		
+		textOutput = new TextOutput();
+		outputDummy = new OutputDummy();
 		
-		textOutput = new JTextArea();
-		textOutputScrollPane = new JScrollPane(textOutput);
+		lastFileContentOutput = outputDummy;
 		
-		JPanel fileContentPanel = new JPanel(new BorderLayout(3,3));
+		fileContentPanel = new JPanel(new BorderLayout(3,3));
 		fileContentPanel.setBorder(BorderFactory.createTitledBorder("File Content"));
-		fileContentPanel.setPreferredSize(new Dimension(500,800));
-		fileContentPanel.add(textOutputScrollPane);
-		
+		fileContentPanel.setPreferredSize(new Dimension(1000,800));
+		fileContentPanel.add(lastFileContentOutput.getMainComponent());
 		
 		JSplitPane contentPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, treePanel2, fileContentPanel);
 		
@@ -93,79 +104,32 @@ class SteamInspector {
 			if (contentType!=null)
 				switch (contentType) {
 				case PlainText:
-					setTextOutput(baseTreeNode.getContentAsText());
+					changeFileContentOutput(textOutput);
+					textOutput.setPlainTextOutput(baseTreeNode.getContentAsText());
 					hideOutput = false;
 					break;
 				case HexText:
-					setTextOutput(toHexView(baseTreeNode.getContentAsBytes()));
+					changeFileContentOutput(textOutput);
+					textOutput.setHexTableOutput(baseTreeNode.getContentAsBytes());
 					hideOutput = false;
 					break;
 				}
 		}
-		textOutput.setVisible(!hideOutput);
+		if (hideOutput)
+			changeFileContentOutput(outputDummy);
 	}
 
-	private void setTextOutput(String text) {
-		float pos = getVertScrollbarPos(textOutputScrollPane);
-		System.out.printf("setTextOutput: VertScrollbarPos -> %f%n", pos);
-		textOutput.setText(text);
-		setVertScrollbarPos(textOutputScrollPane,pos);
-		pos = getVertScrollbarPos(textOutputScrollPane);
-		System.out.printf("setTextOutput: %f -> VertScrollbarPos%n", pos);
-		System.out.println();
-	}
-
-	private float getVertScrollbarPos(JScrollPane scrollPane) {
-		JScrollBar scrollBar = scrollPane.getVerticalScrollBar();
-		if (scrollBar==null) return Float.NaN;
-		int min = scrollBar.getMinimum();
-		int max = scrollBar.getMaximum();
-		int ext = scrollBar.getVisibleAmount();
-		int val = scrollBar.getValue();
-		return (float)val / (max - min - ext);
-	}
-
-	private void setVertScrollbarPos(JScrollPane scrollPane, float pos) {
-		JScrollBar scrollBar = scrollPane.getVerticalScrollBar();
-		if (scrollBar==null || Float.isNaN(pos)) return;
-		if (pos<0) pos=0;
-		if (pos>1) pos=1;
-		int min = scrollBar.getMinimum();
-		int max = scrollBar.getMaximum();
-		int ext = scrollBar.getVisibleAmount();
-		int val = (int) (pos * (max - min - ext));
-		scrollBar.setValue(val);
-	}
-
-	private String toHexView(byte[] bytes) {
-		String text = "";
+	private void changeFileContentOutput(FileContentOutput fco) {
+		if (lastFileContentOutput!=null)
+			fileContentPanel.remove(lastFileContentOutput.getMainComponent());
 		
-		if (bytes==null)
-			text = "Can't read content";
+		lastFileContentOutput = fco;
 		
-		else
-			for (int lineStart=0; lineStart<bytes.length; lineStart+=16) {
-				String hex = "";
-				String plain = "";
-				for (int pos=0; pos<16; pos++) {
-					if (pos==8)
-						hex += " |";
-					if (lineStart+pos<bytes.length) {
-						byte b = bytes[lineStart+pos];
-						hex += String.format(" %02X", b);
-						char ch = (char) b;
-						if (ch=='\t' || ch=='\n' || ch=='\r') ch='.';
-						plain += ch;
-					} else {
-						hex += " --";
-						plain += ' ';
-					}
-				}
-				
-				text += String.format("%08X: %s  |  %s%n", lineStart, hex, plain);
-			}
+		if (lastFileContentOutput!=null)
+			fileContentPanel.add(lastFileContentOutput.getMainComponent());
 		
-		return text;
+		fileContentPanel.revalidate();
+		fileContentPanel.repaint();
 	}
 
 	private JRadioButton createRadioButton(String title, boolean selected, boolean enabled, ButtonGroup bg, Consumer<Boolean> setValue) {
@@ -176,8 +140,125 @@ class SteamInspector {
 		return comp;
 	}
 	
+	static abstract class FileContentOutput {
+
+		protected String toHexTable(byte[] bytes) {
+			String text = "";
+			
+			if (bytes==null)
+				text = "Can't read content";
+			
+			else
+				for (int lineStart=0; lineStart<bytes.length; lineStart+=16) {
+					String hex = "";
+					String plain = "";
+					for (int pos=0; pos<16; pos++) {
+						if (pos==8)
+							hex += " |";
+						if (lineStart+pos<bytes.length) {
+							byte b = bytes[lineStart+pos];
+							hex += String.format(" %02X", b);
+							char ch = (char) b;
+							if (ch=='\t' || ch=='\n' || ch=='\r') ch='.';
+							plain += ch;
+						} else {
+							hex += " --";
+							plain += ' ';
+						}
+					}
+					
+					text += String.format("%08X: %s  |  %s%n", lineStart, hex, plain);
+				}
+			
+			return text;
+		}
+
+		abstract Component getMainComponent();
+
+		protected float getVertScrollbarPos(JScrollPane scrollPane) {
+			if (scrollPane==null) return Float.NaN;
+			return getVertScrollbarPos(scrollPane.getVerticalScrollBar());
+		}
+
+		protected float getVertScrollbarPos(JScrollBar scrollBar) {
+			if (scrollBar==null) return Float.NaN;
+			int min = scrollBar.getMinimum();
+			int max = scrollBar.getMaximum();
+			int ext = scrollBar.getVisibleAmount();
+			int val = scrollBar.getValue();
+			return (float)val / (max - min - ext);
+		}
+
+		protected void setVertScrollbarPos(JScrollPane scrollPane, float pos) {
+			if (scrollPane==null) return;
+			setVertScrollbarPos(scrollPane.getVerticalScrollBar(), pos);
+		}
+
+		protected void setVertScrollbarPos(JScrollBar scrollBar, float pos) {
+			if (scrollBar==null) return;
+			if (Float.isNaN(pos)) pos=0;
+			if (pos<0) pos=0;
+			if (pos>1) pos=1;
+			int min = scrollBar.getMinimum();
+			int max = scrollBar.getMaximum();
+			int ext = scrollBar.getVisibleAmount();
+			int val = (int) (pos * (max - min - ext));
+			scrollBar.setValue(val);
+		}
+	}
+	
+	static class OutputDummy extends FileContentOutput {
+		private JLabel dummyLabel;
+		OutputDummy() {
+			dummyLabel = new JLabel("No Content");
+			dummyLabel.setHorizontalAlignment(JLabel.CENTER);
+		}
+		@Override Component getMainComponent() {
+			return dummyLabel;
+		}
+	}
+	
+	static class TextOutput extends FileContentOutput {
+		
+		private final JTextArea textOutput;
+		private final JScrollPane textOutputScrollPane;
+		
+		TextOutput() {
+			textOutput = new JTextArea();
+			textOutputScrollPane = new JScrollPane(textOutput);
+		}
+		
+		@Override Component getMainComponent() {
+			return textOutputScrollPane;
+		}
+
+		void setHexTableOutput(byte[] bytes) {
+			setPlainTextOutput(toHexTable(bytes));
+		}
+
+		void setPlainTextOutput(String text) {
+			float pos = getVertScrollbarPos(textOutputScrollPane);
+//			System.out.printf(Locale.ENGLISH, "setTextOutput: VertScrollbarPos -> %f%n", pos);
+			textOutput.setText(text);
+			SwingUtilities.invokeLater(()->{
+//				System.out.printf(Locale.ENGLISH, "setTextOutput: %f -> VertScrollbarPos%n", pos);
+				setVertScrollbarPos(textOutputScrollPane,pos);
+//				float pos_ = getVertScrollbarPos(textOutputScrollPane);
+//				System.out.printf(Locale.ENGLISH, "setTextOutput: VertScrollbarPos -> %f%n", pos_);
+//				System.out.println();
+			});
+		}
+	}
+	
 	private final class BaseTreeNodeRenderer extends DefaultTreeCellRenderer {
 		private static final long serialVersionUID = -7291286788678796516L;
+//		private Icon icon;
+		
+		BaseTreeNodeRenderer() {
+//			icon = new JFileChooser().getIcon(new File("dummy.txt"));
+//			icon = FileSystemView.getFileSystemView().get // SystemIcon(new File("dummy.txt"));
+//			System.out.println("Icon for \"dummy.txt\" is: "+icon);
+		}
 
 		@Override
 		public Component getTreeCellRendererComponent(JTree tree, Object value, boolean isSelected, boolean isExpanded, boolean isLeaf, int row, boolean hasFocus) {
@@ -187,6 +268,7 @@ class SteamInspector {
 				Icon icon = baseTreeNode.getIcon();
 				if (icon!=null) setIcon(icon);
 			}
+//			setIcon(icon);
 			return component;
 		}
 	}
@@ -200,12 +282,17 @@ class SteamInspector {
 		protected final boolean allowsChildren;
 		protected final boolean isLeaf;
 		protected Vector<NodeType> children;
+		protected final TreeIcons icon;
 
-		BaseTreeNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf) {
+		protected BaseTreeNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf) {
+			this(parent, title, allowsChildren, isLeaf, null);
+		}
+		protected BaseTreeNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf, TreeIcons icon) {
 			this.parent = parent;
 			this.title = title;
 			this.allowsChildren = allowsChildren;
 			this.isLeaf = isLeaf;
+			this.icon = icon;
 			children = null;
 		}
 		
@@ -213,7 +300,7 @@ class SteamInspector {
 		String getContentAsText () { throw new UnsupportedOperationException(); }
 
 		ContentType getContentType() { return null; }
-		Icon getIcon() { return null; }
+		Icon getIcon() { return icon==null ? null : TreeIconsIS.getCachedIcon(icon); }
 
 		protected abstract Vector<NodeType> createChildren();
 		@Override public String toString() { return title; }

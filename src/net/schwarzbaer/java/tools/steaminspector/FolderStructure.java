@@ -8,9 +8,12 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Vector;
 
+import javax.swing.Icon;
+import javax.swing.JFileChooser;
 import javax.swing.tree.TreeNode;
 
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeIcons;
 
 class FolderStructure {
 	
@@ -50,7 +53,7 @@ class FolderStructure {
 			private final File folder;
 		
 			Root(TreeNode parent, File folder) {
-				super(parent, "AppManifests", true, false);
+				super(parent, "AppManifests", true, false, TreeIcons.Folder);
 				this.folder = folder;
 			}
 		
@@ -76,7 +79,7 @@ class FolderStructure {
 		
 			private static final String prefix = "appmanifest_";
 			private static final String suffix = ".acf";
-		
+			
 			static boolean isAppManifest(File file) {
 				return getAppIDFromFile(file) != null;
 			}
@@ -92,15 +95,16 @@ class FolderStructure {
 				catch (NumberFormatException e) { return null; }
 			}
 		
+			@SuppressWarnings("unused")
 			private final int id;
 			private final File file;
 		
 			AppManifestNode(Root parent, File file) {
-				super(parent, getAppIDFromFile(file).toString(), false, true);
+				super(parent, getAppIDFromFile(file).toString(), false, true, TreeIcons.VDFFile);
 				this.file = file;
 				id = getAppIDFromFile(file);
 			}
-		
+
 			@Override protected Vector<TreeNode> createChildren() {
 				throw new UnsupportedOperationException("Call of AppManifestNode.createChildren() is not supported.");
 			}
@@ -137,7 +141,10 @@ class FolderStructure {
 		}
 
 		static abstract class UserDataNode extends BaseTreeNode<UserDataNode> {
-			UserDataNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf) {
+			protected UserDataNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf, TreeIcons icon) {
+				super(parent, title, allowsChildren, isLeaf, icon);
+			}
+			protected UserDataNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf) {
 				super(parent, title, allowsChildren, isLeaf);
 			}
 		}
@@ -147,7 +154,7 @@ class FolderStructure {
 			protected final File folder;
 		
 			FolderNode(TreeNode parent, File folder) {
-				super(parent, folder.getName(), true, false);
+				super(parent, folder.getName(), true, false, TreeIcons.Folder);
 				this.folder = folder;
 			}
 		
@@ -204,12 +211,19 @@ class FolderStructure {
 		static class FileNode extends UserDataNode {
 		
 			protected final File file;
-		
+			
 			FileNode(TreeNode parent, File file) {
-				super(parent, file.getName(), false, true);
+				this(parent, file, TreeIcons.GeneralFile);
+			}
+			protected FileNode(TreeNode parent, File file, TreeIcons icon) {
+				super(parent, file.getName(), false, true, icon);
 				this.file = file;
 				if (!this.file.isFile())
 					throw new IllegalStateException("Can't create a UserDataFileNode from nonexisting file or nonfile");
+			}
+			
+			static Icon getIconForFile(String filename) {
+				return new JFileChooser().getIcon(new File(filename));
 			}
 
 			@Override
@@ -246,9 +260,13 @@ class FolderStructure {
 		static class TextFile extends FileNode {
 			
 			TextFile(TreeNode parent, File file) {
-				super(parent, file);
+				this(parent, file, TreeIcons.TextFile);
 			}
-		
+
+			protected TextFile(TreeNode parent, File file, TreeIcons icon) {
+				super(parent, file, icon);
+			}
+
 			static boolean isTextFile(File file) {
 				String name = file.getName();
 				return name.endsWith(".json");
@@ -268,7 +286,7 @@ class FolderStructure {
 		static class VDF_File extends TextFile {
 			
 			VDF_File(TreeNode parent, File file) {
-				super(parent, file);
+				super(parent, file, TreeIcons.VDFFile);
 			}
 
 			static boolean isVDFFile(File file) {
