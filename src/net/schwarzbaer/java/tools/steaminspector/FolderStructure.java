@@ -89,7 +89,7 @@ class FolderStructure {
 			
 		}
 
-		static class AppManifestNode extends BaseTreeNode<TreeNode> implements ExtendedTextContentSource {
+		static class AppManifestNode extends FileSystem.VDF_File {
 		
 			private static final String prefix = "appmanifest_";
 			private static final String suffix = ".acf";
@@ -113,7 +113,7 @@ class FolderStructure {
 			private final File file;
 		
 			AppManifestNode(Root parent, File file) {
-				super(parent, getAppIDFromFile(file).toString(), false, true, TreeIcons.VDFFile);
+				super(parent, file, TreeIcons.AppManifest);
 				this.file = file;
 				id = getAppIDFromFile(file);
 			}
@@ -121,34 +121,12 @@ class FolderStructure {
 			@Override public String toString() {
 				return String.format("App %d (%s, %s)", id, file==null ? "" : file.getName(), getSize(file));
 			}
-
-			@Override protected Vector<TreeNode> createChildren() {
-				throw new UnsupportedOperationException("Call of AppManifestNode.createChildren() is not supported.");
-			}
-
-			@Override ContentType getContentType() {
-				return ContentType.ExtendedText;
-			}
-
-			@Override public byte[] getContentAsBytes() {
-				try {
-					return Files.readAllBytes(file.toPath());
-				} catch (IOException e) {
-					return null;
-				}
-			}
-
-			@Override public String getContentAsText() {
-				byte[] bytes = getContentAsBytes();
-				if (bytes==null) return "Can't read content";
-				return new String(bytes);
-			}
 		}
 	}
 	
 	static class UserData {
 
-		static class Root extends FolderNode {
+		static class Root extends FileSystem.FolderNode {
 			Root(TreeNode parent, File folder) {
 				super(parent, folder, TreeIcons.RootFolder);
 			}
@@ -156,17 +134,20 @@ class FolderStructure {
 				return String.format("UserData [%s]", folder.getAbsolutePath());
 			}
 		}
+	}
+	
+	static class FileSystem {
 
-		static abstract class UserDataNode extends BaseTreeNode<UserDataNode> {
-			protected UserDataNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf, TreeIcons icon) {
+		static abstract class FileSystemNode extends BaseTreeNode<FileSystemNode> {
+			protected FileSystemNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf, TreeIcons icon) {
 				super(parent, title, allowsChildren, isLeaf, icon);
 			}
-			protected UserDataNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf) {
+			protected FileSystemNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf) {
 				super(parent, title, allowsChildren, isLeaf);
 			}
 		}
 
-		static class FolderNode extends UserDataNode {
+		static class FolderNode extends FileSystemNode {
 		
 			protected final File folder;
 		
@@ -179,8 +160,8 @@ class FolderStructure {
 			}
 		
 			@Override
-			protected Vector<UserDataNode> createChildren() {
-				Vector<UserDataNode> children = new Vector<>();
+			protected Vector<FileSystemNode> createChildren() {
+				Vector<FileSystemNode> children = new Vector<>();
 				
 				File[] files = folder.listFiles((FileFilter) file -> {
 					String name = file.getName();
@@ -228,7 +209,7 @@ class FolderStructure {
 			}
 		}
 
-		static class FileNode extends UserDataNode implements BytesContentSource {
+		static class FileNode extends FileSystemNode implements BytesContentSource {
 		
 			protected final File file;
 			protected byte[] byteContent;
@@ -241,7 +222,7 @@ class FolderStructure {
 				this.byteContent = null;
 				this.file = file;
 				if (!this.file.isFile())
-					throw new IllegalStateException("Can't create a UserDataFileNode from nonexisting file or nonfile");
+					throw new IllegalStateException("Can't create a FileSystem.FileNode from nonexisting file or nonfile");
 			}
 			
 			static Icon getIconForFile(String filename) {
@@ -253,8 +234,8 @@ class FolderStructure {
 				return String.format("%s (%s)", file.getName(), getSize(file));
 			}
 
-			@Override protected Vector<UserDataNode> createChildren() {
-				throw new UnsupportedOperationException("Call of UserDataFileNode.createChildren() is not supported.");
+			@Override protected Vector<FileSystemNode> createChildren() {
+				throw new UnsupportedOperationException("Call of FileSystem.FileNode.createChildren() is not supported.");
 			}
 
 			@Override ContentType getContentType() {
@@ -309,7 +290,11 @@ class FolderStructure {
 		static class VDF_File extends TextFile {
 			
 			VDF_File(TreeNode parent, File file) {
-				super(parent, file, TreeIcons.VDFFile, StandardCharsets.UTF_8);
+				this(parent, file, TreeIcons.VDFFile);
+			}
+			protected VDF_File(TreeNode parent, File file, TreeIcons icon) {
+				super(parent, file, icon, StandardCharsets.UTF_8);
+				
 			}
 
 			static boolean isVDFFile(File file) {

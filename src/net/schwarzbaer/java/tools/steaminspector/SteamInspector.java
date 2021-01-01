@@ -43,7 +43,7 @@ import net.schwarzbaer.gui.StandardMainWindow;
 
 class SteamInspector {
 
-	enum TreeIcons { GeneralFile, TextFile, VDFFile, Folder, RootFolder }
+	enum TreeIcons { GeneralFile, TextFile, VDFFile, AppManifest, Folder, RootFolder }
 	static CachedIcons<TreeIcons> TreeIconsIS;
 	
 	public static void main(String[] args) {
