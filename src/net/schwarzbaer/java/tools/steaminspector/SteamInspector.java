@@ -6,6 +6,9 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridLayout;
 import java.awt.event.ActionListener;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.List;
@@ -20,6 +23,7 @@ import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
@@ -82,6 +86,7 @@ class SteamInspector {
 			if (path==null) return;
 			showContent(path.getLastPathComponent());
 		});
+		new TreeContextMenues(tree);
 		
 		JScrollPane treePanel = new JScrollPane(tree);
 		treePanel.setPreferredSize(new Dimension(500, 800));
@@ -175,6 +180,28 @@ class SteamInspector {
 		comp.setEnabled(enabled);
 		if (al!=null) comp.addActionListener(al);
 		return comp;
+	}
+	
+	static class TreeContextMenues {
+
+		TreeContextMenues(JTree tree) {
+			tree.addMouseListener(new MouseAdapter() {
+				@Override public void mouseClicked(MouseEvent e) {
+					if (e.getButton()==MouseEvent.BUTTON3) {
+						TreePath path = tree.getPathForLocation(e.getX(), e.getY());
+						if (path!=null) {
+							Object lastPathComponent = path.getLastPathComponent();
+							// TODO
+						}
+					}
+				}
+			});
+		}
+	}
+	
+	static class TreeContextMenu extends JPopupMenu {
+		private static final long serialVersionUID = 5771382843112371294L;
+		
 	}
 	
 	static abstract class FileContentOutput {
