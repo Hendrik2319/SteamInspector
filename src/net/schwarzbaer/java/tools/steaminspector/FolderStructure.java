@@ -53,7 +53,7 @@ class FolderStructure {
 			private final File folder;
 		
 			Root(TreeNode parent, File folder) {
-				super(parent, "AppManifests", true, false, TreeIcons.Folder);
+				super(parent, "AppManifests", true, false, TreeIcons.RootFolder);
 				this.folder = folder;
 			}
 		
@@ -95,7 +95,6 @@ class FolderStructure {
 				catch (NumberFormatException e) { return null; }
 			}
 		
-			@SuppressWarnings("unused")
 			private final int id;
 			private final File file;
 		
@@ -105,15 +104,19 @@ class FolderStructure {
 				id = getAppIDFromFile(file);
 			}
 
+			@Override public String toString() {
+				return String.format("App %d (%s)", id, file==null ? "" : file.getName());
+			}
+
 			@Override protected Vector<TreeNode> createChildren() {
 				throw new UnsupportedOperationException("Call of AppManifestNode.createChildren() is not supported.");
 			}
 
 			@Override ContentType getContentType() {
-				return ContentType.PlainText;
+				return ContentType.ExtendedText;
 			}
 
-			@Override byte[] getContentAsBytes() {
+			@Override public byte[] getContentAsBytes() {
 				try {
 					return Files.readAllBytes(file.toPath());
 				} catch (IOException e) {
@@ -121,7 +124,7 @@ class FolderStructure {
 				}
 			}
 
-			@Override String getContentAsText() {
+			@Override public String getContentAsText() {
 				byte[] bytes = getContentAsBytes();
 				if (bytes==null) return "Can't read content";
 				return new String(bytes);
@@ -133,7 +136,7 @@ class FolderStructure {
 
 		static class Root extends FolderNode {
 			Root(TreeNode parent, File folder) {
-				super(parent, folder);
+				super(parent, folder, TreeIcons.RootFolder);
 			}
 			@Override public String toString() {
 				return String.format("UserData [%s]", folder.getAbsolutePath());
@@ -154,7 +157,10 @@ class FolderStructure {
 			protected final File folder;
 		
 			FolderNode(TreeNode parent, File folder) {
-				super(parent, folder.getName(), true, false, TreeIcons.Folder);
+				this(parent, folder, TreeIcons.Folder);
+			}
+			protected FolderNode(TreeNode parent, File folder, TreeIcons icon) {
+				super(parent, folder.getName(), true, false, icon);
 				this.folder = folder;
 			}
 		
@@ -248,7 +254,7 @@ class FolderStructure {
 				return ContentType.HexText;
 			}
 
-			@Override byte[] getContentAsBytes() {
+			@Override public byte[] getContentAsBytes() {
 				try {
 					return Files.readAllBytes(file.toPath());
 				} catch (IOException e) {
@@ -273,10 +279,10 @@ class FolderStructure {
 			}
 		
 			@Override ContentType getContentType() {
-				return ContentType.PlainText;
+				return ContentType.ExtendedText;
 			}
 		
-			@Override String getContentAsText() {
+			@Override public String getContentAsText() {
 				byte[] bytes = getContentAsBytes();
 				if (bytes==null) return "Can't read content";
 				return new String(bytes);
@@ -292,6 +298,10 @@ class FolderStructure {
 			static boolean isVDFFile(File file) {
 				String name = file.getName();
 				return name.endsWith(".vdf");
+			}
+			
+			@Override ContentType getContentType() {
+				return ContentType.ExtendedText;
 			}
 		}
 	}

@@ -5,6 +5,7 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.GridLayout;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Vector;
 import java.util.function.Consumer;
 
@@ -17,9 +18,11 @@ import javax.swing.JRadioButton;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
+import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTree;
 import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
 import javax.swing.tree.DefaultTreeCellRenderer;
@@ -34,7 +37,7 @@ import net.schwarzbaer.gui.StandardMainWindow;
 
 class SteamInspector {
 
-	enum TreeIcons { GeneralFile, TextFile, VDFFile, Folder }
+	enum TreeIcons { GeneralFile, TextFile, VDFFile, Folder, RootFolder }
 	static CachedIcons<TreeIcons> TreeIconsIS;
 	
 	public static void main(String[] args) {
@@ -49,6 +52,7 @@ class SteamInspector {
 	private StandardMainWindow mainWindow;
 	private JTree tree;
 	private TextOutput textOutput;
+	private ExtendedTextOutput extendedTextOutput;
 	private OutputDummy outputDummy;
 	private FileContentOutput lastFileContentOutput;
 	private JPanel fileContentPanel;
@@ -81,6 +85,7 @@ class SteamInspector {
 		treePanel2.add(treePanel, BorderLayout.CENTER);
 		
 		textOutput = new TextOutput();
+		extendedTextOutput = new ExtendedTextOutput();
 		outputDummy = new OutputDummy();
 		
 		lastFileContentOutput = outputDummy;
@@ -103,11 +108,19 @@ class SteamInspector {
 			BaseTreeNode.ContentType contentType = baseTreeNode.getContentType();
 			if (contentType!=null)
 				switch (contentType) {
+				
+				case ExtendedText:
+					changeFileContentOutput(extendedTextOutput);
+					extendedTextOutput.setOutput(baseTreeNode);
+					hideOutput = false;
+					break;
+					
 				case PlainText:
 					changeFileContentOutput(textOutput);
 					textOutput.setPlainTextOutput(baseTreeNode.getContentAsText());
 					hideOutput = false;
 					break;
+				
 				case HexText:
 					changeFileContentOutput(textOutput);
 					textOutput.setHexTableOutput(baseTreeNode.getContentAsBytes());
@@ -217,7 +230,7 @@ class SteamInspector {
 			return dummyLabel;
 		}
 	}
-	
+
 	static class TextOutput extends FileContentOutput {
 		
 		private final JTextArea textOutput;
@@ -250,6 +263,92 @@ class SteamInspector {
 		}
 	}
 	
+	static class MultiOutput extends FileContentOutput {
+		private final JTabbedPane mainPanel;
+//		private final Vector<FileContentOutput> subPanels;
+
+		MultiOutput() {
+			mainPanel = new JTabbedPane();
+//			subPanels = new Vector<FileContentOutput>();
+		}
+		
+		@Override Component getMainComponent() { return mainPanel; }
+		
+		void add(String title, FileContentOutput output) {
+			mainPanel.addTab(title, output.getMainComponent());
+//			subPanels.add(output);
+		}
+		
+		void setActiveTab(int index) {
+			mainPanel.setSelectedIndex(index);
+		}
+	}
+
+	static class ExtendedTextOutput extends MultiOutput {
+		private final TextOutput hexView;
+		private final TextOutput plainText;
+		ExtendedTextOutput() {
+			add("Hex Table", hexView = new TextOutput());
+			add("Plain text", plainText = new TextOutput());
+			setActiveTab(1);
+		}
+		void setOutput(ExtendedTextContentSource source) {
+			hexView.setHexTableOutput(source.getContentAsBytes());
+			plainText.setPlainTextOutput(source.getContentAsText());
+			setActiveTab(1);
+		}
+	}
+	
+	interface ExtendedTextContentSource {
+		byte[] getContentAsBytes();
+		String getContentAsText();
+	}
+	
+	private static class Class1<FinalResult,IntermediateResult> extends SwingWorker<FinalResult,IntermediateResult> {
+
+		// MUST
+		@Override
+		protected FinalResult doInBackground() throws Exception {
+			// TODO Auto-generated method stub
+			return null;
+		}
+
+		// CAN
+		@Override
+		protected void process(List<IntermediateResult> chunks) {
+			// TODO Auto-generated method stub
+			super.process(chunks);
+		}
+
+		@Override
+		protected void done() {
+			// TODO Auto-generated method stub
+			super.done();
+		}
+
+
+	}
+	
+	private static class GuiFillerSingleTask {
+		
+		private static GuiFillerSingleTask runningTask = null;
+		
+		private final Runnable expensiveLoadTask;
+		private final Runnable followingGuiTask;
+
+		GuiFillerSingleTask(Runnable expensiveLoadTask, Runnable followingGuiTask) {
+			this.expensiveLoadTask = expensiveLoadTask;
+			this.followingGuiTask = followingGuiTask;
+		}
+		
+		void start() {
+			
+			new Thread(()->{
+				
+			}).start();
+		}
+	}
+
 	private final class BaseTreeNodeRenderer extends DefaultTreeCellRenderer {
 		private static final long serialVersionUID = -7291286788678796516L;
 //		private Icon icon;
@@ -273,9 +372,9 @@ class SteamInspector {
 		}
 	}
 
-	static abstract class BaseTreeNode<NodeType extends TreeNode> implements TreeNode {
+	static abstract class BaseTreeNode<NodeType extends TreeNode> implements TreeNode, ExtendedTextContentSource {
 		
-		enum ContentType { PlainText, HexText, }
+		enum ContentType { PlainText, HexText, ExtendedText, }
 		
 		protected final TreeNode parent;
 		protected final String title;
@@ -296,8 +395,8 @@ class SteamInspector {
 			children = null;
 		}
 		
-		byte[] getContentAsBytes() { throw new UnsupportedOperationException(); }
-		String getContentAsText () { throw new UnsupportedOperationException(); }
+		@Override public byte[] getContentAsBytes() { throw new UnsupportedOperationException(); }
+		@Override public String getContentAsText () { throw new UnsupportedOperationException(); }
 
 		ContentType getContentType() { return null; }
 		Icon getIcon() { return icon==null ? null : TreeIconsIS.getCachedIcon(icon); }
