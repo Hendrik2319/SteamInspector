@@ -89,7 +89,7 @@ class FolderStructure {
 			
 		}
 
-		static class AppManifestNode extends BaseTreeNode<TreeNode> {
+		static class AppManifestNode extends BaseTreeNode<TreeNode> implements ExtendedTextContentSource {
 		
 			private static final String prefix = "appmanifest_";
 			private static final String suffix = ".acf";

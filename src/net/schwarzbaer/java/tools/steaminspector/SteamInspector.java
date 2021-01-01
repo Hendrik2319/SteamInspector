@@ -122,7 +122,8 @@ class SteamInspector {
 						extendedTextOutput.setOutput((ExtendedTextContentSource) baseTreeNode);
 						changeFileContentOutput(extendedTextOutput);
 						hideOutput = false;
-					}
+					} else
+						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface%n", baseTreeNode);
 					break;
 					
 				case PlainText:
@@ -130,7 +131,8 @@ class SteamInspector {
 						plainTextOutput.setOutput((TextContentSource) baseTreeNode);
 						changeFileContentOutput(plainTextOutput);
 						hideOutput = false;
-					}
+					} else
+						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface%n", baseTreeNode);
 					break;
 				
 				case Bytes:
@@ -138,7 +140,8 @@ class SteamInspector {
 						hexTableOutput.setOutput((BytesContentSource) baseTreeNode);
 						changeFileContentOutput(hexTableOutput);
 						hideOutput = false;
-					}
+					} else
+						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface%n", baseTreeNode);
 					break;
 				}
 		}
