@@ -3,9 +3,12 @@ package net.schwarzbaer.java.tools.steaminspector;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Locale;
 import java.util.Vector;
 
 import javax.swing.Icon;
@@ -13,6 +16,8 @@ import javax.swing.JFileChooser;
 import javax.swing.tree.TreeNode;
 
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BytesContentSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeIcons;
 
 class FolderStructure {
@@ -27,6 +32,15 @@ class FolderStructure {
 	//        425580_library_hero_blur.jpg 
 	//        425580_logo.png 
 	// eb32e3c266a74c7d51835ebf7c866bf2dbf59b47.ico    ||   C:\Program Files (x86)\Steam\steam\games
+
+	static String getSize(File file) {
+		long length = file==null ? 0 : file.length();
+		if (length               <1100) return String.format(Locale.ENGLISH, "%d B"    , length);
+		if (length/1024          <1100) return String.format(Locale.ENGLISH, "%1.1f kB", length/1024f);
+		if (length/1024/1024     <1100) return String.format(Locale.ENGLISH, "%1.1f MB", length/1024f/1024f);
+		if (length/1024/1024/1024<1100) return String.format(Locale.ENGLISH, "%1.1f GB", length/1024f/1024f/1024f);
+		return "["+length+"]";
+	}
 	
 	static class Root extends BaseTreeNode<TreeNode> {
 
@@ -105,7 +119,7 @@ class FolderStructure {
 			}
 
 			@Override public String toString() {
-				return String.format("App %d (%s)", id, file==null ? "" : file.getName());
+				return String.format("App %d (%s, %s)", id, file==null ? "" : file.getName(), getSize(file));
 			}
 
 			@Override protected Vector<TreeNode> createChildren() {
@@ -214,15 +228,17 @@ class FolderStructure {
 			}
 		}
 
-		static class FileNode extends UserDataNode {
+		static class FileNode extends UserDataNode implements BytesContentSource {
 		
 			protected final File file;
+			protected byte[] byteContent;
 			
 			FileNode(TreeNode parent, File file) {
 				this(parent, file, TreeIcons.GeneralFile);
 			}
 			protected FileNode(TreeNode parent, File file, TreeIcons icon) {
 				super(parent, file.getName(), false, true, icon);
+				this.byteContent = null;
 				this.file = file;
 				if (!this.file.isFile())
 					throw new IllegalStateException("Can't create a UserDataFileNode from nonexisting file or nonfile");
@@ -237,24 +253,20 @@ class FolderStructure {
 				return String.format("%s (%s)", file.getName(), getSize(file));
 			}
 
-			static String getSize(File file) {
-				long length = file.length();
-				if (length               <1100) return String.format("%d B"    , length);
-				if (length/1024          <1100) return String.format("%1.1f kB", length/1024f);
-				if (length/1024/1024     <1100) return String.format("%1.1f MB", length/1024f/1024f);
-				if (length/1024/1024/1024<1100) return String.format("%1.1f GB", length/1024f/1024f/1024f);
-				return "["+length+"]";
-			}
-
 			@Override protected Vector<UserDataNode> createChildren() {
 				throw new UnsupportedOperationException("Call of UserDataFileNode.createChildren() is not supported.");
 			}
 
 			@Override ContentType getContentType() {
-				return ContentType.HexText;
+				return ContentType.Bytes;
 			}
 
 			@Override public byte[] getContentAsBytes() {
+				if (byteContent != null) return byteContent;
+				return byteContent = readBytesUncached();
+			}
+			
+			protected byte[] readBytesUncached() {
 				try {
 					return Files.readAllBytes(file.toPath());
 				} catch (IOException e) {
@@ -263,14 +275,18 @@ class FolderStructure {
 			}
 		}
 
-		static class TextFile extends FileNode {
+		static class TextFile extends FileNode implements ExtendedTextContentSource {
 			
+			protected String textContent;
+			private Charset charset;
+
 			TextFile(TreeNode parent, File file) {
-				this(parent, file, TreeIcons.TextFile);
+				this(parent, file, TreeIcons.TextFile, null);
 			}
 
-			protected TextFile(TreeNode parent, File file, TreeIcons icon) {
+			protected TextFile(TreeNode parent, File file, TreeIcons icon, Charset charset) {
 				super(parent, file, icon);
+				textContent = null;
 			}
 
 			static boolean isTextFile(File file) {
@@ -283,16 +299,17 @@ class FolderStructure {
 			}
 		
 			@Override public String getContentAsText() {
+				if (textContent!=null) return textContent;
 				byte[] bytes = getContentAsBytes();
 				if (bytes==null) return "Can't read content";
-				return new String(bytes);
+				return textContent = charset!=null ? new String(bytes, charset) : new String(bytes);
 			}
 		}
 
 		static class VDF_File extends TextFile {
 			
 			VDF_File(TreeNode parent, File file) {
-				super(parent, file, TreeIcons.VDFFile);
+				super(parent, file, TreeIcons.VDFFile, StandardCharsets.UTF_8);
 			}
 
 			static boolean isVDFFile(File file) {
@@ -301,7 +318,7 @@ class FolderStructure {
 			}
 			
 			@Override ContentType getContentType() {
-				return ContentType.ExtendedText;
+				return ContentType.ExtendedText; // will be changed later
 			}
 		}
 	}
