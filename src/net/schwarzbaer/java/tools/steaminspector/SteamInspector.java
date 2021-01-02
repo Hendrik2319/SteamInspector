@@ -68,6 +68,7 @@ class SteamInspector {
 	private ExtendedTextOutput hexTableOutput = null;
 	private ExtendedTextOutput plainTextOutput = null;
 	private ExtendedTextOutput extendedTextOutput = null;
+	private ExtendedTextOutput parsedTextOutput = null;
 	private OutputDummy outputDummy = null;
 	private FileContentOutput lastFileContentOutput = null;
 	private JPanel fileContentPanel = null;
@@ -103,6 +104,7 @@ class SteamInspector {
 		hexTableOutput     = new ExtendedTextOutput(BaseTreeNode.ContentType.Bytes);
 		plainTextOutput    = new ExtendedTextOutput(BaseTreeNode.ContentType.PlainText);
 		extendedTextOutput = new ExtendedTextOutput(BaseTreeNode.ContentType.ExtendedText);
+		parsedTextOutput   = new ExtendedTextOutput(BaseTreeNode.ContentType.ParsedText);
 		outputDummy = new OutputDummy();
 		
 		lastFileContentOutput = outputDummy;
@@ -132,7 +134,7 @@ class SteamInspector {
 						changeFileContentOutput(hexTableOutput);
 						hideOutput = false;
 					} else
-						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface%n", baseTreeNode);
+						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
 					break;
 					
 				case PlainText:
@@ -141,7 +143,7 @@ class SteamInspector {
 						changeFileContentOutput(plainTextOutput);
 						hideOutput = false;
 					} else
-						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface%n", baseTreeNode);
+						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
 					break;
 					
 				case ExtendedText:
@@ -150,10 +152,16 @@ class SteamInspector {
 						changeFileContentOutput(extendedTextOutput);
 						hideOutput = false;
 					} else
-						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface%n", baseTreeNode);
+						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
 					break;
 				
 				case ParsedText:
+					if (baseTreeNode instanceof ParsedTextContentSource) {
+						parsedTextOutput.setOutput((ParsedTextContentSource) baseTreeNode);
+						changeFileContentOutput(parsedTextOutput);
+						hideOutput = false;
+					} else
+						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
 					break;
 				}
 		}
@@ -445,6 +453,14 @@ class SteamInspector {
 
 		ParsedTreeOutput() {
 			view = new JTree();
+			view.setRootVisible(false);
+			view.setCellRenderer(new BaseTreeNodeRenderer());
+			view.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
+			view.addTreeSelectionListener(e->{
+				TreePath path = e.getPath();
+				if (path==null) return;
+//				showContent(path.getLastPathComponent());
+			});
 			scrollPane = new JScrollPane(view);
 		}
 		@Override Component getMainComponent() {
@@ -485,7 +501,7 @@ class SteamInspector {
 		
 		private final ContentType type;
 		private final Component mainComp;
-		private SwingWorkerImpl runningContentLoadWorker;
+		private ContentLoadWorker runningContentLoadWorker;
 		
 		private final HexTableOutput hexView;
 		private final TextOutput plainText;
@@ -539,28 +555,27 @@ class SteamInspector {
 
 		void setOutput(BytesContentSource source) {
 			if (type!=ContentType.Bytes || hexView==null || plainText!=null || parsedTree!=null) throw new IllegalStateException();
-			setOutput(source, SwingWorkerImpl::new);
+			setOutput(source, ContentLoadWorker::new);
 		}
 
 		void setOutput(TextContentSource source) {
 			if (type!=ContentType.PlainText || hexView!=null || plainText==null || parsedTree!=null) throw new IllegalStateException();
-			setOutput(source, SwingWorkerImpl::new);
-			setActiveTab(1);
+			setOutput(source, ContentLoadWorker::new);
 		}
 		
 		void setOutput(ExtendedTextContentSource source) {
 			if (type!=ContentType.ExtendedText || hexView==null || plainText==null || parsedTree!=null) throw new IllegalStateException();
-			setOutput(source, SwingWorkerImpl::new);
+			setOutput(source, ContentLoadWorker::new);
 			setActiveTab(1);
 		}
 
 		void setOutput(ParsedTextContentSource source) {
 			if (type!=ContentType.ParsedText || hexView==null || plainText==null || parsedTree==null) throw new IllegalStateException();
-			setOutput(source, SwingWorkerImpl::new);
-			setActiveTab(1);
+			setOutput(source, ContentLoadWorker::new);
+			setActiveTab(2);
 		}
 
-		private <A> void setOutput(A source, Function<A,SwingWorkerImpl> createWorker) {
+		private <A> void setOutput(A source, Function<A,ContentLoadWorker> createWorker) {
 			
 			if (runningContentLoadWorker!=null && !runningContentLoadWorker.isDone() && !runningContentLoadWorker.isCancelled()) {
 				runningContentLoadWorker.setObsolete(true);
@@ -575,18 +590,19 @@ class SteamInspector {
 			runningContentLoadWorker.execute();
 		}
 		
-		private class SwingWorkerImpl extends SwingWorker<List<SetTask>,SetTask> {
+		private class ContentLoadWorker extends SwingWorker<List<PostponedTask>,PostponedTask> {
 			
 			private final BytesContentSource bytesSource;
 			private final TextContentSource   textSource;
 			private final TreeContentSource   treeSource;
 			private boolean isObsolete;
 		
-			SwingWorkerImpl(       BytesContentSource source) { this(source,  null,  null); }
-			SwingWorkerImpl(        TextContentSource source) { this(  null,source,  null); }
-			SwingWorkerImpl(ExtendedTextContentSource source) { this(source,source,  null); }
-			SwingWorkerImpl(  ParsedTextContentSource source) { this(source,source,source); }
-			private SwingWorkerImpl(BytesContentSource bytesSource, TextContentSource textSource, TreeContentSource treeSource) {
+			ContentLoadWorker(       BytesContentSource source) { this(source,  null,  null); }
+			ContentLoadWorker(        TextContentSource source) { this(  null,source,  null); }
+			ContentLoadWorker(ExtendedTextContentSource source) { this(source,source,  null); }
+			ContentLoadWorker(  ParsedTextContentSource source) { this(source,source,source); }
+			
+			private ContentLoadWorker(BytesContentSource bytesSource, TextContentSource textSource, TreeContentSource treeSource) {
 				this.bytesSource = bytesSource;
 				this.textSource = textSource;
 				this.treeSource = treeSource;
@@ -596,23 +612,33 @@ class SteamInspector {
 			public void setObsolete(boolean isObsolete) {
 				this.isObsolete = isObsolete;
 			}
-		
+			
+			private void setHexTable(byte[] bytes) {
+				hexView.setHexTableOutput(bytes);
+			}
+			private void setPlainText(String text) {
+				plainText.setText(text);
+				plainText.loadScrollPos();
+			}
+			private void setParsedTree(TreeNode root) {
+				parsedTree.setRoot(root);
+			}
+			
 			@Override
-			protected List<SetTask> doInBackground() throws Exception {
-				SetTask setPlainText=null, setParsedTree=null, setHexView=null;
+			protected List<PostponedTask> doInBackground() throws Exception {
+				PostponedTask setPlainText=null, setParsedTree=null, setHexView=null;
 				byte[]   bytes    = bytesSource==null ? null : bytesSource.getContentAsBytes();        if (isObsolete) return null;
 				String   text     =  textSource==null ? null :  textSource.getContentAsText ();        if (isObsolete) return null;
 				TreeNode treeNode =  treeSource==null ? null :  treeSource.getContentAsTree ();        if (isObsolete) return null;
-				if (text    !=null) publish(setPlainText  = new SetPlainTextTask  (plainText , text    ));  if (isObsolete) return null;
-				if (treeNode!=null) publish(setParsedTree = new SetParsedTreeTask (parsedTree, treeNode));  if (isObsolete) return null;
-				if (bytes   !=null) publish(setHexView    = new SetHexTableTask   (hexView   , bytes   ));  if (isObsolete) return null;
+				if (text    !=null) publish(setPlainText  = new PostponedTask(()->setPlainText (text    )));  if (isObsolete) return null;
+				if (treeNode!=null) publish(setParsedTree = new PostponedTask(()->setParsedTree(treeNode)));  if (isObsolete) return null;
+				if (bytes   !=null) publish(setHexView    = new PostponedTask(()->setHexTable  (bytes   )));  if (isObsolete) return null;
 				return Arrays.asList(setParsedTree,setPlainText,setHexView);
 			}
-		
 			@Override
-			protected void process(List<SetTask> tasks) {
+			protected void process(List<PostponedTask> tasks) {
 				if (tasks==null) return;
-				for (SetTask task:tasks)
+				for (PostponedTask task:tasks)
 					if (task!=null) task.execute();
 			}
 		
@@ -626,60 +652,20 @@ class SteamInspector {
 			}
 		}
 
-		private static abstract class SetTask {
+		private static class PostponedTask {
+			
 			private boolean isSolved;
-			SetTask() {
+			private Runnable task;
+			
+			PostponedTask(Runnable task) {
+				this.task = task;
 				this.isSolved = false;
 			}
+			
 			void execute() {
 				if (isSolved) return;
-				setValueinGUI();
+				task.run();
 				isSolved = true;
-			}
-			protected abstract void setValueinGUI();
-		}
-
-		private static class SetHexTableTask extends SetTask {
-			private final HexTableOutput hexView;
-			private final byte[] bytes;
-			SetHexTableTask(HexTableOutput view, byte[] data) {
-				this.hexView = view;
-				this.bytes = data;
-				if (view==null || data==null)
-					throw new IllegalArgumentException();
-			}
-			@Override protected void setValueinGUI() {
-				hexView.setHexTableOutput(bytes);
-			}
-		}
-
-		private static class SetPlainTextTask extends SetTask {
-			private final TextOutput textOutput;
-			private final String text;
-			SetPlainTextTask(TextOutput view, String data) {
-				this.textOutput = view;
-				this.text = data;
-				if (view==null || data==null)
-					throw new IllegalArgumentException();
-			}
-			@Override protected void setValueinGUI() {
-				textOutput.setText(text);
-				textOutput.loadScrollPos();
-			}
-
-		}
-		
-		private static class SetParsedTreeTask extends SetTask {
-			private final ParsedTreeOutput view;
-			private final TreeNode text;
-			SetParsedTreeTask(ParsedTreeOutput view, TreeNode data) {
-				this.view = view;
-				this.text = data;
-				if (view==null || data==null)
-					throw new IllegalArgumentException();
-			}
-			@Override protected void setValueinGUI() {
-				view.setRoot(text);
 			}
 		}
 	}
@@ -728,7 +714,7 @@ class SteamInspector {
 	}
 */
 	
-	private final class BaseTreeNodeRenderer extends DefaultTreeCellRenderer {
+	private final static class BaseTreeNodeRenderer extends DefaultTreeCellRenderer {
 		private static final long serialVersionUID = -7291286788678796516L;
 //		private Icon icon;
 		
@@ -829,13 +815,15 @@ class SteamInspector {
 				Vector<DummyTextNode> children = new Vector<>();
 				int i=0;
 				DummyTextNode child;
-				while ( (child=createChild.apply(this,i))!=null )
+				while ( (child=createChild.apply(this,i))!=null ) {
 					children.add(child);
+					i++;
+				}
 				return children;
 			}
 			
 			private static DummyTextNode createSingleTextLineTree(String text) {
-				return new DummyTextNode(null, "DummyRoot", (p,i)->new DummyTextNode(p, text, null ) );
+				return new DummyTextNode(null, "DummyRoot", (p,i)->i>0 ? null : new DummyTextNode(p, text, null ) );
 			}
 		}
 	}
