@@ -20,7 +20,7 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BytesContentSour
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeIcons;
 
-class FolderStructure {
+class TreeNodes {
 	
 	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS = new File("c:\\__Games\\SteamLibrary\\steamapps\\");
 	private static final File FOLDER_STEAM_USERDATA         = new File("c:\\Program Files (x86)\\Steam\\userdata");

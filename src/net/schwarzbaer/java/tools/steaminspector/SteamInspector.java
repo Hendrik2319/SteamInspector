@@ -44,7 +44,7 @@ import javax.swing.tree.TreeSelectionModel;
 import net.schwarzbaer.gui.IconSource;
 import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.gui.StandardMainWindow;
-import net.schwarzbaer.java.tools.steaminspector.FolderStructure.FileSystem.FileSystemNode;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FileSystemNode;
 import net.schwarzbaer.system.ClipboardTools;
 
 class SteamInspector {
@@ -75,11 +75,11 @@ class SteamInspector {
 		JPanel optionPanel = new JPanel(new GridLayout(1,0,3,3));
 		optionPanel.add(new JLabel("Structure: "));
 		ButtonGroup bg = new ButtonGroup();
-		optionPanel.add(createRadioButton("Files & Folders", true, true,bg,b->{ tree.setModel(new DefaultTreeModel(new FolderStructure.FileSystem.Root())); tree.setRootVisible(false); }));
+		optionPanel.add(createRadioButton("Files & Folders", true, true,bg,b->{ tree.setModel(new DefaultTreeModel(new TreeNodes.FileSystem.Root())); tree.setRootVisible(false); }));
 		optionPanel.add(createRadioButton("Games"          ,false,false,bg,b->{}));
 		optionPanel.add(createRadioButton("Players, Games" ,false,false,bg,b->{}));
 		
-		tree = new JTree(new FolderStructure.FileSystem.Root());
+		tree = new JTree(new TreeNodes.FileSystem.Root());
 		tree.setRootVisible(false);
 		tree.setCellRenderer(new BaseTreeNodeRenderer());
 		tree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
@@ -697,8 +697,8 @@ class SteamInspector {
 			children = null;
 		}
 		
-		byte[] getContentAsBytes() { throw new UnsupportedOperationException(); }
-		String getContentAsText () { throw new UnsupportedOperationException(); }
+//		byte[] getContentAsBytes() { throw new UnsupportedOperationException(); }
+//		String getContentAsText () { throw new UnsupportedOperationException(); }
 
 		ContentType getContentType() { return null; }
 		Icon getIcon() { return icon==null ? null : TreeIconsIS.getCachedIcon(icon); }
