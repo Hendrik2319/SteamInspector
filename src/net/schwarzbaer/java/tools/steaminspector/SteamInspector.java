@@ -13,6 +13,7 @@ import java.util.Enumeration;
 import java.util.List;
 import java.util.Vector;
 import java.util.concurrent.ExecutionException;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -44,6 +45,7 @@ import javax.swing.tree.TreeSelectionModel;
 import net.schwarzbaer.gui.IconSource;
 import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.gui.StandardMainWindow;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode.ContentType;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FileSystemNode;
 import net.schwarzbaer.system.ClipboardTools;
 
@@ -124,10 +126,10 @@ class SteamInspector {
 			if (contentType!=null)
 				switch (contentType) {
 				
-				case ExtendedText:
-					if (baseTreeNode instanceof ExtendedTextContentSource) {
-						extendedTextOutput.setOutput((ExtendedTextContentSource) baseTreeNode);
-						changeFileContentOutput(extendedTextOutput);
+				case Bytes:
+					if (baseTreeNode instanceof BytesContentSource) {
+						hexTableOutput.setOutput((BytesContentSource) baseTreeNode);
+						changeFileContentOutput(hexTableOutput);
 						hideOutput = false;
 					} else
 						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface%n", baseTreeNode);
@@ -141,14 +143,17 @@ class SteamInspector {
 					} else
 						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface%n", baseTreeNode);
 					break;
-				
-				case Bytes:
-					if (baseTreeNode instanceof BytesContentSource) {
-						hexTableOutput.setOutput((BytesContentSource) baseTreeNode);
-						changeFileContentOutput(hexTableOutput);
+					
+				case ExtendedText:
+					if (baseTreeNode instanceof ExtendedTextContentSource) {
+						extendedTextOutput.setOutput((ExtendedTextContentSource) baseTreeNode);
+						changeFileContentOutput(extendedTextOutput);
 						hideOutput = false;
 					} else
 						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface%n", baseTreeNode);
+					break;
+				
+				case ParsedText:
 					break;
 				}
 		}
@@ -260,6 +265,7 @@ class SteamInspector {
 	static abstract class FileContentOutput {
 
 		abstract Component getMainComponent();
+		abstract void showLoadingMsg();
 
 		static float getVertScrollbarPos(JScrollPane scrollPane) {
 			if (scrollPane==null) return Float.NaN;
@@ -302,6 +308,7 @@ class SteamInspector {
 		@Override Component getMainComponent() {
 			return dummyLabel;
 		}
+		@Override void showLoadingMsg() {}
 	}
 
 	static class HexTableOutput extends TextOutput {
@@ -323,9 +330,9 @@ class SteamInspector {
 			
 			JPanel outputPanel = new JPanel(new BorderLayout(3,3));
 			outputPanel.add(upperButtonPanel,BorderLayout.NORTH);
-			outputPanel.add(textOutput      ,BorderLayout.CENTER);
+			outputPanel.add(view      ,BorderLayout.CENTER);
 			outputPanel.add(lowerButtonPanel,BorderLayout.SOUTH);
-			textOutputScrollPane.setViewportView(outputPanel);
+			scrollPane.setViewportView(outputPanel);
 		}
 
 		private void switchPage(int inc) {
@@ -388,34 +395,33 @@ class SteamInspector {
 
 	static class TextOutput extends FileContentOutput {
 		
-		protected final JTextArea textOutput;
-		protected final JScrollPane textOutputScrollPane;
+		protected final JTextArea view;
+		protected final JScrollPane scrollPane;
 		private float storedScrollPos;
 		
 		TextOutput() {
-			textOutput = new JTextArea();
-			textOutput.setEditable(false);
-			textOutputScrollPane = new JScrollPane(textOutput);
+			view = new JTextArea();
+			view.setEditable(false);
+			scrollPane = new JScrollPane(view);
 		}
 		
 		@Override Component getMainComponent() {
-			return textOutputScrollPane;
+			return scrollPane;
 		}
 
-//		void setPlainTextOutput(String text) {
-//			saveScrollPos();
-//			setText(text);
-//			loadScrollPos();
-//		}
+		@Override void showLoadingMsg() {
+			saveScrollPos();
+			setText("load content ...");
+		}
 
 		void setText(String text) {
-			textOutput.setText(text);
+			view.setText(text);
 		}
 
 		void loadScrollPos() {
 			SwingUtilities.invokeLater(()->{
 //				System.out.printf(Locale.ENGLISH, "setTextOutput: %f -> VertScrollbarPos%n", storedScrollPos);
-				setVertScrollbarPos(textOutputScrollPane,storedScrollPos);
+				setVertScrollbarPos(scrollPane,storedScrollPos);
 				storedScrollPos = Float.NaN;
 //				float pos_ = getVertScrollbarPos(textOutputScrollPane);
 //				System.out.printf(Locale.ENGLISH, "setTextOutput: VertScrollbarPos -> %f%n", pos_);
@@ -424,7 +430,7 @@ class SteamInspector {
 		}
 
 		void saveScrollPos() {
-			storedScrollPos = getVertScrollbarPos(textOutputScrollPane);
+			storedScrollPos = getVertScrollbarPos(scrollPane);
 //			System.out.printf(Locale.ENGLISH, "setTextOutput: VertScrollbarPos -> %f%n", storedScrollPos);
 		}
 
@@ -432,61 +438,97 @@ class SteamInspector {
 			this.storedScrollPos = scrollPos;
 		}
 	}
+
+	static class ParsedTreeOutput extends FileContentOutput {
+		private JTree view;
+		private JScrollPane scrollPane;
+
+		ParsedTreeOutput() {
+			view = new JTree();
+			scrollPane = new JScrollPane(view);
+		}
+		@Override Component getMainComponent() {
+			return scrollPane;
+		}
+		void setRoot(TreeNode root) {
+			view.setModel(new DefaultTreeModel(root));
+		}
+		@Override void showLoadingMsg() {
+			setRoot(BaseTreeNode.DummyTextNode.createSingleTextLineTree("load content ..."));
+		}
+	}
 	
 	static class MultiOutput extends FileContentOutput {
 		private final JTabbedPane mainPanel;
-//		private final Vector<FileContentOutput> subPanels;
+		private final Vector<FileContentOutput> subPanels;
 
 		MultiOutput() {
 			mainPanel = new JTabbedPane();
-//			subPanels = new Vector<FileContentOutput>();
+			subPanels = new Vector<FileContentOutput>();
 		}
 		
 		@Override Component getMainComponent() { return mainPanel; }
 		
 		void add(String title, FileContentOutput output) {
 			mainPanel.addTab(title, output.getMainComponent());
-//			subPanels.add(output);
+			subPanels.add(output);
 		}
-		
 		void setActiveTab(int index) {
 			mainPanel.setSelectedIndex(index);
+		}
+		@Override void showLoadingMsg() {
+			subPanels.forEach(FileContentOutput::showLoadingMsg);
 		}
 	}
 
 	static class ExtendedTextOutput extends MultiOutput {
 		
+		private final ContentType type;
 		private final Component mainComp;
-		private final HexTableOutput hexView;
-		private final TextOutput plainText;
 		private SwingWorkerImpl runningContentLoadWorker;
 		
+		private final HexTableOutput hexView;
+		private final TextOutput plainText;
+		private final ParsedTreeOutput parsedTree;
+		
 		ExtendedTextOutput(BaseTreeNode.ContentType type) {
+			this.type = type;
+			
 			switch (type) {
 			case Bytes:
-				hexView   = new HexTableOutput();
-				plainText = null;
-				mainComp  = hexView.getMainComponent();
+				hexView    = new HexTableOutput();
+				plainText  = null;
+				parsedTree = null;
+				mainComp   = hexView.getMainComponent();
 				break;
 			
 			case PlainText:
-				hexView   = null;
-				plainText = new TextOutput ();
-				mainComp  = plainText.getMainComponent();
+				hexView    = null;
+				plainText  = new TextOutput();
+				parsedTree = null;
+				mainComp   = plainText.getMainComponent();
 				break;
 			
 			case ExtendedText:
 				add("Hex Table" , hexView   = new HexTableOutput());
 				add("Plain Text", plainText = new TextOutput    ());
+				parsedTree = null;
 				setActiveTab(1);
 				mainComp  = super.getMainComponent();
 				break;
 				
+			case ParsedText:
+				add("Hex Table" , hexView    = new HexTableOutput  ());
+				add("Plain Text", plainText  = new TextOutput      ());
+				add("Parsed"    , parsedTree = new ParsedTreeOutput());
+				setActiveTab(2);
+				mainComp  = super.getMainComponent();
+				break;
+			
 			default:
-				hexView   = null;
-				plainText = null;
-				mainComp  = null;
+				throw new IllegalArgumentException();
 			}
+			
 			runningContentLoadWorker = null;
 		}
 		
@@ -496,17 +538,24 @@ class SteamInspector {
 		}
 
 		void setOutput(BytesContentSource source) {
-			if (hexView==null || plainText!=null) throw new IllegalStateException();
+			if (type!=ContentType.Bytes || hexView==null || plainText!=null || parsedTree!=null) throw new IllegalStateException();
 			setOutput(source, SwingWorkerImpl::new);
 		}
 
 		void setOutput(TextContentSource source) {
-			if (hexView!=null || plainText==null) throw new IllegalStateException();
+			if (type!=ContentType.PlainText || hexView!=null || plainText==null || parsedTree!=null) throw new IllegalStateException();
 			setOutput(source, SwingWorkerImpl::new);
+			setActiveTab(1);
+		}
+		
+		void setOutput(ExtendedTextContentSource source) {
+			if (type!=ContentType.ExtendedText || hexView==null || plainText==null || parsedTree!=null) throw new IllegalStateException();
+			setOutput(source, SwingWorkerImpl::new);
+			setActiveTab(1);
 		}
 
-		void setOutput(ExtendedTextContentSource source) {
-			if (hexView==null || plainText==null) throw new IllegalStateException();
+		void setOutput(ParsedTextContentSource source) {
+			if (type!=ContentType.ParsedText || hexView==null || plainText==null || parsedTree==null) throw new IllegalStateException();
 			setOutput(source, SwingWorkerImpl::new);
 			setActiveTab(1);
 		}
@@ -518,25 +567,29 @@ class SteamInspector {
 				runningContentLoadWorker.cancel(true);
 			}
 			
-			if (hexView  !=null) { hexView  .saveScrollPos(); hexView  .setText("load content ..."); }
-			if (plainText!=null) { plainText.saveScrollPos(); plainText.setText("load content ..."); }
+			if (hexView   !=null) hexView   .showLoadingMsg();
+			if (plainText !=null) plainText .showLoadingMsg();
+			if (parsedTree!=null) parsedTree.showLoadingMsg();
 			
 			runningContentLoadWorker = createWorker.apply(source);
 			runningContentLoadWorker.execute();
 		}
 		
-		private class SwingWorkerImpl extends SwingWorker<List<PostponedSetTextTask>,PostponedSetTextTask> {
+		private class SwingWorkerImpl extends SwingWorker<List<SetTask>,SetTask> {
 			
-			private final TextContentSource textSource;
 			private final BytesContentSource bytesSource;
+			private final TextContentSource   textSource;
+			private final TreeContentSource   treeSource;
 			private boolean isObsolete;
 		
-			SwingWorkerImpl(       BytesContentSource source) { this(source,  null); }
-			SwingWorkerImpl(        TextContentSource source) { this(  null,source); }
-			SwingWorkerImpl(ExtendedTextContentSource source) { this(source,source); }
-			private SwingWorkerImpl(BytesContentSource bytesSource, TextContentSource textSource) {
+			SwingWorkerImpl(       BytesContentSource source) { this(source,  null,  null); }
+			SwingWorkerImpl(        TextContentSource source) { this(  null,source,  null); }
+			SwingWorkerImpl(ExtendedTextContentSource source) { this(source,source,  null); }
+			SwingWorkerImpl(  ParsedTextContentSource source) { this(source,source,source); }
+			private SwingWorkerImpl(BytesContentSource bytesSource, TextContentSource textSource, TreeContentSource treeSource) {
 				this.bytesSource = bytesSource;
 				this.textSource = textSource;
+				this.treeSource = treeSource;
 				this.isObsolete = false;
 			}
 		
@@ -545,19 +598,21 @@ class SteamInspector {
 			}
 		
 			@Override
-			protected List<PostponedSetTextTask> doInBackground() throws Exception {
-				PostponedSetTextTask setPlainText=null, setHexView=null;
-				byte[] bytes = bytesSource==null ? null : bytesSource.getContentAsBytes();            if (isObsolete) return null;
-				String text  =  textSource==null ? null :  textSource.getContentAsText ();            if (isObsolete) return null;
-				if (text !=null) publish(setPlainText = new PostponedSetTextTask(plainText, text ));  if (isObsolete) return null;
-				if (bytes!=null) publish(setHexView   = new PostponedSetTextTask(hexView  , bytes));  if (isObsolete) return null;
-				return Arrays.asList(setPlainText,setHexView);
+			protected List<SetTask> doInBackground() throws Exception {
+				SetTask setPlainText=null, setParsedTree=null, setHexView=null;
+				byte[]   bytes    = bytesSource==null ? null : bytesSource.getContentAsBytes();        if (isObsolete) return null;
+				String   text     =  textSource==null ? null :  textSource.getContentAsText ();        if (isObsolete) return null;
+				TreeNode treeNode =  treeSource==null ? null :  treeSource.getContentAsTree ();        if (isObsolete) return null;
+				if (text    !=null) publish(setPlainText  = new SetPlainTextTask  (plainText , text    ));  if (isObsolete) return null;
+				if (treeNode!=null) publish(setParsedTree = new SetParsedTreeTask (parsedTree, treeNode));  if (isObsolete) return null;
+				if (bytes   !=null) publish(setHexView    = new SetHexTableTask   (hexView   , bytes   ));  if (isObsolete) return null;
+				return Arrays.asList(setParsedTree,setPlainText,setHexView);
 			}
 		
 			@Override
-			protected void process(List<PostponedSetTextTask> tasks) {
+			protected void process(List<SetTask> tasks) {
 				if (tasks==null) return;
-				for (PostponedSetTextTask task:tasks)
+				for (SetTask task:tasks)
 					if (task!=null) task.execute();
 			}
 		
@@ -571,45 +626,62 @@ class SteamInspector {
 			}
 		}
 
-		private static class PostponedSetTextTask {
-			private final HexTableOutput hexView;
-			private final byte[] bytes;
-			private final TextOutput textOutput;
-			private final String text;
+		private static abstract class SetTask {
 			private boolean isSolved;
-			
-			private PostponedSetTextTask(HexTableOutput hexView, byte[] bytes, TextOutput textOutput, String text) {
-				this.hexView = hexView;
-				this.bytes = bytes;
-				this.textOutput = textOutput;
-				this.text = text;
+			SetTask() {
 				this.isSolved = false;
 			}
-			PostponedSetTextTask(HexTableOutput hexView, byte[] bytes) {
-				this(hexView, bytes, null, null);
-			}
-			PostponedSetTextTask(TextOutput plainText, String text) {
-				this(null, null, plainText, text);
-			}
-			
 			void execute() {
 				if (isSolved) return;
-				if (hexView!=null || bytes!=null) {
-					if (hexView==null || bytes==null)
-						throw new IllegalStateException();
-					hexView.setHexTableOutput(bytes);
-				}
-				if (textOutput!=null || text!=null) {
-					if (textOutput==null || text==null)
-						throw new IllegalStateException();
-					textOutput.setText(text);
-					textOutput.loadScrollPos();
-				}
-				
+				setValueinGUI();
 				isSolved = true;
 			}
+			protected abstract void setValueinGUI();
+		}
+
+		private static class SetHexTableTask extends SetTask {
+			private final HexTableOutput hexView;
+			private final byte[] bytes;
+			SetHexTableTask(HexTableOutput view, byte[] data) {
+				this.hexView = view;
+				this.bytes = data;
+				if (view==null || data==null)
+					throw new IllegalArgumentException();
+			}
+			@Override protected void setValueinGUI() {
+				hexView.setHexTableOutput(bytes);
+			}
+		}
+
+		private static class SetPlainTextTask extends SetTask {
+			private final TextOutput textOutput;
+			private final String text;
+			SetPlainTextTask(TextOutput view, String data) {
+				this.textOutput = view;
+				this.text = data;
+				if (view==null || data==null)
+					throw new IllegalArgumentException();
+			}
+			@Override protected void setValueinGUI() {
+				textOutput.setText(text);
+				textOutput.loadScrollPos();
+			}
+
 		}
 		
+		private static class SetParsedTreeTask extends SetTask {
+			private final ParsedTreeOutput view;
+			private final TreeNode text;
+			SetParsedTreeTask(ParsedTreeOutput view, TreeNode data) {
+				this.view = view;
+				this.text = data;
+				if (view==null || data==null)
+					throw new IllegalArgumentException();
+			}
+			@Override protected void setValueinGUI() {
+				view.setRoot(text);
+			}
+		}
 	}
 	
 	interface BytesContentSource {
@@ -620,7 +692,12 @@ class SteamInspector {
 		String getContentAsText();
 	}
 	
+	interface TreeContentSource {
+		TreeNode getContentAsTree();
+	}
+	
 	interface ExtendedTextContentSource extends BytesContentSource, TextContentSource {}
+	interface ParsedTextContentSource extends ExtendedTextContentSource, TreeContentSource {}
 
 /*
 	private static class SwingWorkerImpl<FinalResult,IntermediateResult> extends SwingWorker<FinalResult,IntermediateResult> {
@@ -676,7 +753,7 @@ class SteamInspector {
 
 	static abstract class BaseTreeNode<NodeType extends TreeNode> implements TreeNode {
 		
-		enum ContentType { PlainText, Bytes, ExtendedText, }
+		enum ContentType { PlainText, Bytes, ExtendedText, ParsedText, }
 		
 		protected final TreeNode parent;
 		protected final String title;
@@ -738,5 +815,28 @@ class SteamInspector {
 			if (children==null) children=createChildren();
 		}
 		
+		private static class DummyTextNode extends BaseTreeNode<DummyTextNode> {
+
+			private BiFunction<DummyTextNode, Integer, DummyTextNode> createChild;
+
+			protected DummyTextNode(TreeNode parent, String title, BiFunction<DummyTextNode,Integer,DummyTextNode> createChild) {
+				super(parent, title, createChild!=null, createChild==null);
+				this.createChild = createChild;
+			}
+
+			@Override
+			protected Vector<? extends DummyTextNode> createChildren() {
+				Vector<DummyTextNode> children = new Vector<>();
+				int i=0;
+				DummyTextNode child;
+				while ( (child=createChild.apply(this,i))!=null )
+					children.add(child);
+				return children;
+			}
+			
+			private static DummyTextNode createSingleTextLineTree(String text) {
+				return new DummyTextNode(null, "DummyRoot", (p,i)->new DummyTextNode(p, text, null ) );
+			}
+		}
 	}
 }

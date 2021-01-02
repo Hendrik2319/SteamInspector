@@ -18,6 +18,7 @@ import javax.swing.tree.TreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BytesContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextContentSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeIcons;
 
 class TreeNodes {
@@ -215,8 +216,8 @@ class TreeNodes {
 
 		static class TextFile extends FileNode implements ExtendedTextContentSource {
 			
+			protected final Charset charset;
 			protected String textContent;
-			private Charset charset;
 
 			TextFile(TreeNode parent, File file) {
 				this(parent, file, TreeIcons.TextFile, null);
@@ -224,7 +225,8 @@ class TreeNodes {
 
 			protected TextFile(TreeNode parent, File file, TreeIcons icon, Charset charset) {
 				super(parent, file, icon);
-				textContent = null;
+				this.charset = charset;
+				this.textContent = null;
 			}
 
 			static boolean isTextFile(File file) {
@@ -244,14 +246,16 @@ class TreeNodes {
 			}
 		}
 
-		static class VDF_File extends TextFile {
+		static class VDF_File extends TextFile implements ParsedTextContentSource {
 			
+			private VDFParser.Data vdfData;
+
 			VDF_File(TreeNode parent, File file) {
 				this(parent, file, TreeIcons.VDFFile);
 			}
 			protected VDF_File(TreeNode parent, File file, TreeIcons icon) {
 				super(parent, file, icon, StandardCharsets.UTF_8);
-				
+				vdfData = null;
 			}
 
 			static boolean isVDFFile(File file) {
@@ -260,7 +264,16 @@ class TreeNodes {
 			}
 			
 			@Override ContentType getContentType() {
-				return ContentType.ExtendedText; // will be changed later
+				return ContentType.ParsedText;
+			}
+			
+			@Override
+			public TreeNode getContentAsTree() {
+				if (vdfData==null) {
+					String text = getContentAsText();
+					vdfData = VDFParser.parse(text);
+				}
+				return vdfData==null ? null : vdfData.getRootTreeNode();
 			}
 		}
 
