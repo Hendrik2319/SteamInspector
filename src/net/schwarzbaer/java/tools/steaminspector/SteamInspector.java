@@ -8,7 +8,6 @@ import java.awt.GridLayout;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.event.MouseListener;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.List;
@@ -22,6 +21,7 @@ import javax.swing.ButtonGroup;
 import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JRadioButton;
@@ -44,6 +44,8 @@ import javax.swing.tree.TreeSelectionModel;
 import net.schwarzbaer.gui.IconSource;
 import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.gui.StandardMainWindow;
+import net.schwarzbaer.java.tools.steaminspector.FolderStructure.FileSystem.FileSystemNode;
+import net.schwarzbaer.system.ClipboardTools;
 
 class SteamInspector {
 
@@ -73,11 +75,11 @@ class SteamInspector {
 		JPanel optionPanel = new JPanel(new GridLayout(1,0,3,3));
 		optionPanel.add(new JLabel("Structure: "));
 		ButtonGroup bg = new ButtonGroup();
-		optionPanel.add(createRadioButton("Files & Folders", true, true,bg,b->{ tree.setModel(new DefaultTreeModel(new FolderStructure.Root())); tree.setRootVisible(false); }));
+		optionPanel.add(createRadioButton("Files & Folders", true, true,bg,b->{ tree.setModel(new DefaultTreeModel(new FolderStructure.FileSystem.Root())); tree.setRootVisible(false); }));
 		optionPanel.add(createRadioButton("Games"          ,false,false,bg,b->{}));
 		optionPanel.add(createRadioButton("Players, Games" ,false,false,bg,b->{}));
 		
-		tree = new JTree(new FolderStructure.Root());
+		tree = new JTree(new FolderStructure.FileSystem.Root());
 		tree.setRootVisible(false);
 		tree.setCellRenderer(new BaseTreeNodeRenderer());
 		tree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
@@ -182,26 +184,77 @@ class SteamInspector {
 		return comp;
 	}
 	
+	private static JMenuItem createMenuItem(String title, boolean enabled, ActionListener al) {
+		JMenuItem comp = new JMenuItem(title);
+		comp.setEnabled(enabled);
+		if (al!=null) comp.addActionListener(al);
+		return comp;
+	}
+
 	static class TreeContextMenues {
 
+		private FileContextMenu fileContextMenu;
+
 		TreeContextMenues(JTree tree) {
+			
+			fileContextMenu = new FileContextMenu(tree);
+			
 			tree.addMouseListener(new MouseAdapter() {
 				@Override public void mouseClicked(MouseEvent e) {
 					if (e.getButton()==MouseEvent.BUTTON3) {
 						TreePath path = tree.getPathForLocation(e.getX(), e.getY());
 						if (path!=null) {
-							Object lastPathComponent = path.getLastPathComponent();
-							// TODO
+							ContextMenu<?> contextMenu = getMenuFor(path.getLastPathComponent());
+							if (contextMenu!=null)
+								contextMenu.show(e.getX(),e.getY());
 						}
 					}
 				}
 			});
 		}
-	}
-	
-	static class TreeContextMenu extends JPopupMenu {
-		private static final long serialVersionUID = 5771382843112371294L;
+
+		private ContextMenu<?> getMenuFor(Object pathComponent) {
+			if (pathComponent instanceof FileSystemNode) {
+				fileContextMenu.setClickedNode((FileSystemNode) pathComponent);
+				return fileContextMenu;
+			}
+			return null;
+		}
+
+		private static class FileContextMenu extends ContextMenu<FileSystemNode> {
+			private static final long serialVersionUID = -7683322808189858630L;
+			private FileSystemNode clickedNode;
+
+			FileContextMenu(Component invoker) {
+				super(invoker);
+				clickedNode = null;
+				add(createMenuItem("Copy Path to Clipboard", true, e->ClipboardTools.copyToClipBoard(clickedNode.fileObj.getAbsolutePath())));
+			}
+
+			@Override
+			protected void setClickedNode(FileSystemNode clickedNode) {
+				this.clickedNode = clickedNode;
+			}
+		}
 		
+		private abstract static class ContextMenu<TreeNodeType> extends JPopupMenu {
+			private static final long serialVersionUID = 7740906378931831629L;
+			
+			private Component invoker;
+
+			ContextMenu(Component invoker) {
+				this.invoker = invoker;
+			}
+			@SuppressWarnings("unused")
+			void show(TreeNodeType treeNode, int x, int y) {
+				setClickedNode(treeNode);
+				show(x,y);
+			}
+			void show(int x, int y) {
+				show(invoker, x, y);
+			}
+			protected abstract void setClickedNode(TreeNodeType treeNode);
+		}
 	}
 	
 	static abstract class FileContentOutput {
@@ -629,7 +682,7 @@ class SteamInspector {
 		protected final String title;
 		protected final boolean allowsChildren;
 		protected final boolean isLeaf;
-		protected Vector<NodeType> children;
+		protected Vector<? extends NodeType> children;
 		protected final TreeIcons icon;
 
 		protected BaseTreeNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf) {
@@ -650,7 +703,7 @@ class SteamInspector {
 		ContentType getContentType() { return null; }
 		Icon getIcon() { return icon==null ? null : TreeIconsIS.getCachedIcon(icon); }
 
-		protected abstract Vector<NodeType> createChildren();
+		protected abstract Vector<? extends NodeType> createChildren();
 		@Override public String toString() { return title; }
 
 		@Override public TreeNode getParent() { return parent; }

@@ -42,44 +42,41 @@ class FolderStructure {
 		return "["+length+"]";
 	}
 	
-	static class Root extends BaseTreeNode<TreeNode> {
+	static class FileSystem {
 
-		Root() { super(null, "FolderStructure.Root", true, false); }
-
-		@Override
-		protected Vector<TreeNode> createChildren() {
-			Vector<TreeNode> children = new Vector<>();
-			
-			if (FOLDER_STEAMLIBRARY_STEAMAPPS.isDirectory())
-				children.add(new AppManifests.Root(this,FOLDER_STEAMLIBRARY_STEAMAPPS));
-			if (FOLDER_STEAM_USERDATA.isDirectory())
-				children.add(new UserData.Root(this,FOLDER_STEAM_USERDATA));
-			
-			return children;
+		static class Root extends BaseTreeNode<TreeNode> {
+		
+			Root() { super(null, "FolderStructure.Root", true, false); }
+		
+			@Override
+			protected Vector<TreeNode> createChildren() {
+				Vector<TreeNode> children = new Vector<>();
+				
+				if (FOLDER_STEAMLIBRARY_STEAMAPPS.isDirectory())
+					children.add(new AppManifestsRoot(this,FOLDER_STEAMLIBRARY_STEAMAPPS));
+				if (FOLDER_STEAM_USERDATA.isDirectory())
+					children.add(new UserDataRoot(this,FOLDER_STEAM_USERDATA));
+				
+				return children;
+			}
+		
 		}
 
-	}
-	
-	static class AppManifests {
-
-		static class Root extends BaseTreeNode<AppManifestNode> {
+		static class AppManifestsRoot extends FileSystem.FolderNode {
 		
-			private final File folder;
-		
-			Root(TreeNode parent, File folder) {
-				super(parent, "AppManifests", true, false, TreeIcons.RootFolder);
-				this.folder = folder;
+			AppManifestsRoot(TreeNode parent, File folder) {
+				super(parent, folder, TreeIcons.RootFolder);
 			}
 		
 			@Override public String toString() {
-				return String.format("AppManifests [%s]", folder.getAbsolutePath());
+				return String.format("AppManifests [%s]", fileObj.getAbsolutePath());
 			}
-
+		
 			@Override
-			protected Vector<AppManifestNode> createChildren() {
+			protected Vector<? extends AppManifestNode> createChildren() {
 				Vector<AppManifestNode> children = new Vector<>();
 				
-				File[] files = folder.listFiles((FileFilter) AppManifestNode::isAppManifest);
+				File[] files = fileObj.listFiles((FileFilter) AppManifestNode::isAppManifest);
 				Arrays.sort(files,Comparator.comparing(AppManifestNode::getAppIDFromFile, Comparator.nullsLast(Comparator.naturalOrder())));
 				for (File file:files)
 					children.add(new AppManifestNode(this, file));
@@ -89,81 +86,43 @@ class FolderStructure {
 			
 		}
 
-		static class AppManifestNode extends FileSystem.VDF_File {
-		
-			private static final String prefix = "appmanifest_";
-			private static final String suffix = ".acf";
-			
-			static boolean isAppManifest(File file) {
-				return getAppIDFromFile(file) != null;
-			}
-		
-			static Integer getAppIDFromFile(File file) {
-				// appmanifest_275850.acf 
-				if (!file.isFile()) return null;
-				String name = file.getName();
-				if (!name.startsWith(prefix)) return null;
-				if (!name.endsWith(suffix)) return null;
-				String idStr = name.substring(prefix.length(), name.length()-suffix.length());
-				try { return Integer.parseInt(idStr); }
-				catch (NumberFormatException e) { return null; }
-			}
-		
-			private final int id;
-			private final File file;
-		
-			AppManifestNode(Root parent, File file) {
-				super(parent, file, TreeIcons.AppManifest);
-				this.file = file;
-				id = getAppIDFromFile(file);
-			}
-
-			@Override public String toString() {
-				return String.format("App %d (%s, %s)", id, file==null ? "" : file.getName(), getSize(file));
-			}
-		}
-	}
-	
-	static class UserData {
-
-		static class Root extends FileSystem.FolderNode {
-			Root(TreeNode parent, File folder) {
+		static class UserDataRoot extends FileSystem.FolderNode {
+			UserDataRoot(TreeNode parent, File folder) {
 				super(parent, folder, TreeIcons.RootFolder);
 			}
 			@Override public String toString() {
-				return String.format("UserData [%s]", folder.getAbsolutePath());
+				return String.format("UserData [%s]", fileObj.getAbsolutePath());
 			}
 		}
-	}
-	
-	static class FileSystem {
 
 		static abstract class FileSystemNode extends BaseTreeNode<FileSystemNode> {
-			protected FileSystemNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf, TreeIcons icon) {
+			
+			protected final File fileObj;
+			
+			protected FileSystemNode(TreeNode parent, File file, String title, boolean allowsChildren, boolean isLeaf, TreeIcons icon) {
 				super(parent, title, allowsChildren, isLeaf, icon);
+				this.fileObj = file;
 			}
-			protected FileSystemNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf) {
+			protected FileSystemNode(TreeNode parent, File file, String title, boolean allowsChildren, boolean isLeaf) {
 				super(parent, title, allowsChildren, isLeaf);
+				this.fileObj = file;
 			}
 		}
 
 		static class FolderNode extends FileSystemNode {
 		
-			protected final File folder;
-		
 			FolderNode(TreeNode parent, File folder) {
 				this(parent, folder, TreeIcons.Folder);
 			}
 			protected FolderNode(TreeNode parent, File folder, TreeIcons icon) {
-				super(parent, folder.getName(), true, false, icon);
-				this.folder = folder;
+				super(parent, folder, folder.getName(), true, false, icon);
 			}
 		
 			@Override
-			protected Vector<FileSystemNode> createChildren() {
+			protected Vector<? extends FileSystemNode> createChildren() {
 				Vector<FileSystemNode> children = new Vector<>();
 				
-				File[] files = folder.listFiles((FileFilter) file -> {
+				File[] files = fileObj.listFiles((FileFilter) file -> {
 					String name = file.getName();
 					if (file.isDirectory())
 						return !name.equals(".") && !name.equals("..");
@@ -211,17 +170,15 @@ class FolderStructure {
 
 		static class FileNode extends FileSystemNode implements BytesContentSource {
 		
-			protected final File file;
 			protected byte[] byteContent;
 			
 			FileNode(TreeNode parent, File file) {
 				this(parent, file, TreeIcons.GeneralFile);
 			}
 			protected FileNode(TreeNode parent, File file, TreeIcons icon) {
-				super(parent, file.getName(), false, true, icon);
+				super(parent, file, file.getName(), false, true, icon);
 				this.byteContent = null;
-				this.file = file;
-				if (!this.file.isFile())
+				if (!fileObj.isFile())
 					throw new IllegalStateException("Can't create a FileSystem.FileNode from nonexisting file or nonfile");
 			}
 			
@@ -231,7 +188,7 @@ class FolderStructure {
 
 			@Override
 			public String toString() {
-				return String.format("%s (%s)", file.getName(), getSize(file));
+				return String.format("%s (%s)", fileObj.getName(), getSize(fileObj));
 			}
 
 			@Override protected Vector<FileSystemNode> createChildren() {
@@ -249,7 +206,7 @@ class FolderStructure {
 			
 			protected byte[] readBytesUncached() {
 				try {
-					return Files.readAllBytes(file.toPath());
+					return Files.readAllBytes(fileObj.toPath());
 				} catch (IOException e) {
 					return null;
 				}
@@ -304,6 +261,40 @@ class FolderStructure {
 			
 			@Override ContentType getContentType() {
 				return ContentType.ExtendedText; // will be changed later
+			}
+		}
+
+		static class AppManifestNode extends FileSystem.VDF_File {
+		
+			private static final String prefix = "appmanifest_";
+			private static final String suffix = ".acf";
+			
+			static boolean isAppManifest(File file) {
+				return getAppIDFromFile(file) != null;
+			}
+		
+			static Integer getAppIDFromFile(File file) {
+				// appmanifest_275850.acf 
+				if (!file.isFile()) return null;
+				String name = file.getName();
+				if (!name.startsWith(prefix)) return null;
+				if (!name.endsWith(suffix)) return null;
+				String idStr = name.substring(prefix.length(), name.length()-suffix.length());
+				try { return Integer.parseInt(idStr); }
+				catch (NumberFormatException e) { return null; }
+			}
+		
+			private final int id;
+			private final File file;
+		
+			AppManifestNode(AppManifestsRoot parent, File file) {
+				super(parent, file, TreeIcons.AppManifest);
+				this.file = file;
+				id = getAppIDFromFile(file);
+			}
+		
+			@Override public String toString() {
+				return String.format("App %d (%s, %s)", id, file==null ? "" : file.getName(), getSize(file));
 			}
 		}
 	}
