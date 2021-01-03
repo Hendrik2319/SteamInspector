@@ -20,6 +20,7 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BytesContentSour
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeIcons;
+import net.schwarzbaer.java.tools.steaminspector.VDFParser.ParseException;
 
 class TreeNodes {
 	
@@ -271,7 +272,12 @@ class TreeNodes {
 			public TreeNode getContentAsTree() {
 				if (vdfData==null) {
 					String text = getContentAsText();
-					vdfData = VDFParser.parse(text);
+					try {
+						vdfData = VDFParser.parse(text);
+					} catch (ParseException e) {
+						e.printStackTrace();
+						return BaseTreeNode.DummyTextNode.createSingleTextLineTree("Parse Error");
+					}
 				}
 				return vdfData==null ? null : vdfData.getRootTreeNode();
 			}

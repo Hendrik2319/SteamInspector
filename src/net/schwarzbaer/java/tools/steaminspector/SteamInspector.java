@@ -468,6 +468,8 @@ class SteamInspector {
 		}
 		void setRoot(TreeNode root) {
 			view.setModel(new DefaultTreeModel(root));
+			for (int i=0; i<view.getRowCount(); i++)
+				view.expandRow(i);
 		}
 		@Override void showLoadingMsg() {
 			setRoot(BaseTreeNode.DummyTextNode.createSingleTextLineTree("load content ..."));
@@ -801,7 +803,7 @@ class SteamInspector {
 			if (children==null) children=createChildren();
 		}
 		
-		private static class DummyTextNode extends BaseTreeNode<DummyTextNode> {
+		static class DummyTextNode extends BaseTreeNode<DummyTextNode> {
 
 			private BiFunction<DummyTextNode, Integer, DummyTextNode> createChild;
 
@@ -822,7 +824,7 @@ class SteamInspector {
 				return children;
 			}
 			
-			private static DummyTextNode createSingleTextLineTree(String text) {
+			static DummyTextNode createSingleTextLineTree(String text) {
 				return new DummyTextNode(null, "DummyRoot", (p,i)->i>0 ? null : new DummyTextNode(p, text, null ) );
 			}
 		}
