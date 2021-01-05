@@ -24,6 +24,7 @@ import net.schwarzbaer.java.tools.steaminspector.VDFParser.ParseException;
 
 class TreeNodes {
 	
+	private static final File FOLDER_TEST_FILES             = new File("./test");
 	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS = new File("c:\\__Games\\SteamLibrary\\steamapps\\");
 	private static final File FOLDER_STEAM_USERDATA         = new File("c:\\Program Files (x86)\\Steam\\userdata");
 	// C:\Program Files (x86)\Steam\appcache\librarycache
@@ -56,22 +57,22 @@ class TreeNodes {
 				
 				if (FOLDER_STEAMLIBRARY_STEAMAPPS.isDirectory())
 					children.add(new AppManifestsRoot(this,FOLDER_STEAMLIBRARY_STEAMAPPS));
+				if (FOLDER_STEAMLIBRARY_STEAMAPPS.isDirectory())
+					children.add(new FolderRoot(this,"AppManifests Folder",FOLDER_STEAMLIBRARY_STEAMAPPS));
 				if (FOLDER_STEAM_USERDATA.isDirectory())
-					children.add(new UserDataRoot(this,FOLDER_STEAM_USERDATA));
+					children.add(new FolderRoot(this,"UserData Folder",FOLDER_STEAM_USERDATA));
+				if (FOLDER_TEST_FILES.isDirectory())
+					children.add(new FolderRoot(this,"Test Files",FOLDER_TEST_FILES));
 				
 				return children;
 			}
 		
 		}
 
-		static class AppManifestsRoot extends FileSystem.FolderNode {
+		static class AppManifestsRoot extends FolderRoot {
 		
 			AppManifestsRoot(TreeNode parent, File folder) {
-				super(parent, folder, TreeIcons.RootFolder);
-			}
-		
-			@Override public String toString() {
-				return String.format("AppManifests [%s]", fileObj.getAbsolutePath());
+				super(parent, "AppManifests", folder);
 			}
 		
 			@Override
@@ -88,12 +89,14 @@ class TreeNodes {
 			
 		}
 
-		static class UserDataRoot extends FileSystem.FolderNode {
-			UserDataRoot(TreeNode parent, File folder) {
+		static class FolderRoot extends FolderNode {
+			private final String rootTitle;
+			FolderRoot(TreeNode parent, String rootTitle, File folder) {
 				super(parent, folder, TreeIcons.RootFolder);
+				this.rootTitle = rootTitle;
 			}
 			@Override public String toString() {
-				return String.format("UserData [%s]", fileObj.getAbsolutePath());
+				return String.format("%s [%s]", rootTitle, fileObj.getAbsolutePath());
 			}
 		}
 
@@ -147,7 +150,10 @@ class TreeNodes {
 					
 					else if (file.isFile()) {
 						
-						if (VDF_File.isVDFFile(file))
+						if (AppManifestNode.isAppManifest(file))
+							children.add(new AppManifestNode(this, file));
+						
+						else if (VDF_File.isVDFFile(file))
 							children.add(new VDF_File(this, file));
 						
 						else if (TextFile.isTextFile(file))
@@ -283,7 +289,7 @@ class TreeNodes {
 			}
 		}
 
-		static class AppManifestNode extends FileSystem.VDF_File {
+		static class AppManifestNode extends VDF_File {
 		
 			private static final String prefix = "appmanifest_";
 			private static final String suffix = ".acf";
@@ -306,7 +312,7 @@ class TreeNodes {
 			private final int id;
 			private final File file;
 		
-			AppManifestNode(AppManifestsRoot parent, File file) {
+			AppManifestNode(TreeNode parent, File file) {
 				super(parent, file, TreeIcons.AppManifest);
 				this.file = file;
 				id = getAppIDFromFile(file);

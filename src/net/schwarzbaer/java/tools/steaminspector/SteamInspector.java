@@ -11,6 +11,7 @@ import java.awt.event.MouseEvent;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.Locale;
 import java.util.Vector;
 import java.util.concurrent.ExecutionException;
 import java.util.function.BiFunction;
@@ -609,6 +610,7 @@ class SteamInspector {
 				this.textSource = textSource;
 				this.treeSource = treeSource;
 				this.isObsolete = false;
+				showMessage("ContentLoadWorker created");
 			}
 		
 			public void setObsolete(boolean isObsolete) {
@@ -628,47 +630,67 @@ class SteamInspector {
 			
 			@Override
 			protected List<PostponedTask> doInBackground() throws Exception {
+				showMessage("ContentLoadWorker.doInBackground started");
 				PostponedTask setPlainText=null, setParsedTree=null, setHexView=null;
 				byte[]   bytes    = bytesSource==null ? null : bytesSource.getContentAsBytes();        if (isObsolete) return null;
 				String   text     =  textSource==null ? null :  textSource.getContentAsText ();        if (isObsolete) return null;
 				TreeNode treeNode =  treeSource==null ? null :  treeSource.getContentAsTree ();        if (isObsolete) return null;
-				if (text    !=null) publish(setPlainText  = new PostponedTask(()->setPlainText (text    )));  if (isObsolete) return null;
-				if (treeNode!=null) publish(setParsedTree = new PostponedTask(()->setParsedTree(treeNode)));  if (isObsolete) return null;
-				if (bytes   !=null) publish(setHexView    = new PostponedTask(()->setHexTable  (bytes   )));  if (isObsolete) return null;
+				if (text    !=null) publish(setPlainText  = new PostponedTask("setPlainText ",()->setPlainText (text    )));  if (isObsolete) return null;
+				if (treeNode!=null) publish(setParsedTree = new PostponedTask("setParsedTree",()->setParsedTree(treeNode)));  if (isObsolete) return null;
+				if (bytes   !=null) publish(setHexView    = new PostponedTask("setHexTable  ",()->setHexTable  (bytes   )));  if (isObsolete) return null;
+				showMessage("ContentLoadWorker.doInBackground finished");
 				return Arrays.asList(setParsedTree,setPlainText,setHexView);
 			}
 			@Override
 			protected void process(List<PostponedTask> tasks) {
-				if (tasks==null) return;
-				for (PostponedTask task:tasks)
-					if (task!=null) task.execute();
+				processTasks(tasks,"process");
 			}
-		
 			@Override
 			protected void done() {
 				try {
-					process(get());
+					processTasks(get(),"done");
 				} catch (InterruptedException | ExecutionException e) {
 					e.printStackTrace();
 				}
+			}
+			private void processTasks(List<PostponedTask> tasks, String comment) {
+				if (tasks==null) return;
+				for (PostponedTask task:tasks)
+					if (task!=null) task.execute(comment);
 			}
 		}
 
 		private static class PostponedTask {
 			
 			private boolean isSolved;
-			private Runnable task;
+			private final Runnable task;
+			private final String label;
 			
-			PostponedTask(Runnable task) {
+			PostponedTask(String label, Runnable task) {
+				this.label = label;
 				this.task = task;
 				this.isSolved = false;
+				showMessage("PostponedTask[%s] created", this.label);
 			}
 			
+			@SuppressWarnings("unused")
 			void execute() {
+				execute(null);
+			}
+			void execute(String comment) {
 				if (isSolved) return;
+				showMessage("PostponedTask[%s] started %s", this.label, comment==null ? "" : " ("+comment+")");
 				task.run();
 				isSolved = true;
+				showMessage("PostponedTask[%s] finished%s", this.label, comment==null ? "" : " ("+comment+")");
 			}
+		}
+		
+		private static void showMessage(String format, Object... args) {
+			Thread currentThread = Thread.currentThread();
+			int threadHash = currentThread==null ? 0 : currentThread.hashCode();
+			System.out.printf("[%016X,@%08X] %s%n", System.currentTimeMillis(), threadHash, String.format(Locale.ENGLISH, format, args));
+			
 		}
 	}
 	
