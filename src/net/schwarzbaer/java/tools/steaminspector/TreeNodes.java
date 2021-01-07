@@ -1,5 +1,7 @@
 package net.schwarzbaer.java.tools.steaminspector;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
@@ -11,6 +13,7 @@ import java.util.Comparator;
 import java.util.Locale;
 import java.util.Vector;
 
+import javax.imageio.ImageIO;
 import javax.swing.Icon;
 import javax.swing.JFileChooser;
 import javax.swing.tree.TreeNode;
@@ -18,15 +21,19 @@ import javax.swing.tree.TreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BytesContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextContentSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeIcons;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.ParseException;
 
 class TreeNodes {
 	
-	private static final File FOLDER_TEST_FILES             = new File("./test");
-	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS = new File("c:\\__Games\\SteamLibrary\\steamapps\\");
-	private static final File FOLDER_STEAM_USERDATA         = new File("c:\\Program Files (x86)\\Steam\\userdata");
+	private static final File FOLDER_TEST_FILES                  = new File("./test");
+	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS      = new File("c:\\__Games\\SteamLibrary\\steamapps\\");
+	private static final File FOLDER_STEAM_USERDATA              = new File("c:\\Program Files (x86)\\Steam\\userdata");
+	private static final File FOLDER_STEAM_APPCACHE              = new File("C:\\Program Files (x86)\\Steam\\appcache");
+	private static final File FOLDER_STEAM_APPCACHE_LIBRARYCACHE = new File("C:\\Program Files (x86)\\Steam\\appcache\\librarycache");
+	private static final File FOLDER_STEAM_STEAM_GAMES           = new File("C:\\Program Files (x86)\\Steam\\steam\\games");
 	// C:\Program Files (x86)\Steam\appcache\librarycache
 	//        425580_icon.jpg 
 	//        425580_header.jpg 
@@ -46,7 +53,7 @@ class TreeNodes {
 	}
 	
 	static class FileSystem {
-
+		
 		static class Root extends BaseTreeNode<TreeNode> {
 		
 			Root() { super(null, "FolderStructure.Root", true, false); }
@@ -55,12 +62,19 @@ class TreeNodes {
 			protected Vector<TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				
-				if (FOLDER_STEAMLIBRARY_STEAMAPPS.isDirectory())
+				if (FOLDER_STEAMLIBRARY_STEAMAPPS.isDirectory()) {
 					children.add(new AppManifestsRoot(this,FOLDER_STEAMLIBRARY_STEAMAPPS));
-				if (FOLDER_STEAMLIBRARY_STEAMAPPS.isDirectory())
-					children.add(new FolderRoot(this,"AppManifests Folder",FOLDER_STEAMLIBRARY_STEAMAPPS));
+					children.add(new FolderRoot(this,"AppManifests (as Folder)",FOLDER_STEAMLIBRARY_STEAMAPPS));
+				}
 				if (FOLDER_STEAM_USERDATA.isDirectory())
-					children.add(new FolderRoot(this,"UserData Folder",FOLDER_STEAM_USERDATA));
+					children.add(new FolderRoot(this,"UserData (as Folder)",FOLDER_STEAM_USERDATA));
+				if (FOLDER_STEAM_APPCACHE.isDirectory())
+					children.add(new FolderRoot(this,"AppCache (as Folder)",FOLDER_STEAM_APPCACHE));
+				if (FOLDER_STEAM_APPCACHE_LIBRARYCACHE.isDirectory()) {
+					children.add(new FolderRoot(this,"LibraryCache (as Folder)",FOLDER_STEAM_APPCACHE_LIBRARYCACHE));
+				}
+				if (FOLDER_STEAM_STEAM_GAMES.isDirectory())
+					children.add(new FolderRoot(this,"Game Icons (as Folder)",FOLDER_STEAM_STEAM_GAMES));
 				if (FOLDER_TEST_FILES.isDirectory())
 					children.add(new FolderRoot(this,"Test Files",FOLDER_TEST_FILES));
 				
@@ -115,7 +129,7 @@ class TreeNodes {
 		}
 
 		static class FolderNode extends FileSystemNode {
-		
+			
 			FolderNode(TreeNode parent, File folder) {
 				this(parent, folder, TreeIcons.Folder);
 			}
@@ -150,15 +164,18 @@ class TreeNodes {
 					
 					else if (file.isFile()) {
 						
-						if (AppManifestNode.isAppManifest(file))
-							children.add(new AppManifestNode(this, file));
+						if (TextFile.isTextFile(file))
+							children.add(new TextFile(this, file));
 						
 						else if (VDF_File.isVDFFile(file))
 							children.add(new VDF_File(this, file));
 						
-						else if (TextFile.isTextFile(file))
-							children.add(new TextFile(this, file));
+						else if (AppManifestNode.isAppManifest(file))
+							children.add(new AppManifestNode(this, file));
 						
+						else if (ImageFile.isImageFile(file))
+							children.add(new ImageFile(this, file));
+							
 						else
 							children.add(new FileNode(this, file));
 					}
@@ -193,6 +210,13 @@ class TreeNodes {
 			static Icon getIconForFile(String filename) {
 				return new JFileChooser().getIcon(new File(filename));
 			}
+			static boolean fileNameEndsWith(File file, String... suffixes) {
+				String name = file.getName().toLowerCase();
+				for (String suffix:suffixes)
+					if (name.endsWith(suffix))
+						return true;
+				return false;
+			}
 
 			@Override
 			public String toString() {
@@ -221,6 +245,35 @@ class TreeNodes {
 			}
 		}
 
+		static class ImageFile extends FileNode implements ImageContentSource {
+			
+			private BufferedImage imageContent;
+
+			ImageFile(TreeNode parent, File file) {
+				super(parent, file, TreeIcons.ImageFile);
+				imageContent = null;
+			}
+			
+			static boolean isImageFile(File file) {
+				return fileNameEndsWith(file,".jpg",".jpeg",".png",".bmp");
+			}
+
+			@Override ContentType getContentType() {
+				return ContentType.Image;
+			}
+
+			@Override
+			public BufferedImage getContentAsImage() {
+				if (imageContent!=null) return imageContent;
+				byte[] bytes = getContentAsBytes();
+				if (bytes==null) return null;
+				try (ByteArrayInputStream byteStream = new ByteArrayInputStream(bytes)) {
+					imageContent = ImageIO.read(byteStream);
+				} catch (IOException e) { e.printStackTrace(); }
+				return imageContent;
+			}
+		}
+
 		static class TextFile extends FileNode implements ExtendedTextContentSource {
 			
 			protected final Charset charset;
@@ -237,8 +290,7 @@ class TreeNodes {
 			}
 
 			static boolean isTextFile(File file) {
-				String name = file.getName();
-				return name.endsWith(".json");
+				return fileNameEndsWith(file,".json");
 			}
 		
 			@Override ContentType getContentType() {
@@ -266,8 +318,7 @@ class TreeNodes {
 			}
 
 			static boolean isVDFFile(File file) {
-				String name = file.getName();
-				return name.endsWith(".vdf");
+				return fileNameEndsWith(file,".vdf");
 			}
 			
 			@Override ContentType getContentType() {
@@ -290,7 +341,7 @@ class TreeNodes {
 		}
 
 		static class AppManifestNode extends VDF_File {
-		
+			
 			private static final String prefix = "appmanifest_";
 			private static final String suffix = ".acf";
 			

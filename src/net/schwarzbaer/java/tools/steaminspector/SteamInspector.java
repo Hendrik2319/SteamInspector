@@ -8,6 +8,7 @@ import java.awt.GridLayout;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.List;
@@ -44,6 +45,7 @@ import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 
 import net.schwarzbaer.gui.IconSource;
+import net.schwarzbaer.gui.ImageView;
 import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode.ContentType;
@@ -52,7 +54,7 @@ import net.schwarzbaer.system.ClipboardTools;
 
 class SteamInspector {
 
-	enum TreeIcons { GeneralFile, TextFile, VDFFile, AppManifest, Folder, RootFolder }
+	enum TreeIcons { GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, Folder, RootFolder }
 	static CachedIcons<TreeIcons> TreeIconsIS;
 	
 	public static void main(String[] args) {
@@ -66,13 +68,24 @@ class SteamInspector {
 	
 	private StandardMainWindow mainWindow = null;
 	private JTree tree = null;
-	private ExtendedTextOutput hexTableOutput = null;
-	private ExtendedTextOutput plainTextOutput = null;
-	private ExtendedTextOutput extendedTextOutput = null;
-	private ExtendedTextOutput parsedTextOutput = null;
-	private OutputDummy outputDummy = null;
-	private FileContentOutput lastFileContentOutput = null;
 	private JPanel fileContentPanel = null;
+	private final ExtendedTextOutput hexTableOutput;
+	private final ExtendedTextOutput plainTextOutput;
+	private final ExtendedTextOutput extendedTextOutput;
+	private final ExtendedTextOutput parsedTextOutput;
+	private final ImageOutput imageOutput;
+	private final OutputDummy outputDummy;
+	private FileContentOutput lastFileContentOutput;
+	
+	SteamInspector() {
+		hexTableOutput     = new ExtendedTextOutput(BaseTreeNode.ContentType.Bytes);
+		plainTextOutput    = new ExtendedTextOutput(BaseTreeNode.ContentType.PlainText);
+		extendedTextOutput = new ExtendedTextOutput(BaseTreeNode.ContentType.ExtendedText);
+		parsedTextOutput   = new ExtendedTextOutput(BaseTreeNode.ContentType.ParsedText);
+		imageOutput = new ImageOutput();
+		outputDummy = new OutputDummy();
+		lastFileContentOutput = outputDummy;
+	}
 	
 	private void createGUI() {
 		
@@ -101,14 +114,6 @@ class SteamInspector {
 		treePanel2.setBorder(BorderFactory.createTitledBorder("Found Data"));
 		treePanel2.add(optionPanel, BorderLayout.NORTH);
 		treePanel2.add(treePanel, BorderLayout.CENTER);
-		
-		hexTableOutput     = new ExtendedTextOutput(BaseTreeNode.ContentType.Bytes);
-		plainTextOutput    = new ExtendedTextOutput(BaseTreeNode.ContentType.PlainText);
-		extendedTextOutput = new ExtendedTextOutput(BaseTreeNode.ContentType.ExtendedText);
-		parsedTextOutput   = new ExtendedTextOutput(BaseTreeNode.ContentType.ParsedText);
-		outputDummy = new OutputDummy();
-		
-		lastFileContentOutput = outputDummy;
 		
 		fileContentPanel = new JPanel(new BorderLayout(3,3));
 		fileContentPanel.setBorder(BorderFactory.createTitledBorder("File Content"));
@@ -164,6 +169,15 @@ class SteamInspector {
 					} else
 						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
 					break;
+					
+				case Image:
+					if (baseTreeNode instanceof ImageContentSource) {
+						imageOutput.setSource((ImageContentSource) baseTreeNode);
+						changeFileContentOutput(imageOutput);
+						hideOutput = false;
+					} else
+						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
+					break;
 				}
 		}
 		if (hideOutput)
@@ -203,6 +217,23 @@ class SteamInspector {
 		comp.setEnabled(enabled);
 		if (al!=null) comp.addActionListener(al);
 		return comp;
+	}
+	
+	private static final boolean CHECK_THREADING = true;
+	private static Long lastTimeMillis = null;
+	private static void showMessageFromThread(String format, Object... args) {
+		if (CHECK_THREADING) {
+			Thread currentThread = Thread.currentThread();
+			int threadHash = currentThread==null ? 0 : currentThread.hashCode();
+			long currentTimeMillis = System.currentTimeMillis();
+			String sinceLastCall = "";
+			if (lastTimeMillis!=null) {
+				long x = currentTimeMillis - lastTimeMillis;
+				sinceLastCall = (x>0?"+":"")+x+"ms";
+			}
+			lastTimeMillis = currentTimeMillis;
+			System.out.printf("[%10s,%016X,@%08X] %s%n", sinceLastCall, currentTimeMillis, threadHash, String.format(Locale.ENGLISH, format, args));
+		}
 	}
 
 	static class TreeContextMenues {
@@ -328,6 +359,7 @@ class SteamInspector {
 		private final JButton nextPageBtn2;
 		private int page = 0;
 		private byte[] bytes = null;
+		private HexTableFormatter hexTableFormatter = null;
 
 		HexTableOutput() {
 			JPanel upperButtonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
@@ -346,12 +378,7 @@ class SteamInspector {
 
 		private void switchPage(int inc) {
 			page += inc;
-			
-			setText(toHexTable(bytes, page));
-			setScrollPos(inc>=0 ? 0 : 1);
-			loadScrollPos();
-			
-			enableButtons();
+			setPage();
 		}
 
 		private void enableButtons() {
@@ -363,43 +390,179 @@ class SteamInspector {
 
 		void setHexTableOutput(byte[] bytes) {
 			this.bytes = bytes;
-			setText(toHexTable(this.bytes, page=0));
-			setScrollPos(0);
-			loadScrollPos();
-			enableButtons();
+			this.page = 0;
+			setPage();
 		}
 
-		static String toHexTable(byte[] bytes, int page) {
-			String text = "";
+		private void setPage() {
+			if (hexTableFormatter!=null && !hexTableFormatter.isCancelled() && !hexTableFormatter.isDone() && !hexTableFormatter.isObsolete()) {
+				hexTableFormatter.setObsolete(true);
+				hexTableFormatter.cancel(true);
+			}
+			setText("prepare page "+page+" ...");
+			hexTableFormatter = new HexTableFormatter(bytes, page, hexTable->{
+				showMessageFromThread("HexTableOutput.setPage result task started  (page:%d, chars:%d)", this.page, hexTable.length());
+				setText(hexTable);
+				showMessageFromThread("HexTableOutput.setPage setText finished     (page:%d, chars:%d)", this.page, hexTable.length());
+				setScrollPos(0);
+				loadScrollPos();
+				enableButtons();
+				showMessageFromThread("HexTableOutput.setPage result task finished (page:%d, chars:%d)", this.page, hexTable.length());
+			});
+			hexTableFormatter.execute();
+		}
+
+		private static class HexTableFormatter extends SwingWorker<String, String> {
 			
-			if (bytes==null)
-				text = "Can't read content";
+			private boolean isObsolete;
+			private byte[] bytes;
+			private int page;
+			private Consumer<String> setText;
 			
-			else
-				for (int lineStart=page*PAGE_SIZE; lineStart<(page+1)*PAGE_SIZE && lineStart<bytes.length; lineStart+=16) {
-					String hex = "";
-					String plain = "";
-					for (int pos=0; pos<16; pos++) {
-						if (pos==8)
-							hex += " |";
-						if (lineStart+pos<bytes.length) {
-							byte b = bytes[lineStart+pos];
-							hex += String.format(" %02X", b);
-							char ch = (char) b;
-							if (ch=='\t' || ch=='\n' || ch=='\r') ch='.';
-							plain += ch;
-						} else {
-							hex += " --";
-							plain += ' ';
-						}
-					}
-					
-					text += String.format("%08X: %s  |  %s%n", lineStart, hex, plain);
+			HexTableFormatter(byte[] bytes, int page, Consumer<String> setText) {
+				this.bytes = bytes;
+				this.page = page;
+				this.setText = setText;
+				this.isObsolete = false;
+				showMessageFromThread("HexTableFormatter created (bytes:%d, page:%d)", this.bytes.length, this.page);
+			}
+			
+			boolean isObsolete() { return isObsolete; }
+			private void setObsolete(boolean isObsolete) { this.isObsolete = isObsolete; }
+			
+			@Override
+			protected String doInBackground() throws Exception {
+				showMessageFromThread("HexTableFormatter.doInBackground started  (page:%d, bytes:%d)", this.page, this.bytes.length);
+				String hexTable = toHexTable(bytes, page);
+				showMessageFromThread("HexTableFormatter.doInBackground finished (page:%d, chars:%d)%s", this.page, hexTable.length(), isObsolete?" isObsolete":"");
+				return isObsolete ? null : hexTable;
+			}
+
+			@Override
+			protected void done() {
+				if (isObsolete || isCancelled()) {
+					showMessageFromThread("HexTableFormatter.done skipped (%s%s )", isObsolete?" isObsolete":"", isCancelled()?" isCancelled":"");
+					return;
 				}
+				showMessageFromThread("HexTableFormatter.done started (page:%d)", this.page);
+				String hexTable = null;
+				try {
+					hexTable = get();
+				} catch (InterruptedException | ExecutionException e) {
+					e.printStackTrace();
+					showMessageFromThread("HexTableFormatter.done Exception: %s", e.getMessage());
+				}
+				if (!isObsolete && hexTable!=null) {
+					setText.accept(hexTable);
+					showMessageFromThread("HexTableFormatter.done result was send (page:%d, chars:%d)", this.page, hexTable.length());
+				}
+				showMessageFromThread("HexTableFormatter.done finished (page:%d)", this.page);
+			}
+
+			private static String toHexTable(byte[] bytes, int page) {
+				String text = "";
+				
+				if (bytes==null)
+					text = "Can't read content";
+				
+				else
+					for (int lineStart=page*PAGE_SIZE; lineStart<(page+1)*PAGE_SIZE && lineStart<bytes.length; lineStart+=16) {
+						String hex = "";
+						String plain = "";
+						for (int pos=0; pos<16; pos++) {
+							if (pos==8)
+								hex += " |";
+							if (lineStart+pos<bytes.length) {
+								byte b = bytes[lineStart+pos];
+								hex += String.format(" %02X", b);
+								char ch = (char) b;
+								if (ch=='\t' || ch=='\n' || ch=='\r') ch='.';
+								plain += ch;
+							} else {
+								hex += " --";
+								plain += ' ';
+							}
+						}
+						
+						text += String.format("%08X: %s  |  %s%n", lineStart, hex, plain);
+					}
+				
+				return text;
+			}
 			
-			return text;
+			
 		}
 
+	}
+
+	static class ImageOutput extends FileContentOutput {
+		
+		private final ImageView imageView;
+		private ImageLoaderThread runningImageLoaderThread;
+
+		ImageOutput() {
+			imageView = new ImageView(300,200);
+			imageView.reset();
+			runningImageLoaderThread = null;
+		}
+		
+		void setSource(ImageContentSource source) {
+			if (runningImageLoaderThread!=null) {
+				runningImageLoaderThread.setObsolete(true);
+				runningImageLoaderThread.cancel(true);
+			}
+			showLoadingMsg();
+			runningImageLoaderThread = new ImageLoaderThread(source);
+			runningImageLoaderThread.execute();
+		}
+
+		void setImage(BufferedImage image) {
+			imageView.setImage(image);
+			imageView.reset();
+		}
+
+		@Override Component getMainComponent() { return imageView; }
+		@Override void showLoadingMsg() {}
+		
+		private class ImageLoaderThread extends SwingWorker<BufferedImage, BufferedImage> {
+			
+			private final ImageContentSource source;
+			private boolean isObsolete;
+
+			public ImageLoaderThread(ImageContentSource source) {
+				this.source = source;
+				isObsolete = false;
+			}
+
+			public void setObsolete(boolean isObsolete) {
+				this.isObsolete = isObsolete;
+			}
+
+			@Override
+			protected BufferedImage doInBackground() throws Exception {
+				showMessageFromThread("ImageLoaderThread.doInBackground started");
+				BufferedImage image = source.getContentAsImage();
+				if (isObsolete || isCancelled()) return null;
+				showMessageFromThread("ImageLoaderThread.doInBackground finished");
+				return image;
+			}
+
+			@Override
+			protected void done() {
+				if (isObsolete || isCancelled()) {
+					showMessageFromThread("ImageLoaderThread.done skipped (%s%s )", isObsolete?" isObsolete":"", isCancelled()?" isCancelled":"");
+					return;
+				}
+				showMessageFromThread("ImageLoaderThread.done started");
+				try {
+					setImage(get());
+				} catch (InterruptedException | ExecutionException e) {
+					e.printStackTrace();
+					showMessageFromThread("ImageLoaderThread.done Exception: %s", e.getMessage());
+				}
+				showMessageFromThread("ImageLoaderThread.done finished");
+			}
+		}
 	}
 
 	static class TextOutput extends FileContentOutput {
@@ -610,7 +773,7 @@ class SteamInspector {
 				this.textSource = textSource;
 				this.treeSource = treeSource;
 				this.isObsolete = false;
-				showMessage("ContentLoadWorker created");
+				showMessageFromThread("ContentLoadWorker created");
 			}
 		
 			public void setObsolete(boolean isObsolete) {
@@ -618,19 +781,26 @@ class SteamInspector {
 			}
 			
 			private void setHexTable(byte[] bytes) {
+				showMessageFromThread("ContentLoadWorker.setHexTable started (bytes:%d)", bytes.length);
 				hexView.setHexTableOutput(bytes);
+				showMessageFromThread("ContentLoadWorker.setHexTable finished");
 			}
 			private void setPlainText(String text) {
+				showMessageFromThread("ContentLoadWorker.setPlainText started (chars:%d)", text.length());
 				plainText.setText(text);
+				showMessageFromThread("ContentLoadWorker.setPlainText.setText finished");
 				plainText.loadScrollPos();
+				showMessageFromThread("ContentLoadWorker.setPlainText finished");
 			}
 			private void setParsedTree(TreeNode root) {
+				showMessageFromThread("ContentLoadWorker.setParsedTree started");
 				parsedTree.setRoot(root);
+				showMessageFromThread("ContentLoadWorker.setParsedTree finished");
 			}
 			
 			@Override
 			protected List<PostponedTask> doInBackground() throws Exception {
-				showMessage("ContentLoadWorker.doInBackground started");
+				showMessageFromThread("ContentLoadWorker.doInBackground started");
 				PostponedTask setPlainText=null, setParsedTree=null, setHexView=null;
 				byte[]   bytes    = bytesSource==null ? null : bytesSource.getContentAsBytes();        if (isObsolete) return null;
 				String   text     =  textSource==null ? null :  textSource.getContentAsText ();        if (isObsolete) return null;
@@ -638,20 +808,33 @@ class SteamInspector {
 				if (text    !=null) publish(setPlainText  = new PostponedTask("setPlainText ",()->setPlainText (text    )));  if (isObsolete) return null;
 				if (treeNode!=null) publish(setParsedTree = new PostponedTask("setParsedTree",()->setParsedTree(treeNode)));  if (isObsolete) return null;
 				if (bytes   !=null) publish(setHexView    = new PostponedTask("setHexTable  ",()->setHexTable  (bytes   )));  if (isObsolete) return null;
-				showMessage("ContentLoadWorker.doInBackground finished");
+				showMessageFromThread("ContentLoadWorker.doInBackground finished");
 				return Arrays.asList(setParsedTree,setPlainText,setHexView);
 			}
 			@Override
 			protected void process(List<PostponedTask> tasks) {
+				if (isObsolete || isCancelled()) {
+					showMessageFromThread("ContentLoadWorker.process skipped (%s%s )", isObsolete?" isObsolete":"", isCancelled()?" isCancelled":"");
+					return;
+				}
+				showMessageFromThread("ContentLoadWorker.process started");
 				processTasks(tasks,"process");
+				showMessageFromThread("ContentLoadWorker.process finished");
 			}
 			@Override
 			protected void done() {
+				if (isObsolete || isCancelled()) {
+					showMessageFromThread("ContentLoadWorker.done skipped (%s%s )", isObsolete?" isObsolete":"", isCancelled()?" isCancelled":"");
+					return;
+				}
+				showMessageFromThread("ContentLoadWorker.done started");
 				try {
 					processTasks(get(),"done");
 				} catch (InterruptedException | ExecutionException e) {
 					e.printStackTrace();
+					showMessageFromThread("ContentLoadWorker.done Exception: %s", e.getMessage());
 				}
+				showMessageFromThread("ContentLoadWorker.done finished");
 			}
 			private void processTasks(List<PostponedTask> tasks, String comment) {
 				if (tasks==null) return;
@@ -670,7 +853,7 @@ class SteamInspector {
 				this.label = label;
 				this.task = task;
 				this.isSolved = false;
-				showMessage("PostponedTask[%s] created", this.label);
+				showMessageFromThread("PostponedTask[%s] created", this.label);
 			}
 			
 			@SuppressWarnings("unused")
@@ -679,23 +862,20 @@ class SteamInspector {
 			}
 			void execute(String comment) {
 				if (isSolved) return;
-				showMessage("PostponedTask[%s] started %s", this.label, comment==null ? "" : " ("+comment+")");
+				showMessageFromThread("PostponedTask[%s] started %s", this.label, comment==null ? "" : " ("+comment+")");
 				task.run();
 				isSolved = true;
-				showMessage("PostponedTask[%s] finished%s", this.label, comment==null ? "" : " ("+comment+")");
+				showMessageFromThread("PostponedTask[%s] finished%s", this.label, comment==null ? "" : " ("+comment+")");
 			}
-		}
-		
-		private static void showMessage(String format, Object... args) {
-			Thread currentThread = Thread.currentThread();
-			int threadHash = currentThread==null ? 0 : currentThread.hashCode();
-			System.out.printf("[%016X,@%08X] %s%n", System.currentTimeMillis(), threadHash, String.format(Locale.ENGLISH, format, args));
-			
 		}
 	}
 	
 	interface BytesContentSource {
 		byte[] getContentAsBytes();
+	}
+	
+	interface ImageContentSource {
+		BufferedImage getContentAsImage();
 	}
 	
 	interface TextContentSource {
@@ -763,7 +943,7 @@ class SteamInspector {
 
 	static abstract class BaseTreeNode<NodeType extends TreeNode> implements TreeNode {
 		
-		enum ContentType { PlainText, Bytes, ExtendedText, ParsedText, }
+		enum ContentType { PlainText, Bytes, ExtendedText, ParsedText, Image, }
 		
 		protected final TreeNode parent;
 		protected final String title;
