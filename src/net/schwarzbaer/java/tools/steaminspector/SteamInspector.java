@@ -1009,6 +1009,9 @@ class SteamInspector {
 
 			private BiFunction<DummyTextNode, Integer, DummyTextNode> createChild;
 
+			protected DummyTextNode(TreeNode parent, String title) {
+				this(parent, title, null);
+			}
 			protected DummyTextNode(TreeNode parent, String title, BiFunction<DummyTextNode,Integer,DummyTextNode> createChild) {
 				super(parent, title, createChild!=null, createChild==null);
 				this.createChild = createChild;

@@ -9,9 +9,14 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Vector;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import javax.imageio.ImageIO;
 import javax.swing.Icon;
@@ -29,8 +34,8 @@ import net.schwarzbaer.java.tools.steaminspector.VDFParser.ParseException;
 class TreeNodes {
 	
 	private static final File FOLDER_TEST_FILES                  = new File("./test");
-	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS      = new File("c:\\__Games\\SteamLibrary\\steamapps\\");
-	private static final File FOLDER_STEAM_USERDATA              = new File("c:\\Program Files (x86)\\Steam\\userdata");
+	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS      = new File("C:\\__Games\\SteamLibrary\\steamapps\\");
+	private static final File FOLDER_STEAM_USERDATA              = new File("C:\\Program Files (x86)\\Steam\\userdata");
 	private static final File FOLDER_STEAM_APPCACHE              = new File("C:\\Program Files (x86)\\Steam\\appcache");
 	private static final File FOLDER_STEAM_APPCACHE_LIBRARYCACHE = new File("C:\\Program Files (x86)\\Steam\\appcache\\librarycache");
 	private static final File FOLDER_STEAM_STEAM_GAMES           = new File("C:\\Program Files (x86)\\Steam\\steam\\games");
@@ -50,6 +55,33 @@ class TreeNodes {
 		if (length/1024/1024     <1100) return String.format(Locale.ENGLISH, "%1.1f MB", length/1024f/1024f);
 		if (length/1024/1024/1024<1100) return String.format(Locale.ENGLISH, "%1.1f GB", length/1024f/1024f/1024f);
 		return "["+length+"]";
+	}
+	
+	static class HashMatrix<KeyType1,KeyType2,ValueType> {
+		
+		private final HashMap<KeyType1,HashMap<KeyType2,ValueType>> matrix;
+		private final HashSet<KeyType1> keySet1;
+		private final HashSet<KeyType2> keySet2;
+		
+		HashMatrix() {
+			matrix = new HashMap<>();
+			keySet1 = new HashSet<>();
+			keySet2 = new HashSet<>();
+		}
+		
+		void put(KeyType1 key1, KeyType2 key2, ValueType value) {
+			HashMap<KeyType2, ValueType> map = matrix.get(key1);
+			if (map==null) matrix.put(key1, map = new HashMap<>());
+			map.put(key2, value);
+			keySet1.add(key1);
+			keySet2.add(key2);
+		}
+		
+		ValueType get(KeyType1 key1, KeyType2 key2) {
+			HashMap<KeyType2, ValueType> map = matrix.get(key1);
+			if (map==null) return null;
+			return map.get(key2);
+		}
 	}
 	
 	static class FileSystem {
@@ -72,6 +104,7 @@ class TreeNodes {
 					children.add(new FolderRoot(this,"AppCache (as Folder)",FOLDER_STEAM_APPCACHE));
 				if (FOLDER_STEAM_APPCACHE_LIBRARYCACHE.isDirectory()) {
 					children.add(new FolderRoot(this,"LibraryCache (as Folder)",FOLDER_STEAM_APPCACHE_LIBRARYCACHE));
+					children.add(new LibraryCacheRoot(this,FOLDER_STEAM_APPCACHE_LIBRARYCACHE));
 				}
 				if (FOLDER_STEAM_STEAM_GAMES.isDirectory())
 					children.add(new FolderRoot(this,"Game Icons (as Folder)",FOLDER_STEAM_STEAM_GAMES));
@@ -81,6 +114,134 @@ class TreeNodes {
 				return children;
 			}
 		
+		}
+
+		static class LibraryCacheRoot extends BaseTreeNode<TreeNode> {
+		
+			private File folder;
+
+			LibraryCacheRoot(TreeNode parent, File folder) {
+				super(parent, "LibraryCache", true, false, TreeIcons.RootFolder);
+				this.folder = folder;
+			}
+
+			@Override
+			public String toString() {
+				return String.format("%s [%s]", title, folder.getAbsolutePath());
+			}
+
+			@Override
+			protected Vector<? extends TreeNode> createChildren() {
+				
+				File[] files = FolderNode.getFilesAndFolders(folder);
+				
+				Vector<File> otherFiles = new Vector<>();
+				Vector<File> imageFiles = new Vector<>();
+				HashMatrix<Integer, String, File> appImages = new HashMatrix<>();
+				
+				for (File file:files) {
+					if (file.isDirectory()) {
+						otherFiles.add(file);
+						
+					} else if (ImageFile.isImageFile(file)) {
+						ImageFileName ifn = ImageFileName.parse(file.getName());
+						if (ifn==null || ifn.label==null || ifn.number==null)
+							imageFiles.add(file);
+						else
+							appImages.put(ifn.number, ifn.label, file);
+						
+					} else
+						otherFiles.add(file);
+				}
+				
+				Vector<TreeNode> children = new Vector<>();
+				
+				Vector<Integer> keySet1 = new Vector<>(appImages.keySet1); keySet1.sort(null);
+				Vector<String>  keySet2 = new Vector<>(appImages.keySet2); keySet2.sort(null);
+				
+				children.add(new ImageGroup1<Integer, String>(this, "Images (by Game)" ,  true, keySet1, keySet2, appImages::get));
+				children.add(new ImageGroup1<String, Integer>(this, "Images (by Label)", false, keySet2, keySet1, (k2,k1)->appImages.get(k1,k2)));
+				children.add(new FolderNode(this, "Other Images", imageFiles, TreeIcons.Folder));
+				children.add(new FolderNode(this, "Other Files", otherFiles, TreeIcons.Folder));
+				
+				return children;
+			}
+			
+			static class ImageFileName {
+
+				private final Integer number;
+				private final String label;
+
+				public ImageFileName(Integer number, String label) {
+					this.number = number;
+					this.label = label;
+				}
+
+				static ImageFileName parse(String name) {
+					// 1000410_library_600x900.jpg
+					int pos = name.lastIndexOf('.');
+					if (pos>=0) name = name.substring(0, pos);
+					pos = name.indexOf('_');
+					if (pos<0) return null;
+					String numberStr = name.substring(0, pos);
+					String labelStr  = name.substring(pos+1);
+					Integer number = FolderNode.parseNumber(numberStr);
+					if (number==null) return null;
+					return new ImageFileName(number,labelStr);
+				}
+				
+			}
+
+			static class ImageGroup1<KeyType1,KeyType2> extends BaseTreeNode<TreeNode> {
+
+				private final Collection<KeyType1> keys1;
+				private final Collection<KeyType2> keys2;
+				private final BiFunction<KeyType1, KeyType2, File> getFile;
+				private final boolean showNullValues;
+
+				protected ImageGroup1(TreeNode parent, String title, boolean showNullValues, Collection<KeyType1> keys1, Collection<KeyType2> keys2, BiFunction<KeyType1,KeyType2,File> getFile) {
+					super(parent, title, true, false, TreeIcons.Folder);
+					this.showNullValues = showNullValues;
+					this.keys1 = keys1;
+					this.keys2 = keys2;
+					this.getFile = getFile;
+				}
+
+				@Override
+				protected Vector<? extends TreeNode> createChildren() {
+					Vector<TreeNode> children = new Vector<>();
+					for (KeyType1 k1:keys1)
+						children.add(new ImageGroup2<KeyType2>(this, k1.toString(), showNullValues, TreeIcons.Folder, keys2, k2->getFile.apply(k1,k2)));
+					return children;
+				}
+			}
+
+			static class ImageGroup2<KeyType> extends BaseTreeNode<TreeNode> {
+
+				private final Collection<KeyType> keys;
+				private final Function<KeyType, File> getFile;
+				private final boolean showNullValues;
+
+				protected ImageGroup2(TreeNode parent, String title, boolean showNullValues, TreeIcons icon, Collection<KeyType> keys, Function<KeyType,File> getFile) {
+					super(parent, title, true, false, icon);
+					this.showNullValues = showNullValues;
+					this.keys = keys;
+					this.getFile = getFile;
+				}
+
+				@Override
+				protected Vector<? extends TreeNode> createChildren() {
+					Vector<TreeNode> children = new Vector<>();
+					for (KeyType key:keys) {
+						File file = getFile.apply(key);
+						if (file!=null)
+							children.add(new ImageFile(this, file));
+						else if (showNullValues)
+							children.add(new BaseTreeNode.DummyTextNode(this,"no \""+key.toString()+"\""));
+					}
+					return children;
+				}
+			}
 		}
 
 		static class AppManifestsRoot extends FolderRoot {
@@ -118,36 +279,49 @@ class TreeNodes {
 			
 			protected final File fileObj;
 			
+			protected FileSystemNode(TreeNode parent, File file, String title, boolean allowsChildren, boolean isLeaf) {
+				this(parent, file, title, allowsChildren, isLeaf, null);
+			}
 			protected FileSystemNode(TreeNode parent, File file, String title, boolean allowsChildren, boolean isLeaf, TreeIcons icon) {
 				super(parent, title, allowsChildren, isLeaf, icon);
-				this.fileObj = file;
-			}
-			protected FileSystemNode(TreeNode parent, File file, String title, boolean allowsChildren, boolean isLeaf) {
-				super(parent, title, allowsChildren, isLeaf);
 				this.fileObj = file;
 			}
 		}
 
 		static class FolderNode extends FileSystemNode {
 			
+			private final Vector<File> files;
+
 			FolderNode(TreeNode parent, File folder) {
 				this(parent, folder, TreeIcons.Folder);
 			}
 			protected FolderNode(TreeNode parent, File folder, TreeIcons icon) {
 				super(parent, folder, folder.getName(), true, false, icon);
+				this.files = null;
+			}
+			FolderNode(TreeNode parent, String title, Vector<File> files, TreeIcons icon) {
+				super(parent, null, title, true, files.isEmpty(), icon);
+				this.files = files;
 			}
 		
 			@Override
 			protected Vector<? extends FileSystemNode> createChildren() {
-				Vector<FileSystemNode> children = new Vector<>();
-				
-				File[] files = fileObj.listFiles((FileFilter) file -> {
+				File[] files = this.files!=null ? this.files.toArray(new File[this.files.size()]) : getFilesAndFolders(fileObj);
+				sortFiles(files);
+				return createNodes(this,files);
+			}
+			
+			static File[] getFilesAndFolders(File folder) {
+				File[] files = folder.listFiles((FileFilter) file -> {
 					String name = file.getName();
 					if (file.isDirectory())
 						return !name.equals(".") && !name.equals("..");
 					return file.isFile();
 				});
-				
+				return files;
+			}
+			
+			static void sortFiles(File[] files) {
 				Arrays.sort(files, (f1,f2) -> {
 					String name1 = f1.getName();
 					String name2 = f2.getName();
@@ -157,39 +331,44 @@ class TreeNodes {
 					if (n1==null && n2==null) return name1.compareToIgnoreCase(name2);
 					return n1!=null ? -1 : +1;
 				});
-				
-				for (File file:files) {
-					if (file.isDirectory())
-						children.add(new FolderNode(this, file));
-					
-					else if (file.isFile()) {
-						
-						if (TextFile.isTextFile(file))
-							children.add(new TextFile(this, file));
-						
-						else if (VDF_File.isVDFFile(file))
-							children.add(new VDF_File(this, file));
-						
-						else if (AppManifestNode.isAppManifest(file))
-							children.add(new AppManifestNode(this, file));
-						
-						else if (ImageFile.isImageFile(file))
-							children.add(new ImageFile(this, file));
-							
-						else
-							children.add(new FileNode(this, file));
-					}
-				}
-				
-				return children;
 			}
-			private Integer parseNumber(String name) {
+			
+			static Integer parseNumber(String name) {
 				try {
 					int n = Integer.parseInt(name);
 					if (name.equals(Integer.toString(n))) return n;
 				}
 				catch (NumberFormatException e) {}
 				return null;
+			}
+			
+			static Vector<? extends FileSystemNode> createNodes(TreeNode parent, File[] files) {
+				Vector<FileSystemNode> children = new Vector<>();
+				
+				for (File file:files) {
+					if (file.isDirectory())
+						children.add(new FolderNode(parent, file));
+					
+					else if (file.isFile()) {
+						
+						if (TextFile.isTextFile(file))
+							children.add(new TextFile(parent, file));
+						
+						else if (VDF_File.isVDFFile(file))
+							children.add(new VDF_File(parent, file));
+						
+						else if (AppManifestNode.isAppManifest(file))
+							children.add(new AppManifestNode(parent, file));
+						
+						else if (ImageFile.isImageFile(file))
+							children.add(new ImageFile(parent, file));
+							
+						else
+							children.add(new FileNode(parent, file));
+					}
+				}
+				
+				return children;
 			}
 		}
 
@@ -269,7 +448,9 @@ class TreeNodes {
 				if (bytes==null) return null;
 				try (ByteArrayInputStream byteStream = new ByteArrayInputStream(bytes)) {
 					imageContent = ImageIO.read(byteStream);
-				} catch (IOException e) { e.printStackTrace(); }
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
 				return imageContent;
 			}
 		}
@@ -332,7 +513,8 @@ class TreeNodes {
 					try {
 						vdfData = VDFParser.parse(text);
 					} catch (ParseException e) {
-						e.printStackTrace();
+						System.err.printf("ParseException: %s", e.getMessage());
+						//e.printStackTrace();
 						return BaseTreeNode.DummyTextNode.createSingleTextLineTree("Parse Error");
 					}
 				}
