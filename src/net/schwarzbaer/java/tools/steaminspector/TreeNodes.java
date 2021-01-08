@@ -50,6 +50,10 @@ class TreeNodes {
 
 	static String getSize(File file) {
 		long length = file==null ? 0 : file.length();
+		return getSizeStr(length);
+	}
+
+	static String getSizeStr(long length) {
 		if (length               <1100) return String.format(Locale.ENGLISH, "%d B"    , length);
 		if (length/1024          <1100) return String.format(Locale.ENGLISH, "%1.1f kB", length/1024f);
 		if (length/1024/1024     <1100) return String.format(Locale.ENGLISH, "%1.1f MB", length/1024f/1024f);
@@ -513,7 +517,7 @@ class TreeNodes {
 					try {
 						vdfData = VDFParser.parse(text);
 					} catch (ParseException e) {
-						System.err.printf("ParseException: %s", e.getMessage());
+						System.err.printf("ParseException: %s%n", e.getMessage());
 						//e.printStackTrace();
 						return BaseTreeNode.DummyTextNode.createSingleTextLineTree("Parse Error");
 					}

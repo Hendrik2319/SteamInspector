@@ -25,6 +25,7 @@ import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JRadioButton;
@@ -131,41 +132,49 @@ class SteamInspector {
 		if (selectedNode instanceof BaseTreeNode) {
 			BaseTreeNode<?> baseTreeNode = (BaseTreeNode<?>) selectedNode;
 			BaseTreeNode.ContentType contentType = baseTreeNode.getContentType();
-			if (contentType!=null)
+			if (contentType!=null) {
 				switch (contentType) {
 				
 				case Bytes:
 					if (baseTreeNode instanceof BytesContentSource) {
-						hexTableOutput.setOutput((BytesContentSource) baseTreeNode);
-						changeFileContentOutput(hexTableOutput);
-						hideOutput = false;
+						if (!isTooLarge(baseTreeNode)) {
+							hexTableOutput.setSource((BytesContentSource) baseTreeNode);
+							changeFileContentOutput(hexTableOutput);
+							hideOutput = false;
+						}
 					} else
 						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
 					break;
 					
 				case PlainText:
 					if (baseTreeNode instanceof TextContentSource) {
-						plainTextOutput.setOutput((TextContentSource) baseTreeNode);
-						changeFileContentOutput(plainTextOutput);
-						hideOutput = false;
+						if (!isTooLarge(baseTreeNode)) {
+							plainTextOutput.setSource((TextContentSource) baseTreeNode);
+							changeFileContentOutput(plainTextOutput);
+							hideOutput = false;
+						}
 					} else
 						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
 					break;
 					
 				case ExtendedText:
 					if (baseTreeNode instanceof ExtendedTextContentSource) {
-						extendedTextOutput.setOutput((ExtendedTextContentSource) baseTreeNode);
-						changeFileContentOutput(extendedTextOutput);
-						hideOutput = false;
+						if (!isTooLarge(baseTreeNode)) {
+							extendedTextOutput.setSource((ExtendedTextContentSource) baseTreeNode);
+							changeFileContentOutput(extendedTextOutput);
+							hideOutput = false;
+						}
 					} else
 						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
 					break;
 				
 				case ParsedText:
 					if (baseTreeNode instanceof ParsedTextContentSource) {
-						parsedTextOutput.setOutput((ParsedTextContentSource) baseTreeNode);
-						changeFileContentOutput(parsedTextOutput);
-						hideOutput = false;
+						if (!isTooLarge(baseTreeNode)) {
+							parsedTextOutput.setSource((ParsedTextContentSource) baseTreeNode);
+							changeFileContentOutput(parsedTextOutput);
+							hideOutput = false;
+						}
 					} else
 						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
 					break;
@@ -179,9 +188,22 @@ class SteamInspector {
 						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
 					break;
 				}
+			}
 		}
 		if (hideOutput)
 			changeFileContentOutput(outputDummy);
+	}
+
+	private boolean isTooLarge(BaseTreeNode<?> baseTreeNode) {
+		if (baseTreeNode instanceof TreeNodes.FileSystem.FileSystemNode) {
+			TreeNodes.FileSystem.FileSystemNode fileNode = (TreeNodes.FileSystem.FileSystemNode) baseTreeNode;
+			long length;
+			if (fileNode.fileObj!=null && (length=fileNode.fileObj.length())>500000) {
+				int result = JOptionPane.showConfirmDialog(fileContentPanel, "The file has a size of "+TreeNodes.getSizeStr(length)+". Do you really want to view it?", "Large File", JOptionPane.YES_NO_CANCEL_OPTION);
+				return result!=JOptionPane.YES_OPTION;
+			}
+		}
+		return false;
 	}
 
 	private void changeFileContentOutput(FileContentOutput fco) {
@@ -351,6 +373,76 @@ class SteamInspector {
 		@Override void showLoadingMsg() {}
 	}
 
+	static class ImageOutput extends FileContentOutput {
+		
+		private final ImageView imageView;
+		private ImageLoaderThread runningImageLoaderThread;
+	
+		ImageOutput() {
+			imageView = new ImageView(300,200);
+			imageView.reset();
+			runningImageLoaderThread = null;
+		}
+		
+		void setSource(ImageContentSource source) {
+			if (runningImageLoaderThread!=null) {
+				runningImageLoaderThread.setObsolete(true);
+				runningImageLoaderThread.cancel(true);
+			}
+			showLoadingMsg();
+			runningImageLoaderThread = new ImageLoaderThread(source);
+			runningImageLoaderThread.execute();
+		}
+	
+		void setImage(BufferedImage image) {
+			imageView.setImage(image);
+			imageView.reset();
+		}
+	
+		@Override Component getMainComponent() { return imageView; }
+		@Override void showLoadingMsg() {}
+		
+		private class ImageLoaderThread extends SwingWorker<BufferedImage, BufferedImage> {
+			
+			private final ImageContentSource source;
+			private boolean isObsolete;
+	
+			public ImageLoaderThread(ImageContentSource source) {
+				this.source = source;
+				isObsolete = false;
+			}
+	
+			public void setObsolete(boolean isObsolete) {
+				this.isObsolete = isObsolete;
+			}
+	
+			@Override
+			protected BufferedImage doInBackground() throws Exception {
+				showMessageFromThread("ImageLoaderThread.doInBackground started");
+				BufferedImage image = source.getContentAsImage();
+				if (isObsolete || isCancelled()) return null;
+				showMessageFromThread("ImageLoaderThread.doInBackground finished");
+				return image;
+			}
+	
+			@Override
+			protected void done() {
+				if (isObsolete || isCancelled()) {
+					showMessageFromThread("ImageLoaderThread.done skipped (%s%s )", isObsolete?" isObsolete":"", isCancelled()?" isCancelled":"");
+					return;
+				}
+				showMessageFromThread("ImageLoaderThread.done started");
+				try {
+					setImage(get());
+				} catch (InterruptedException | ExecutionException e) {
+					e.printStackTrace();
+					showMessageFromThread("ImageLoaderThread.done Exception: %s", e.getMessage());
+				}
+				showMessageFromThread("ImageLoaderThread.done finished");
+			}
+		}
+	}
+
 	static class HexTableOutput extends TextOutput {
 		private final static int PAGE_SIZE = 0x10000;
 		private final JButton prevPageBtn1;
@@ -493,76 +585,6 @@ class SteamInspector {
 			
 		}
 
-	}
-
-	static class ImageOutput extends FileContentOutput {
-		
-		private final ImageView imageView;
-		private ImageLoaderThread runningImageLoaderThread;
-
-		ImageOutput() {
-			imageView = new ImageView(300,200);
-			imageView.reset();
-			runningImageLoaderThread = null;
-		}
-		
-		void setSource(ImageContentSource source) {
-			if (runningImageLoaderThread!=null) {
-				runningImageLoaderThread.setObsolete(true);
-				runningImageLoaderThread.cancel(true);
-			}
-			showLoadingMsg();
-			runningImageLoaderThread = new ImageLoaderThread(source);
-			runningImageLoaderThread.execute();
-		}
-
-		void setImage(BufferedImage image) {
-			imageView.setImage(image);
-			imageView.reset();
-		}
-
-		@Override Component getMainComponent() { return imageView; }
-		@Override void showLoadingMsg() {}
-		
-		private class ImageLoaderThread extends SwingWorker<BufferedImage, BufferedImage> {
-			
-			private final ImageContentSource source;
-			private boolean isObsolete;
-
-			public ImageLoaderThread(ImageContentSource source) {
-				this.source = source;
-				isObsolete = false;
-			}
-
-			public void setObsolete(boolean isObsolete) {
-				this.isObsolete = isObsolete;
-			}
-
-			@Override
-			protected BufferedImage doInBackground() throws Exception {
-				showMessageFromThread("ImageLoaderThread.doInBackground started");
-				BufferedImage image = source.getContentAsImage();
-				if (isObsolete || isCancelled()) return null;
-				showMessageFromThread("ImageLoaderThread.doInBackground finished");
-				return image;
-			}
-
-			@Override
-			protected void done() {
-				if (isObsolete || isCancelled()) {
-					showMessageFromThread("ImageLoaderThread.done skipped (%s%s )", isObsolete?" isObsolete":"", isCancelled()?" isCancelled":"");
-					return;
-				}
-				showMessageFromThread("ImageLoaderThread.done started");
-				try {
-					setImage(get());
-				} catch (InterruptedException | ExecutionException e) {
-					e.printStackTrace();
-					showMessageFromThread("ImageLoaderThread.done Exception: %s", e.getMessage());
-				}
-				showMessageFromThread("ImageLoaderThread.done finished");
-			}
-		}
 	}
 
 	static class TextOutput extends FileContentOutput {
@@ -719,23 +741,23 @@ class SteamInspector {
 			return mainComp;
 		}
 
-		void setOutput(BytesContentSource source) {
+		void setSource(BytesContentSource source) {
 			if (type!=ContentType.Bytes || hexView==null || plainText!=null || parsedTree!=null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 		}
 
-		void setOutput(TextContentSource source) {
+		void setSource(TextContentSource source) {
 			if (type!=ContentType.PlainText || hexView!=null || plainText==null || parsedTree!=null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 		}
 		
-		void setOutput(ExtendedTextContentSource source) {
+		void setSource(ExtendedTextContentSource source) {
 			if (type!=ContentType.ExtendedText || hexView==null || plainText==null || parsedTree!=null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 			setActiveTab(1);
 		}
 
-		void setOutput(ParsedTextContentSource source) {
+		void setSource(ParsedTextContentSource source) {
 			if (type!=ContentType.ParsedText || hexView==null || plainText==null || parsedTree==null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 			setActiveTab(2);
