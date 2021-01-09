@@ -23,15 +23,25 @@ import javax.swing.Icon;
 import javax.swing.JFileChooser;
 import javax.swing.tree.TreeNode;
 
+import net.schwarzbaer.gui.IconSource;
+import net.schwarzbaer.gui.IconSource.CachedIcons;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BytesContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedTextContentSource;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeIcons;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.ParseException;
 
 class TreeNodes {
+
+	enum TreeIcons { GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Folder, RootFolder }
+	static CachedIcons<TreeIcons> TreeIconsIS;
+	
+	enum JsonTreeIcons { Object, Array, String, Number, Boolean }
+	static CachedIcons<JsonTreeIcons> JsonTreeIconsIS;
 	
 	private static final File FOLDER_TEST_FILES                  = new File("./test");
 	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS      = new File("C:\\__Games\\SteamLibrary\\steamapps\\");
@@ -51,6 +61,11 @@ class TreeNodes {
 	static String getSize(File file) {
 		long length = file==null ? 0 : file.length();
 		return getSizeStr(length);
+	}
+	
+	static void loadIcons() {
+		TreeIconsIS     = IconSource.createCachedIcons(16, 16, "/images/TreeIcons.png"    , TreeIcons.values());
+		JsonTreeIconsIS = IconSource.createCachedIcons(16, 16, "/images/JsonTreeIcons.png", JsonTreeIcons.values());
 	}
 
 	static String getSizeStr(long length) {
@@ -147,7 +162,7 @@ class TreeNodes {
 					if (file.isDirectory()) {
 						otherFiles.add(file);
 						
-					} else if (ImageFile.isImageFile(file)) {
+					} else if (ImageFile.is(file)) {
 						ImageFileName ifn = ImageFileName.parse(file.getName());
 						if (ifn==null || ifn.label==null || ifn.number==null)
 							imageFiles.add(file);
@@ -258,7 +273,7 @@ class TreeNodes {
 			protected Vector<? extends AppManifestNode> createChildren() {
 				Vector<AppManifestNode> children = new Vector<>();
 				
-				File[] files = fileObj.listFiles((FileFilter) AppManifestNode::isAppManifest);
+				File[] files = fileObj.listFiles((FileFilter) AppManifestNode::is);
 				Arrays.sort(files,Comparator.comparing(AppManifestNode::getAppIDFromFile, Comparator.nullsLast(Comparator.naturalOrder())));
 				for (File file:files)
 					children.add(new AppManifestNode(this, file));
@@ -355,16 +370,19 @@ class TreeNodes {
 					
 					else if (file.isFile()) {
 						
-						if (TextFile.isTextFile(file))
+						if (TextFile.is(file))
 							children.add(new TextFile(parent, file));
 						
-						else if (VDF_File.isVDFFile(file))
+						else if (VDF_File.is(file))
 							children.add(new VDF_File(parent, file));
 						
-						else if (AppManifestNode.isAppManifest(file))
+						else if (JSON_File.is(file))
+							children.add(new JSON_File(parent, file));
+						
+						else if (AppManifestNode.is(file))
 							children.add(new AppManifestNode(parent, file));
 						
-						else if (ImageFile.isImageFile(file))
+						else if (ImageFile.is(file))
 							children.add(new ImageFile(parent, file));
 							
 						else
@@ -437,8 +455,8 @@ class TreeNodes {
 				imageContent = null;
 			}
 			
-			static boolean isImageFile(File file) {
-				return fileNameEndsWith(file,".jpg",".jpeg",".png",".bmp");
+			static boolean is(File file) {
+				return fileNameEndsWith(file,".jpg",".jpeg",".png",".bmp",".ico");
 			}
 
 			@Override ContentType getContentType() {
@@ -474,8 +492,8 @@ class TreeNodes {
 				this.textContent = null;
 			}
 
-			static boolean isTextFile(File file) {
-				return fileNameEndsWith(file,".json");
+			static boolean is(File file) {
+				return false;
 			}
 		
 			@Override ContentType getContentType() {
@@ -487,6 +505,117 @@ class TreeNodes {
 				byte[] bytes = getContentAsBytes();
 				if (bytes==null) return "Can't read content";
 				return textContent = charset!=null ? new String(bytes, charset) : new String(bytes);
+			}
+		}
+
+		static class JSON_File extends TextFile implements ParsedTextContentSource {
+			
+			private JSON_Parser.Result parseResult;
+
+			JSON_File(TreeNode parent, File file) {
+				this(parent, file, TreeIcons.JSONFile);
+			}
+			protected JSON_File(TreeNode parent, File file, TreeIcons icon) {
+				super(parent, file, icon, StandardCharsets.UTF_8);
+				parseResult = null;
+			}
+
+			static boolean is(File file) {
+				return fileNameEndsWith(file,".json");
+			}
+			
+			@Override ContentType getContentType() {
+				return ContentType.ParsedText;
+			}
+
+			@Override
+			public TreeRoot getContentAsTree() {
+				if (parseResult==null) {
+					String text = getContentAsText();
+					if (text==null) return null;
+					JSON_Parser parser = new JSON_Parser(text);
+					try {
+						parseResult = parser.parse_withParseException();
+					} catch (JSON_Parser.ParseException e) {
+						System.err.printf("ParseException: %s%n", e.getMessage());
+						//e.printStackTrace();
+						return BaseTreeNode.DummyTextNode.createSingleTextLineTree_("Parse Error: %s", e.getMessage());
+					}
+					if (parseResult==null)
+						// return null;
+						return BaseTreeNode.DummyTextNode.createSingleTextLineTree_("Parse Error: Parser returns <null>");
+				}
+				return JSON_TreeNode.create(parseResult);
+			}
+			
+			static class JSON_TreeNode<ValueType> extends SteamInspector.BaseTreeNode<JSON_TreeNode<?>> {
+
+				private final Vector<ValueType> children;
+				private final Function<ValueType, String> getName;
+				private final Function<ValueType, JSON_Data.Value> getValue;
+
+				private JSON_TreeNode(JSON_TreeNode<?> parent, String text, JsonTreeIcons icon, Vector<ValueType> children, Function<ValueType,String> getName, Function<ValueType,JSON_Data.Value> getValue) {
+					super(parent, text, children!=null, children==null || children.isEmpty(), icon==null ? null : JsonTreeIconsIS.getCachedIcon(icon));
+					this.children = children;
+					this.getName = getName;
+					this.getValue = getValue;
+				}
+				
+				@Override
+				protected Vector<? extends JSON_TreeNode<?>> createChildren() {
+					if (children==null) return null;
+					Vector<JSON_TreeNode<?>> childNodes = new Vector<>();
+					for (ValueType value:children) childNodes.add(create(this,getName.apply(value),getValue.apply(value)));
+					return childNodes;
+				}
+				
+				public static TreeRoot create(JSON_Parser.Result parseResult) {
+					if (parseResult.object!=null) return new TreeRoot(create(null,null,new JSON_Data.ObjectValue(parseResult.object)),true);
+					if (parseResult.array !=null) return new TreeRoot(create(null,null,new JSON_Data. ArrayValue(parseResult.array )),true);
+					return BaseTreeNode.DummyTextNode.createSingleTextLineTree_("Parse Error: Parser returns neither an JSON array nor an JSON object");
+				}
+				
+				private static JSON_TreeNode<?> create(JSON_TreeNode<?> parent, String name, JSON_Data.Value value) {
+					String title = getTitle(name,value);
+					JsonTreeIcons icon = getIcon(value.type);
+					switch (value.type) {
+					case Object: return new JSON_TreeNode<>(parent, title, icon, ((JSON_Data.ObjectValue)value).value, vt->vt.name, vt->vt.value);
+					case Array : return new JSON_TreeNode<>(parent, title, icon, ((JSON_Data.ArrayValue )value).value, vt->null, vt->vt);
+					default    : return new JSON_TreeNode<>(parent, title, icon, null, null, null);
+					}
+				}
+				
+				private static JsonTreeIcons getIcon(JSON_Data.Value.Type type) {
+					if (type==null) return null;
+					switch(type) {
+					case Object: return JsonTreeIcons.Object;
+					case Array : return JsonTreeIcons.Array;
+					case String: return JsonTreeIcons.String;
+					case Bool  : return JsonTreeIcons.Boolean;
+					case Null  : return null;
+					case Float : case Integer:
+						return JsonTreeIcons.Number;
+					}
+					return null;
+				}
+				
+				private static String getTitle(String name, JSON_Data.Value value) {
+					switch (value.type) {
+					case Object : return getTitle(name, "{", ((JSON_Data. ObjectValue) value).value.size(), "}");
+					case Array  : return getTitle(name, "[", ((JSON_Data.  ArrayValue) value).value.size(), "]");
+					case Bool   : return getTitle(name, "" , ((JSON_Data.   BoolValue) value).value, "");
+					case String : return getTitle(name, "" , ((JSON_Data. StringValue) value).value, "");
+					case Integer: return getTitle(name, "" , ((JSON_Data.IntegerValue) value).value, "");
+					case Float  : return getTitle(name, "" , ((JSON_Data.  FloatValue) value).value, "");
+					case Null   : return getTitle(name, "" , ((JSON_Data.   NullValue) value).value, "");
+					}
+					return null;
+				}
+				
+				private static String getTitle(String name, String openingBracket, Object value, String closingBracket) {
+					if (name==null || name.isEmpty()) return String.format("%s%s%s", openingBracket, value, closingBracket);
+					return String.format("%s : %s%s%s", name, openingBracket, value, closingBracket);
+				}
 			}
 		}
 
@@ -502,7 +631,7 @@ class TreeNodes {
 				vdfData = null;
 			}
 
-			static boolean isVDFFile(File file) {
+			static boolean is(File file) {
 				return fileNameEndsWith(file,".vdf");
 			}
 			
@@ -511,7 +640,7 @@ class TreeNodes {
 			}
 			
 			@Override
-			public TreeNode getContentAsTree() {
+			public TreeRoot getContentAsTree() {
 				if (vdfData==null) {
 					String text = getContentAsText();
 					try {
@@ -519,7 +648,7 @@ class TreeNodes {
 					} catch (ParseException e) {
 						System.err.printf("ParseException: %s%n", e.getMessage());
 						//e.printStackTrace();
-						return BaseTreeNode.DummyTextNode.createSingleTextLineTree("Parse Error");
+						return BaseTreeNode.DummyTextNode.createSingleTextLineTree_("Parse Error: %s", e.getMessage());
 					}
 				}
 				return vdfData==null ? null : vdfData.getRootTreeNode();
@@ -531,7 +660,7 @@ class TreeNodes {
 			private static final String prefix = "appmanifest_";
 			private static final String suffix = ".acf";
 			
-			static boolean isAppManifest(File file) {
+			static boolean is(File file) {
 				return getAppIDFromFile(file) != null;
 			}
 		

@@ -6,7 +6,7 @@ import java.io.StringReader;
 import java.util.Locale;
 import java.util.Vector;
 
-import javax.swing.tree.TreeNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
 
 class VDFParser {
 
@@ -211,6 +211,15 @@ class VDFParser {
 						}
 						if (ch<0) throw new ParseException(textIn.getLineNumber(), "Reading String Token: Reached End-Of-File before closing \" char.");
 					}
+					if (ch=='/') {
+						ch=textIn.read();
+						if (ch==0)   throw new ParseException(textIn.getLineNumber(), "Reading Token: Unexpected char at end of file: \"/\" [%d]", (int)'/');
+						if (ch!='/') throw new ParseException(textIn.getLineNumber(), "Reading Token: Unexpected chars: \"/%s\" [%d+%d]", (char)ch, (int)'/', ch);
+						while ( (ch=textIn.read())>=0 && ch!='\n') {
+						}
+						if (ch<0) break; // End-Of-File after line comment
+						continue;
+					}
 					throw new ParseException(textIn.getLineNumber(), "Reading Token: Unexpected char: \"%s\" [%d]", (char)ch, ch);
 				}
 			
@@ -254,8 +263,8 @@ class VDFParser {
 			rootPairs = new Vector<>();
 		}
 
-		TreeNode getRootTreeNode() {
-			return new VDFTreeNode(null, "VDF Root", rootPairs);
+		TreeRoot getRootTreeNode() {
+			return new TreeRoot(new VDFTreeNode(null, "VDF Root", rootPairs), false);
 		}
 
 		private void add(ValuePair valuePair) {

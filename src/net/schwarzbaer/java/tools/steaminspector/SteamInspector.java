@@ -45,24 +45,20 @@ import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 
-import net.schwarzbaer.gui.IconSource;
 import net.schwarzbaer.gui.ImageView;
-import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode.ContentType;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FileSystemNode;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.system.ClipboardTools;
 
 class SteamInspector {
-
-	enum TreeIcons { GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, Folder, RootFolder }
-	static CachedIcons<TreeIcons> TreeIconsIS;
 	
 	public static void main(String[] args) {
 		try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
 		catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {}
 		
-		TreeIconsIS = IconSource.createCachedIcons(16, 16, "/images/TreeIcons.png", TreeIcons.values());
+		TreeNodes.loadIcons();
 		
 		new SteamInspector().createGUI();
 	}
@@ -652,13 +648,14 @@ class SteamInspector {
 		@Override Component getMainComponent() {
 			return scrollPane;
 		}
-		void setRoot(TreeNode root) {
-			view.setModel(new DefaultTreeModel(root));
+		void setRoot(TreeRoot treeRoot) {
+			view.setModel(new DefaultTreeModel(treeRoot.node));
+			view.setRootVisible(treeRoot.isRootVisible);
 			for (int i=0; i<view.getRowCount(); i++)
 				view.expandRow(i);
 		}
 		@Override void showLoadingMsg() {
-			setRoot(BaseTreeNode.DummyTextNode.createSingleTextLineTree("load content ..."));
+			setRoot(BaseTreeNode.DummyTextNode.createSingleTextLineTree_("load content ..."));
 		}
 	}
 	
@@ -814,9 +811,9 @@ class SteamInspector {
 				plainText.loadScrollPos();
 				showMessageFromThread("ContentLoadWorker.setPlainText finished");
 			}
-			private void setParsedTree(TreeNode root) {
+			private void setParsedTree(TreeRoot treeRoot) {
 				showMessageFromThread("ContentLoadWorker.setParsedTree started");
-				parsedTree.setRoot(root);
+				parsedTree.setRoot(treeRoot);
 				showMessageFromThread("ContentLoadWorker.setParsedTree finished");
 			}
 			
@@ -826,7 +823,7 @@ class SteamInspector {
 				PostponedTask setPlainText=null, setParsedTree=null, setHexView=null;
 				byte[]   bytes    = bytesSource==null ? null : bytesSource.getContentAsBytes();        if (isObsolete) return null;
 				String   text     =  textSource==null ? null :  textSource.getContentAsText ();        if (isObsolete) return null;
-				TreeNode treeNode =  treeSource==null ? null :  treeSource.getContentAsTree ();        if (isObsolete) return null;
+				TreeRoot treeNode =  treeSource==null ? null :  treeSource.getContentAsTree ();        if (isObsolete) return null;
 				if (text    !=null) publish(setPlainText  = new PostponedTask("setPlainText ",()->setPlainText (text    )));  if (isObsolete) return null;
 				if (treeNode!=null) publish(setParsedTree = new PostponedTask("setParsedTree",()->setParsedTree(treeNode)));  if (isObsolete) return null;
 				if (bytes   !=null) publish(setHexView    = new PostponedTask("setHexTable  ",()->setHexTable  (bytes   )));  if (isObsolete) return null;
@@ -905,12 +902,21 @@ class SteamInspector {
 	}
 	
 	interface TreeContentSource {
-		TreeNode getContentAsTree();
+		TreeRoot getContentAsTree();
 	}
 	
 	interface ExtendedTextContentSource extends BytesContentSource, TextContentSource {}
 	interface ParsedTextContentSource extends ExtendedTextContentSource, TreeContentSource {}
-
+	
+	static class TreeRoot {
+		final TreeNode node;
+		final boolean isRootVisible;
+		TreeRoot(TreeNode node, boolean isRootVisible) {
+			this.node = node;
+			this.isRootVisible = isRootVisible;
+		}	
+	}
+	
 /*
 	private static class SwingWorkerImpl<FinalResult,IntermediateResult> extends SwingWorker<FinalResult,IntermediateResult> {
 
@@ -972,12 +978,15 @@ class SteamInspector {
 		protected final boolean allowsChildren;
 		protected final boolean isLeaf;
 		protected Vector<? extends NodeType> children;
-		protected final TreeIcons icon;
+		protected final Icon icon;
 
 		protected BaseTreeNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf) {
-			this(parent, title, allowsChildren, isLeaf, null);
+			this(parent, title, allowsChildren, isLeaf, (Icon)null);
 		}
 		protected BaseTreeNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf, TreeIcons icon) {
+			this(parent, title, allowsChildren, isLeaf, TreeNodes.TreeIconsIS.getCachedIcon(icon));
+		}
+		protected BaseTreeNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf, Icon icon) {
 			this.parent = parent;
 			this.title = title;
 			this.allowsChildren = allowsChildren;
@@ -990,7 +999,7 @@ class SteamInspector {
 //		String getContentAsText () { throw new UnsupportedOperationException(); }
 
 		ContentType getContentType() { return null; }
-		Icon getIcon() { return icon==null ? null : TreeIconsIS.getCachedIcon(icon); }
+		Icon getIcon() { return icon; }
 
 		protected abstract Vector<? extends NodeType> createChildren();
 		@Override public String toString() { return title; }
@@ -1051,8 +1060,8 @@ class SteamInspector {
 				return children;
 			}
 			
-			static DummyTextNode createSingleTextLineTree(String text) {
-				return new DummyTextNode(null, "DummyRoot", (p,i)->i>0 ? null : new DummyTextNode(p, text, null ) );
+			static TreeRoot createSingleTextLineTree_(String format, Object...args) {
+				return new TreeRoot( new DummyTextNode(null, String.format(Locale.ENGLISH, format, args)), true );
 			}
 		}
 	}
