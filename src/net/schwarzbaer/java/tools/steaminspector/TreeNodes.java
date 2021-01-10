@@ -30,6 +30,7 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BytesContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextContentSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerInfo;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
@@ -305,6 +306,10 @@ class TreeNodes {
 				super(parent, title, allowsChildren, isLeaf, icon);
 				this.fileObj = file;
 			}
+			
+			ExternalViewerInfo getExternalViewerInfo() { return null; }
+			String getFileName() { return fileObj==null ? "" : fileObj.getName(); }
+			String getFilePath() { return fileObj==null ? "" : fileObj.getAbsolutePath(); }
 		}
 
 		static class FolderNode extends FileSystemNode {
@@ -341,15 +346,46 @@ class TreeNodes {
 			}
 			
 			static void sortFiles(File[] files) {
-				Arrays.sort(files, (f1,f2) -> {
-					String name1 = f1.getName();
-					String name2 = f2.getName();
-					Integer n1 = parseNumber(name1);
-					Integer n2 = parseNumber(name2);
-					if (n1!=null && n2!=null) return n1.intValue() - n2.intValue();
-					if (n1==null && n2==null) return name1.compareToIgnoreCase(name2);
-					return n1!=null ? -1 : +1;
-				});
+				//Comparator<String> fileNameAsNumber = Comparator.comparing(FolderNode::parseNumber, Comparator.nullsLast(Comparator.naturalOrder()));
+				//Comparator<String> fileNameComparator = fileNameAsNumber.thenComparing(String::toLowerCase);
+				Comparator<SplittedFilename> splitted = Comparator.comparing((SplittedFilename sfn)->parseNumber(sfn.name), Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
+				Comparator<String> fileNameComparator = Comparator.comparing(SplittedFilename::create, splitted);
+				Comparator<File> fileComparator = Comparator.comparing(File::isFile).thenComparing(File::getName, fileNameComparator);
+				Arrays.sort(files,fileComparator);
+				
+//				Arrays.sort(files, (f1,f2) -> {
+//					//f1.isDirectory();
+//					String name1 = f1.getName();
+//					String name2 = f2.getName();
+//					Integer n1 = parseNumber(name1);
+//					Integer n2 = parseNumber(name2);
+//					if (n1!=null && n2!=null) return n1.intValue() - n2.intValue();
+//					if (n1==null && n2==null) return name1.compareToIgnoreCase(name2);
+//					return n1!=null ? -1 : +1;
+//				});
+			}
+			
+			private static class SplittedFilename implements Comparable<SplittedFilename>{
+				final String name;
+				final String extension;
+				private SplittedFilename(String name, String extension) {
+					this.name = name;
+					this.extension = extension;
+				}
+				static SplittedFilename create(String filename) {
+					int pos = filename.lastIndexOf('.');
+					if (pos<0) return new SplittedFilename(filename, null);
+					return new SplittedFilename(filename.substring(0, pos), filename.substring(pos+1));
+				}
+				@Override
+				public int compareTo(SplittedFilename other) {
+					int comparedNames = this.name.compareToIgnoreCase(other.name);
+					if (comparedNames!=0) return comparedNames;
+					if (this.extension==null && other.extension==null) return 0;
+					if (this .extension==null) return -1;
+					if (other.extension==null) return +1;
+					return this.extension.compareToIgnoreCase(other.extension);
+				}
 			}
 			
 			static Integer parseNumber(String name) {
@@ -397,12 +433,14 @@ class TreeNodes {
 		static class FileNode extends FileSystemNode implements BytesContentSource {
 		
 			protected byte[] byteContent;
+			private final ExternalViewerInfo externalViewerInfo;
 			
 			FileNode(TreeNode parent, File file) {
-				this(parent, file, TreeIcons.GeneralFile);
+				this(parent, file, TreeIcons.GeneralFile, null);
 			}
-			protected FileNode(TreeNode parent, File file, TreeIcons icon) {
+			protected FileNode(TreeNode parent, File file, TreeIcons icon, ExternalViewerInfo externalViewerInfo) {
 				super(parent, file, file.getName(), false, true, icon);
+				this.externalViewerInfo = externalViewerInfo;
 				this.byteContent = null;
 				if (!fileObj.isFile())
 					throw new IllegalStateException("Can't create a FileSystem.FileNode from nonexisting file or nonfile");
@@ -428,6 +466,10 @@ class TreeNodes {
 				throw new UnsupportedOperationException("Call of FileSystem.FileNode.createChildren() is not supported.");
 			}
 
+			@Override ExternalViewerInfo getExternalViewerInfo() {
+				return externalViewerInfo;
+			}
+			
 			@Override ContentType getContentType() {
 				return ContentType.Bytes;
 			}
@@ -448,10 +490,13 @@ class TreeNodes {
 
 		static class ImageFile extends FileNode implements ImageContentSource {
 			
+			static final ExternalViewerInfo externalViewerInfo =
+					new ExternalViewerInfo( "Image Viewer", SteamInspector.AppSettings.ValueKey.ImageViewer );
+			
 			private BufferedImage imageContent;
 
 			ImageFile(TreeNode parent, File file) {
-				super(parent, file, TreeIcons.ImageFile);
+				super(parent, file, TreeIcons.ImageFile, externalViewerInfo);
 				imageContent = null;
 			}
 			
@@ -479,6 +524,9 @@ class TreeNodes {
 
 		static class TextFile extends FileNode implements ExtendedTextContentSource {
 			
+			static final ExternalViewerInfo externalViewerInfo =
+					new ExternalViewerInfo( "Text Editor", SteamInspector.AppSettings.ValueKey.TextEditor );
+			
 			protected final Charset charset;
 			protected String textContent;
 
@@ -487,7 +535,7 @@ class TreeNodes {
 			}
 
 			protected TextFile(TreeNode parent, File file, TreeIcons icon, Charset charset) {
-				super(parent, file, icon);
+				super(parent, file, icon, externalViewerInfo);
 				this.charset = charset;
 				this.textContent = null;
 			}
@@ -495,7 +543,7 @@ class TreeNodes {
 			static boolean is(File file) {
 				return false;
 			}
-		
+
 			@Override ContentType getContentType() {
 				return ContentType.ExtendedText;
 			}

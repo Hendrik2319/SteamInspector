@@ -5,10 +5,15 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridLayout;
+import java.awt.Point;
 import java.awt.event.ActionListener;
+import java.awt.event.ComponentEvent;
+import java.awt.event.ComponentListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.List;
@@ -23,7 +28,10 @@ import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.Icon;
 import javax.swing.JButton;
+import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -39,6 +47,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.tree.DefaultTreeCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
@@ -47,20 +56,35 @@ import javax.swing.tree.TreeSelectionModel;
 
 import net.schwarzbaer.gui.ImageView;
 import net.schwarzbaer.gui.StandardMainWindow;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AppSettings.ValueKey;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode.ContentType;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FileSystemNode;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.ImageFile;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.TextFile;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.system.ClipboardTools;
+import net.schwarzbaer.system.Settings;
 
 class SteamInspector {
 	
 	public static void main(String[] args) {
+		new SteamInspector().createGUI();
+	}
+	
+	static final AppSettings settings;
+	static final JFileChooser executableFileChooser;
+	
+	static {
 		try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
 		catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {}
 		
 		TreeNodes.loadIcons();
 		
-		new SteamInspector().createGUI();
+		settings = new AppSettings();
+		executableFileChooser = new JFileChooser("./");
+		executableFileChooser.setMultiSelectionEnabled(false);
+		executableFileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+		executableFileChooser.addChoosableFileFilter(new FileNameExtensionFilter("Executables (*.exe)", "exe"));
 	}
 	
 	private StandardMainWindow mainWindow = null;
@@ -82,6 +106,27 @@ class SteamInspector {
 		imageOutput = new ImageOutput();
 		outputDummy = new OutputDummy();
 		lastFileContentOutput = outputDummy;
+	}
+
+	public static class AppSettings extends Settings<AppSettings.ValueGroup,AppSettings.ValueKey> {
+		public enum ValueKey {
+			WindowX, WindowY, WindowWidth, WindowHeight, TextEditor, ImageViewer,
+		}
+
+		public enum ValueGroup implements Settings.GroupKeys<ValueKey> {
+			WindowPos (ValueKey.WindowX, ValueKey.WindowY),
+			WindowSize(ValueKey.WindowWidth, ValueKey.WindowHeight),
+			;
+			ValueKey[] keys;
+			ValueGroup(ValueKey...keys) { this.keys = keys;}
+			@Override public ValueKey[] getKeys() { return keys; }
+		}
+		
+		public AppSettings() { super(SteamInspector.class); }
+		public Point     getWindowPos (              ) { return getPoint(ValueKey.WindowX,ValueKey.WindowY); }
+		public void      setWindowPos (Point location) {        putPoint(ValueKey.WindowX,ValueKey.WindowY,location); }
+		public Dimension getWindowSize(              ) { return getDimension(ValueKey.WindowWidth,ValueKey.WindowHeight); }
+		public void      setWindowSize(Dimension size) {        putDimension(ValueKey.WindowWidth,ValueKey.WindowHeight,size); }
 	}
 	
 	private void createGUI() {
@@ -120,7 +165,25 @@ class SteamInspector {
 		JSplitPane contentPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, treePanel2, fileContentPanel);
 		
 		mainWindow = new StandardMainWindow("Steam Inspector");
-		mainWindow.startGUI(contentPane);
+		mainWindow.startGUI(contentPane,createMenuBar());
+		
+		if (settings.isSet(AppSettings.ValueGroup.WindowPos )) mainWindow.setLocation(settings.getWindowPos ());
+		if (settings.isSet(AppSettings.ValueGroup.WindowSize)) mainWindow.setSize    (settings.getWindowSize());
+		
+		mainWindow.addComponentListener(new ComponentListener() {
+			@Override public void componentShown  (ComponentEvent e) {}
+			@Override public void componentHidden (ComponentEvent e) {}
+			@Override public void componentResized(ComponentEvent e) { settings.setWindowSize( mainWindow.getSize() ); }
+			@Override public void componentMoved  (ComponentEvent e) { settings.setWindowPos ( mainWindow.getLocation() ); }
+		});
+	}
+
+	private JMenuBar createMenuBar() {
+		JMenuBar menuBar = new JMenuBar();
+		JMenu settingsMenu = menuBar.add(new JMenu("Settings"));
+		settingsMenu.add(createMenuItem("Set Path to "+ TextFile.externalViewerInfo.viewerName+" ...", true, e->getExecutableFor(mainWindow,  TextFile.externalViewerInfo)));
+		settingsMenu.add(createMenuItem("Set Path to "+ImageFile.externalViewerInfo.viewerName+" ...", true, e->getExecutableFor(mainWindow, ImageFile.externalViewerInfo)));
+		return menuBar;
 	}
 
 	protected void showContent(Object selectedNode) {
@@ -253,6 +316,29 @@ class SteamInspector {
 			System.out.printf("[%10s,%016X,@%08X] %s%n", sinceLastCall, currentTimeMillis, threadHash, String.format(Locale.ENGLISH, format, args));
 		}
 	}
+	
+	static class ExternalViewerInfo {
+		private final String viewerName;
+		private final AppSettings.ValueKey viewerKey;
+		ExternalViewerInfo(String viewerName, ValueKey viewerKey) {
+			this.viewerName = viewerName;
+			this.viewerKey = viewerKey;
+		}
+	}
+	
+	static File getExecutableFor(Component parent, ExternalViewerInfo externalViewerInfo) {
+		executableFileChooser.setDialogTitle("Select Executable of "+externalViewerInfo.viewerName);
+		if (settings.contains(externalViewerInfo.viewerKey)) {
+			File viewer = settings.getFile(externalViewerInfo.viewerKey);
+			executableFileChooser.setSelectedFile(viewer);
+		}
+		if (executableFileChooser.showOpenDialog(parent)==JFileChooser.APPROVE_OPTION) {
+			File viewer = executableFileChooser.getSelectedFile();
+			settings.putFile(externalViewerInfo.viewerKey, viewer);
+			return viewer;
+		} else
+			return null;
+	}
 
 	static class TreeContextMenues {
 
@@ -286,17 +372,48 @@ class SteamInspector {
 
 		private static class FileContextMenu extends ContextMenu<FileSystemNode> {
 			private static final long serialVersionUID = -7683322808189858630L;
+			private final JMenuItem miExtViewer;
 			private FileSystemNode clickedNode;
+			private ExternalViewerInfo externalViewerInfo;
 
 			FileContextMenu(Component invoker) {
 				super(invoker);
 				clickedNode = null;
+				externalViewerInfo = null;
+				
 				add(createMenuItem("Copy Path to Clipboard", true, e->ClipboardTools.copyToClipBoard(clickedNode.fileObj.getAbsolutePath())));
+				add(miExtViewer = createMenuItem("Open in External Viewer", true, e->{
+					File viewer;
+					if (externalViewerInfo.viewerKey==null) throw new IllegalArgumentException("ExternalViewerInfo.viewerKey must not be <null>.");
+					if (settings.contains(externalViewerInfo.viewerKey))
+						viewer = settings.getFile(externalViewerInfo.viewerKey);
+					else
+						viewer = getExecutableFor(invoker,externalViewerInfo);
+					
+					if (viewer==null) return;
+					
+					try {
+						Runtime.getRuntime().exec(new String[] { viewer.getAbsolutePath(), clickedNode.getFilePath() });
+					} catch (IOException e1) {
+						System.err.println("Exception occured while opening selected file in an external viewer:");
+						System.err.println("    selected file: "+clickedNode.getFilePath());
+						System.err.println("    external viewer: "+viewer.getAbsolutePath());
+						e1.printStackTrace();
+					}
+				}));
 			}
 
 			@Override
 			protected void setClickedNode(FileSystemNode clickedNode) {
 				this.clickedNode = clickedNode;
+				externalViewerInfo = this.clickedNode.getExternalViewerInfo();
+				if (externalViewerInfo==null) {
+					miExtViewer.setText("Open in External Viewer");
+					miExtViewer.setEnabled(false);
+				} else {
+					miExtViewer.setText(String.format("Open \"%s\" in %s", this.clickedNode.getFileName(), externalViewerInfo.viewerName));
+					miExtViewer.setEnabled(true);
+				}
 			}
 		}
 		
