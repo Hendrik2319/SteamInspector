@@ -278,7 +278,7 @@ class SteamInspector {
 		fileContentPanel.repaint();
 	}
 
-	private static JRadioButton createRadioButton(String title, boolean selected, boolean enabled, ButtonGroup bg, Consumer<Boolean> setValue) {
+	static JRadioButton createRadioButton(String title, boolean selected, boolean enabled, ButtonGroup bg, Consumer<Boolean> setValue) {
 		JRadioButton comp = new JRadioButton(title, selected);
 		comp.setEnabled(enabled);
 		if (bg!=null) bg.add(comp);
@@ -286,14 +286,14 @@ class SteamInspector {
 		return comp;
 	}
 	
-	private static JButton createButton(String title, boolean enabled, ActionListener al) {
+	static JButton createButton(String title, boolean enabled, ActionListener al) {
 		JButton comp = new JButton(title);
 		comp.setEnabled(enabled);
 		if (al!=null) comp.addActionListener(al);
 		return comp;
 	}
 	
-	private static JMenuItem createMenuItem(String title, boolean enabled, ActionListener al) {
+	static JMenuItem createMenuItem(String title, boolean enabled, ActionListener al) {
 		JMenuItem comp = new JMenuItem(title);
 		comp.setEnabled(enabled);
 		if (al!=null) comp.addActionListener(al);
@@ -749,8 +749,10 @@ class SteamInspector {
 	static class ParsedTreeOutput extends FileContentOutput {
 		private JTree view;
 		private JScrollPane scrollPane;
+		private TreeRoot treeRoot;
 
 		ParsedTreeOutput() {
+			treeRoot = null;
 			view = new JTree();
 			view.setRootVisible(false);
 			view.setCellRenderer(new BaseTreeNodeRenderer());
@@ -760,16 +762,32 @@ class SteamInspector {
 				if (path==null) return;
 //				showContent(path.getLastPathComponent());
 			});
+			view.addMouseListener(new MouseAdapter() {
+				@Override public void mouseClicked(MouseEvent e) {
+					if (e.getButton()==MouseEvent.BUTTON3) {
+						TreePath path = view.getPathForLocation(e.getX(), e.getY());
+						if (path==null || treeRoot==null) return;
+						treeRoot.showContextMenu(view, e.getX(), e.getY(), path.getLastPathComponent());
+					}
+				}
+			});
 			scrollPane = new JScrollPane(view);
 		}
 		@Override Component getMainComponent() {
 			return scrollPane;
 		}
 		void setRoot(TreeRoot treeRoot) {
+			showMessageFromThread("ParsedTreeOutput.setRoot started");
+			this.treeRoot = treeRoot;
+			showMessageFromThread("ParsedTreeOutput.setRoot set root node");
 			view.setModel(new DefaultTreeModel(treeRoot.node));
 			view.setRootVisible(treeRoot.isRootVisible);
-			for (int i=0; i<view.getRowCount(); i++)
-				view.expandRow(i);
+			if (treeRoot.expandAllRows) {
+				showMessageFromThread("ParsedTreeOutput.setRoot expand full tree");
+				for (int i=0; i<view.getRowCount(); i++)
+					view.expandRow(i);
+			}
+			showMessageFromThread("ParsedTreeOutput.setRoot finished");
 		}
 		@Override void showLoadingMsg() {
 			setRoot(BaseTreeNode.DummyTextNode.createSingleTextLineTree_("load content ..."));
@@ -1025,13 +1043,33 @@ class SteamInspector {
 	interface ExtendedTextContentSource extends BytesContentSource, TextContentSource {}
 	interface ParsedTextContentSource extends ExtendedTextContentSource, TreeContentSource {}
 	
-	static class TreeRoot {
+	interface TreeContextMenuHandler {
+		void showContextMenu(Component invoker, int x, int y, Object clickedTreeNode);
+	}
+	
+	static abstract class AbstractContextMenu extends JPopupMenu implements TreeContextMenuHandler {
+		private static final long serialVersionUID = -7162801786069506030L;
+	}
+	
+	static class TreeRoot implements TreeContextMenuHandler {
 		final TreeNode node;
 		final boolean isRootVisible;
-		TreeRoot(TreeNode node, boolean isRootVisible) {
+		final boolean expandAllRows;
+		final TreeContextMenuHandler tcmh;
+		
+		TreeRoot(TreeNode node, boolean isRootVisible, boolean expandAllRows) {
+			this(node, isRootVisible, expandAllRows, null);
+		}
+		TreeRoot(TreeNode node, boolean isRootVisible, boolean expandAllRows, TreeContextMenuHandler tcmh) {
 			this.node = node;
 			this.isRootVisible = isRootVisible;
-		}	
+			this.expandAllRows = expandAllRows;
+			this.tcmh = tcmh;
+		}
+		@Override public void showContextMenu(Component invoker, int x, int y, Object clickedTreeNode) {
+			if (tcmh!=null)
+				tcmh.showContextMenu(invoker, x, y, clickedTreeNode);
+		}
 	}
 	
 /*
@@ -1178,7 +1216,7 @@ class SteamInspector {
 			}
 			
 			static TreeRoot createSingleTextLineTree_(String format, Object...args) {
-				return new TreeRoot( new DummyTextNode(null, String.format(Locale.ENGLISH, format, args)), true );
+				return new TreeRoot( new DummyTextNode(null, String.format(Locale.ENGLISH, format, args)), true, true );
 			}
 		}
 	}

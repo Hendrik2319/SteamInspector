@@ -6,6 +6,7 @@ import java.io.StringReader;
 import java.util.Locale;
 import java.util.Vector;
 
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContextMenuHandler;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
 
 class VDFParser {
@@ -263,8 +264,8 @@ class VDFParser {
 			rootPairs = new Vector<>();
 		}
 
-		TreeRoot getRootTreeNode() {
-			return new TreeRoot(new VDFTreeNode(null, "VDF Root", rootPairs), false);
+		TreeRoot getRootTreeNode(boolean isLarge, TreeContextMenuHandler tcmh) {
+			return new TreeRoot(new VDFTreeNode(null, "VDF Root", rootPairs), false, !isLarge, tcmh);
 		}
 
 		private void add(ValuePair valuePair) {
@@ -291,7 +292,7 @@ class VDFParser {
 			throw new IllegalStateException();
 		}
 		private static String toTitle(String label, String value) {
-			return String.format("[%s] \"%s\"", label, value);
+			return String.format("%s : \"%s\"", label, value);
 		}
 		
 		@Override

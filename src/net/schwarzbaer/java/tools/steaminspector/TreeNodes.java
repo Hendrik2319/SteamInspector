@@ -1,5 +1,6 @@
 package net.schwarzbaer.java.tools.steaminspector;
 
+import java.awt.Component;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -21,12 +22,14 @@ import java.util.function.Function;
 import javax.imageio.ImageIO;
 import javax.swing.Icon;
 import javax.swing.JFileChooser;
+import javax.swing.JMenuItem;
 import javax.swing.tree.TreeNode;
 
 import net.schwarzbaer.gui.IconSource;
 import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BytesContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextContentSource;
@@ -35,6 +38,7 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSour
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.ParseException;
+import net.schwarzbaer.system.ClipboardTools;
 
 class TreeNodes {
 
@@ -575,6 +579,35 @@ class TreeNodes {
 			@Override ContentType getContentType() {
 				return ContentType.ParsedText;
 			}
+			
+			private static final ContextMenu contextMenu = new ContextMenu();
+			private static class ContextMenu extends AbstractContextMenu {
+				private static final long serialVersionUID = 7620430144231207201L;
+				//private final JMenuItem miFullInfo;
+				//private final JMenuItem miPath;
+				private final JMenuItem miName;
+				private final JMenuItem miValue;
+				private JSON_TreeNode<?> clickedTreeNode;
+				
+				ContextMenu() {
+					clickedTreeNode = null;
+					add(/*miFullInfo =*/ SteamInspector.createMenuItem("Copy Full Info", true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getFullInfo())));
+					add(/*miPath     =*/ SteamInspector.createMenuItem("Copy Path"     , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getPath())));
+					add(  miName     =   SteamInspector.createMenuItem("Copy Name"     , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.name)));
+					add(  miValue    =   SteamInspector.createMenuItem("Copy Value"    , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.value.toString())));
+				}
+				
+				@Override
+				public void showContextMenu(Component invoker, int x, int y, Object clickedTreeNode) {
+					if (clickedTreeNode instanceof JSON_TreeNode) {
+						this.clickedTreeNode = (JSON_TreeNode<?>) clickedTreeNode;
+						miName.setEnabled(this.clickedTreeNode.name!=null);
+						miValue.setEnabled(this.clickedTreeNode.value.type.isSimple);
+						show(invoker, x, y);
+					} else
+						this.clickedTreeNode = null;
+				}
+			};
 
 			@Override
 			public TreeRoot getContentAsTree() {
@@ -593,7 +626,7 @@ class TreeNodes {
 						// return null;
 						return BaseTreeNode.DummyTextNode.createSingleTextLineTree_("Parse Error: Parser returns <null>");
 				}
-				return JSON_TreeNode.create(parseResult);
+				return JSON_TreeNode.create(parseResult,fileObj.length()>500000);
 			}
 			
 			static class JSON_TreeNode<ValueType> extends SteamInspector.BaseTreeNode<JSON_TreeNode<?>> {
@@ -601,14 +634,28 @@ class TreeNodes {
 				private final Vector<ValueType> children;
 				private final Function<ValueType, String> getName;
 				private final Function<ValueType, JSON_Data.Value> getValue;
+				private final String name;
+				private final JSON_Data.Value value;
 
-				private JSON_TreeNode(JSON_TreeNode<?> parent, String text, JsonTreeIcons icon, Vector<ValueType> children, Function<ValueType,String> getName, Function<ValueType,JSON_Data.Value> getValue) {
-					super(parent, text, children!=null, children==null || children.isEmpty(), icon==null ? null : JsonTreeIconsIS.getCachedIcon(icon));
+				private JSON_TreeNode(JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, JSON_Data.Value value, Vector<ValueType> children, Function<ValueType,String> getName, Function<ValueType,JSON_Data.Value> getValue) {
+					super(parent, title, children!=null, children==null || children.isEmpty(), icon==null ? null : JsonTreeIconsIS.getCachedIcon(icon));
+					this.name = name;
+					this.value = value;
 					this.children = children;
 					this.getName = getName;
 					this.getValue = getValue;
 				}
-				
+
+				String getPath() {
+					// TODO Auto-generated method stub
+					return null;
+				}
+
+				String getFullInfo() {
+					// TODO Auto-generated method stub
+					return null;
+				}
+
 				@Override
 				protected Vector<? extends JSON_TreeNode<?>> createChildren() {
 					if (children==null) return null;
@@ -617,9 +664,9 @@ class TreeNodes {
 					return childNodes;
 				}
 				
-				public static TreeRoot create(JSON_Parser.Result parseResult) {
-					if (parseResult.object!=null) return new TreeRoot(create(null,null,new JSON_Data.ObjectValue(parseResult.object)),true);
-					if (parseResult.array !=null) return new TreeRoot(create(null,null,new JSON_Data. ArrayValue(parseResult.array )),true);
+				public static TreeRoot create(JSON_Parser.Result parseResult, boolean isLarge) {
+					if (parseResult.object!=null) return new TreeRoot(create(null,null,new JSON_Data.ObjectValue(parseResult.object)),true,!isLarge,contextMenu);
+					if (parseResult.array !=null) return new TreeRoot(create(null,null,new JSON_Data. ArrayValue(parseResult.array )),true,!isLarge,contextMenu);
 					return BaseTreeNode.DummyTextNode.createSingleTextLineTree_("Parse Error: Parser returns neither an JSON array nor an JSON object");
 				}
 				
@@ -627,9 +674,9 @@ class TreeNodes {
 					String title = getTitle(name,value);
 					JsonTreeIcons icon = getIcon(value.type);
 					switch (value.type) {
-					case Object: return new JSON_TreeNode<>(parent, title, icon, ((JSON_Data.ObjectValue)value).value, vt->vt.name, vt->vt.value);
-					case Array : return new JSON_TreeNode<>(parent, title, icon, ((JSON_Data.ArrayValue )value).value, vt->null, vt->vt);
-					default    : return new JSON_TreeNode<>(parent, title, icon, null, null, null);
+					case Object: return new JSON_TreeNode<>(parent, title, icon, name, value, ((JSON_Data.ObjectValue)value).value, vt->vt.name, vt->vt.value);
+					case Array : return new JSON_TreeNode<>(parent, title, icon, name, value, ((JSON_Data.ArrayValue )value).value, vt->null, vt->vt);
+					default    : return new JSON_TreeNode<>(parent, title, icon, name, value, null, null, null);
 					}
 				}
 				
@@ -683,6 +730,38 @@ class TreeNodes {
 				return fileNameEndsWith(file,".vdf");
 			}
 			
+			private static final ContextMenu contextMenu = new ContextMenu();
+			private static class ContextMenu extends AbstractContextMenu {
+				private static final long serialVersionUID = 5425019454611480985L;
+				
+				//private final JMenuItem miFullInfo;
+				//private final JMenuItem miPath;
+				//private final JMenuItem miName;
+				//private final JMenuItem miValue;
+				@SuppressWarnings("unused")
+				private VDFParser.VDFTreeNode clickedTreeNode;
+				
+				ContextMenu() {
+					clickedTreeNode = null;
+					// TODO
+					add(/*miFullInfo =*/ SteamInspector.createMenuItem("Copy Full Info", true, e->{}/*ClipboardTools.copyToClipBoard(clickedTreeNode.getFullInfo()   )*/));
+					add(/*miPath     =*/ SteamInspector.createMenuItem("Copy Path"     , true, e->{}/*ClipboardTools.copyToClipBoard(clickedTreeNode.getPath()       )*/));
+					add(/*miName     =*/ SteamInspector.createMenuItem("Copy Name"     , true, e->{}/*ClipboardTools.copyToClipBoard(clickedTreeNode.name            )*/));
+					add(/*miValue    =*/ SteamInspector.createMenuItem("Copy Value"    , true, e->{}/*ClipboardTools.copyToClipBoard(clickedTreeNode.value.toString())*/));
+				}
+				
+				@Override
+				public void showContextMenu(Component invoker, int x, int y, Object clickedTreeNode) {
+					if (clickedTreeNode instanceof VDFParser.VDFTreeNode) {
+						this.clickedTreeNode = (VDFParser.VDFTreeNode) clickedTreeNode;
+//						miName.setEnabled(this.clickedTreeNode.name!=null);
+//						miValue.setEnabled(this.clickedTreeNode.value.type.isSimple);
+						show(invoker, x, y);
+					} else
+						this.clickedTreeNode = null;
+				}
+			};
+			
 			@Override ContentType getContentType() {
 				return ContentType.ParsedText;
 			}
@@ -699,7 +778,7 @@ class TreeNodes {
 						return BaseTreeNode.DummyTextNode.createSingleTextLineTree_("Parse Error: %s", e.getMessage());
 					}
 				}
-				return vdfData==null ? null : vdfData.getRootTreeNode();
+				return vdfData==null ? null : vdfData.getRootTreeNode(fileObj.length()>500000,contextMenu);
 			}
 		}
 
