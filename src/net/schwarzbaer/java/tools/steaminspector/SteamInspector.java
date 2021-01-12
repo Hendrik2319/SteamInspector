@@ -196,8 +196,9 @@ class SteamInspector {
 				
 				case Bytes:
 					if (baseTreeNode instanceof BytesContentSource) {
-						if (!isTooLarge(baseTreeNode)) {
-							hexTableOutput.setSource((BytesContentSource) baseTreeNode);
+						BytesContentSource source = (BytesContentSource) baseTreeNode;
+						if (!source.isLarge() || userAllowsLargeFile(source)) {
+							hexTableOutput.setSource(source);
 							changeFileContentOutput(hexTableOutput);
 							hideOutput = false;
 						}
@@ -207,8 +208,9 @@ class SteamInspector {
 					
 				case PlainText:
 					if (baseTreeNode instanceof TextContentSource) {
-						if (!isTooLarge(baseTreeNode)) {
-							plainTextOutput.setSource((TextContentSource) baseTreeNode);
+						TextContentSource source = (TextContentSource) baseTreeNode;
+						if (!source.isLarge() || userAllowsLargeFile(source)) {
+							plainTextOutput.setSource(source);
 							changeFileContentOutput(plainTextOutput);
 							hideOutput = false;
 						}
@@ -218,8 +220,9 @@ class SteamInspector {
 					
 				case ExtendedText:
 					if (baseTreeNode instanceof ExtendedTextContentSource) {
-						if (!isTooLarge(baseTreeNode)) {
-							extendedTextOutput.setSource((ExtendedTextContentSource) baseTreeNode);
+						ExtendedTextContentSource source = (ExtendedTextContentSource) baseTreeNode;
+						if (!source.isLarge() || userAllowsLargeFile(source)) {
+							extendedTextOutput.setSource(source);
 							changeFileContentOutput(extendedTextOutput);
 							hideOutput = false;
 						}
@@ -229,8 +232,9 @@ class SteamInspector {
 				
 				case ParsedText:
 					if (baseTreeNode instanceof ParsedTextContentSource) {
-						if (!isTooLarge(baseTreeNode)) {
-							parsedTextOutput.setSource((ParsedTextContentSource) baseTreeNode);
+						ParsedTextContentSource source = (ParsedTextContentSource) baseTreeNode;
+						if (!source.isLarge() || userAllowsLargeFile(source)) {
+							parsedTextOutput.setSource(source);
 							changeFileContentOutput(parsedTextOutput);
 							hideOutput = false;
 						}
@@ -240,7 +244,8 @@ class SteamInspector {
 					
 				case Image:
 					if (baseTreeNode instanceof ImageContentSource) {
-						imageOutput.setSource((ImageContentSource) baseTreeNode);
+						ImageContentSource source = (ImageContentSource) baseTreeNode;
+						imageOutput.setSource(source);
 						changeFileContentOutput(imageOutput);
 						hideOutput = false;
 					} else
@@ -253,16 +258,9 @@ class SteamInspector {
 			changeFileContentOutput(outputDummy);
 	}
 
-	private boolean isTooLarge(BaseTreeNode<?> baseTreeNode) {
-		if (baseTreeNode instanceof TreeNodes.FileSystem.FileSystemNode) {
-			TreeNodes.FileSystem.FileSystemNode fileNode = (TreeNodes.FileSystem.FileSystemNode) baseTreeNode;
-			long length;
-			if (fileNode.fileObj!=null && (length=fileNode.fileObj.length())>500000) {
-				int result = JOptionPane.showConfirmDialog(fileContentPanel, "The file has a size of "+TreeNodes.getSizeStr(length)+". Do you really want to view it?", "Large File", JOptionPane.YES_NO_CANCEL_OPTION);
-				return result!=JOptionPane.YES_OPTION;
-			}
-		}
-		return false;
+	private boolean userAllowsLargeFile(FileBasedSource source) {
+		int result = JOptionPane.showConfirmDialog(fileContentPanel, "The file has a size of "+TreeNodes.getSizeStr(source.getFileSize())+". Do you really want to view it?", "Large File", JOptionPane.YES_NO_CANCEL_OPTION);
+		return result==JOptionPane.YES_OPTION;
 	}
 
 	private void changeFileContentOutput(FileContentOutput fco) {
@@ -1024,7 +1022,12 @@ class SteamInspector {
 		}
 	}
 	
-	interface BytesContentSource {
+	interface FileBasedSource {
+		boolean isLarge();
+		long getFileSize();
+	}
+	
+	interface BytesContentSource extends FileBasedSource {
 		byte[] getContentAsBytes();
 	}
 	
@@ -1032,7 +1035,7 @@ class SteamInspector {
 		BufferedImage getContentAsImage();
 	}
 	
-	interface TextContentSource {
+	interface TextContentSource extends FileBasedSource {
 		String getContentAsText();
 	}
 	

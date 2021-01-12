@@ -63,14 +63,14 @@ class TreeNodes {
 	//        425580_logo.png 
 	// eb32e3c266a74c7d51835ebf7c866bf2dbf59b47.ico    ||   C:\Program Files (x86)\Steam\steam\games
 
-	static String getSize(File file) {
-		long length = file==null ? 0 : file.length();
-		return getSizeStr(length);
-	}
-	
 	static void loadIcons() {
 		TreeIconsIS     = IconSource.createCachedIcons(16, 16, "/images/TreeIcons.png"    , TreeIcons.values());
 		JsonTreeIconsIS = IconSource.createCachedIcons(16, 16, "/images/JsonTreeIcons.png", JsonTreeIcons.values());
+	}
+	
+	static String getSizeStr(File file) {
+		long length = file==null ? 0 : file.length();
+		return getSizeStr(length);
 	}
 
 	static String getSizeStr(long length) {
@@ -450,6 +450,9 @@ class TreeNodes {
 					throw new IllegalStateException("Can't create a FileSystem.FileNode from nonexisting file or nonfile");
 			}
 			
+			@Override public boolean isLarge() { return getFileSize()>400000; }
+			@Override public long getFileSize() { return fileObj.length(); }
+			
 			static Icon getIconForFile(String filename) {
 				return new JFileChooser().getIcon(new File(filename));
 			}
@@ -463,7 +466,7 @@ class TreeNodes {
 
 			@Override
 			public String toString() {
-				return String.format("%s (%s)", fileObj.getName(), getSize(fileObj));
+				return String.format("%s (%s)", fileObj.getName(), getSizeStr(fileObj));
 			}
 
 			@Override protected Vector<FileSystemNode> createChildren() {
@@ -626,7 +629,7 @@ class TreeNodes {
 						// return null;
 						return BaseTreeNode.DummyTextNode.createSingleTextLineTree_("Parse Error: Parser returns <null>");
 				}
-				return JSON_TreeNode.create(parseResult,fileObj.length()>500000);
+				return JSON_TreeNode.create(parseResult,isLarge());
 			}
 			
 			static class JSON_TreeNode<ValueType> extends SteamInspector.BaseTreeNode<JSON_TreeNode<?>> {
@@ -646,12 +649,15 @@ class TreeNodes {
 					this.getValue = getValue;
 				}
 
-				String getPath() {
-					// TODO Auto-generated method stub
-					return null;
+				String getFullInfo() {
+					String str = "";
+					str += String.format("Name : \"%s\"", name);
+					str += String.format("Value : %s", value);
+					str += String.format("Path : %s", getPath());
+					return str;
 				}
 
-				String getFullInfo() {
+				String getPath() {
 					// TODO Auto-generated method stub
 					return null;
 				}
@@ -778,7 +784,7 @@ class TreeNodes {
 						return BaseTreeNode.DummyTextNode.createSingleTextLineTree_("Parse Error: %s", e.getMessage());
 					}
 				}
-				return vdfData==null ? null : vdfData.getRootTreeNode(fileObj.length()>500000,contextMenu);
+				return vdfData==null ? null : vdfData.getRootTreeNode(isLarge(),contextMenu);
 			}
 		}
 
@@ -812,7 +818,7 @@ class TreeNodes {
 			}
 		
 			@Override public String toString() {
-				return String.format("App %d (%s, %s)", id, file==null ? "" : file.getName(), getSize(file));
+				return String.format("App %d (%s, %s)", id, file==null ? "" : file.getName(), getSizeStr(file));
 			}
 		}
 	}
