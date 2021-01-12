@@ -28,6 +28,7 @@ import javax.swing.tree.TreeNode;
 import net.schwarzbaer.gui.IconSource;
 import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value.Type;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
@@ -677,12 +678,20 @@ class TreeNodes {
 				}
 
 				@Override public String getPath() {
-					// TODO Auto-generated method stub
-					return null;
+					if (parent==null) {
+						if (name!=null)
+							return name;
+						return "<Root"+(value!=null ? value.type : "")+">";
+					}
+					JSON_Data.Value.Type parentType = parent.getValueType();
+					String indexInParent = parentType==JSON_Data.Value.Type.Array ? "["+parent.getIndex(this)+"]" : "";
+					String nameRef = name!=null ? "."+name : "";
+					return parent.getPath()+indexInParent+nameRef;
 				}
 
 				@Override public String getName    () { return name; }
 				@Override public String getValueStr() { return value.toString(); }
+				private Type getValueType() { return value==null ? null : value.type; }
 				@Override public boolean hasName () { return name !=null; }
 				@Override public boolean hasValue() { return value!=null; }
 
