@@ -43,7 +43,7 @@ import net.schwarzbaer.system.ClipboardTools;
 
 class TreeNodes {
 
-	enum TreeIcons { GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Folder, RootFolder }
+	enum TreeIcons { GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Folder, RootFolder_Simple, RootFolder }
 	static CachedIcons<TreeIcons> TreeIconsIS;
 	
 	enum JsonTreeIcons { Object, Array, String, Number, Boolean }
@@ -272,7 +272,7 @@ class TreeNodes {
 		static class AppManifestsRoot extends FolderRoot {
 		
 			AppManifestsRoot(TreeNode parent, File folder) {
-				super(parent, "AppManifests", folder);
+				super(parent, "AppManifests", folder, TreeIcons.RootFolder);
 			}
 		
 			@Override
@@ -292,7 +292,10 @@ class TreeNodes {
 		static class FolderRoot extends FolderNode {
 			private final String rootTitle;
 			FolderRoot(TreeNode parent, String rootTitle, File folder) {
-				super(parent, folder, TreeIcons.RootFolder);
+				this(parent, rootTitle, folder, TreeIcons.RootFolder_Simple);
+			}
+			protected FolderRoot(TreeNode parent, String rootTitle, File folder, TreeIcons icon) {
+				super(parent, folder, icon);
 				this.rootTitle = rootTitle;
 			}
 			@Override public String toString() {
