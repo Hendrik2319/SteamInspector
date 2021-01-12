@@ -1,6 +1,5 @@
 package net.schwarzbaer.java.tools.steaminspector;
 
-import java.awt.Component;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -23,6 +22,7 @@ import javax.imageio.ImageIO;
 import javax.swing.Icon;
 import javax.swing.JFileChooser;
 import javax.swing.JMenuItem;
+import javax.swing.JTree;
 import javax.swing.tree.TreeNode;
 
 import net.schwarzbaer.gui.IconSource;
@@ -562,9 +562,65 @@ class TreeNodes {
 				return textContent = charset!=null ? new String(bytes, charset) : new String(bytes);
 			}
 		}
+		
+		interface DataTreeNode {
+			default String getFullInfo() {
+				String str = "";
+				str += !hasName()  ? "Name : none"  : String.format("Name : \"%s\"", getName());
+				str += !hasValue() ? "Value : none" : String.format("Value : %s", getValueStr());
+				str += String.format("Path : %s", getPath());
+				return str;
+			}
+			String getName();
+			String getValueStr();
+			String getPath();
+			boolean hasName();
+			boolean hasValue();
+			
+		}
+		static class DataTreeNodeContextMenu extends AbstractContextMenu {
+			private static final long serialVersionUID = 7620430144231207201L;
+			private final JMenuItem miFullInfo;
+			private final JMenuItem miPath;
+			private final JMenuItem miName;
+			private final JMenuItem miValue;
+			private DataTreeNode clickedTreeNode;
+			private JTree invoker;
+			
+			DataTreeNodeContextMenu() {
+				clickedTreeNode = null;
+				invoker = null;
+				add(miFullInfo = SteamInspector.createMenuItem("Copy Full Info", true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getFullInfo())));
+				add(miPath     = SteamInspector.createMenuItem("Copy Path"     , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getPath())));
+				add(miName     = SteamInspector.createMenuItem("Copy Name"     , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getName())));
+				add(miValue    = SteamInspector.createMenuItem("Copy Value"    , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getValueStr())));
+				addSeparator();
+				add(SteamInspector.createMenuItem("Expand Full Tree", true, e->{
+					if (invoker!=null)
+						for (int i=0; i<invoker.getRowCount(); i++)
+							invoker.expandRow(i);
+				}));
+			}
+			
+			@Override
+			public void showContextMenu(JTree invoker, int x, int y, Object clickedTreeNode) {
+				this.invoker = invoker;
+				this.clickedTreeNode = null;
+				if (clickedTreeNode instanceof DataTreeNode)
+					this.clickedTreeNode = (DataTreeNode) clickedTreeNode;
+				
+				miFullInfo.setEnabled(this.clickedTreeNode!=null);
+				miPath    .setEnabled(this.clickedTreeNode!=null);
+				miName    .setEnabled(this.clickedTreeNode!=null && this.clickedTreeNode.hasName());
+				miValue   .setEnabled(this.clickedTreeNode!=null && this.clickedTreeNode.hasValue());
+				
+				show(invoker, x, y);
+			}
+		};
 
 		static class JSON_File extends TextFile implements ParsedTextContentSource {
 			
+			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
 			private JSON_Parser.Result parseResult;
 
 			JSON_File(TreeNode parent, File file) {
@@ -583,35 +639,6 @@ class TreeNodes {
 				return ContentType.ParsedText;
 			}
 			
-			private static final ContextMenu contextMenu = new ContextMenu();
-			private static class ContextMenu extends AbstractContextMenu {
-				private static final long serialVersionUID = 7620430144231207201L;
-				//private final JMenuItem miFullInfo;
-				//private final JMenuItem miPath;
-				private final JMenuItem miName;
-				private final JMenuItem miValue;
-				private JSON_TreeNode<?> clickedTreeNode;
-				
-				ContextMenu() {
-					clickedTreeNode = null;
-					add(/*miFullInfo =*/ SteamInspector.createMenuItem("Copy Full Info", true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getFullInfo())));
-					add(/*miPath     =*/ SteamInspector.createMenuItem("Copy Path"     , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getPath())));
-					add(  miName     =   SteamInspector.createMenuItem("Copy Name"     , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.name)));
-					add(  miValue    =   SteamInspector.createMenuItem("Copy Value"    , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.value.toString())));
-				}
-				
-				@Override
-				public void showContextMenu(Component invoker, int x, int y, Object clickedTreeNode) {
-					if (clickedTreeNode instanceof JSON_TreeNode) {
-						this.clickedTreeNode = (JSON_TreeNode<?>) clickedTreeNode;
-						miName.setEnabled(this.clickedTreeNode.name!=null);
-						miValue.setEnabled(this.clickedTreeNode.value.type.isSimple);
-						show(invoker, x, y);
-					} else
-						this.clickedTreeNode = null;
-				}
-			};
-
 			@Override
 			public TreeRoot getContentAsTree() {
 				if (parseResult==null) {
@@ -632,7 +659,7 @@ class TreeNodes {
 				return JSON_TreeNode.create(parseResult,isLarge());
 			}
 			
-			static class JSON_TreeNode<ValueType> extends SteamInspector.BaseTreeNode<JSON_TreeNode<?>> {
+			static class JSON_TreeNode<ValueType> extends SteamInspector.BaseTreeNode<JSON_TreeNode<?>> implements DataTreeNode {
 
 				private final Vector<ValueType> children;
 				private final Function<ValueType, String> getName;
@@ -649,18 +676,15 @@ class TreeNodes {
 					this.getValue = getValue;
 				}
 
-				String getFullInfo() {
-					String str = "";
-					str += String.format("Name : \"%s\"", name);
-					str += String.format("Value : %s", value);
-					str += String.format("Path : %s", getPath());
-					return str;
-				}
-
-				String getPath() {
+				@Override public String getPath() {
 					// TODO Auto-generated method stub
 					return null;
 				}
+
+				@Override public String getName    () { return name; }
+				@Override public String getValueStr() { return value.toString(); }
+				@Override public boolean hasName () { return name !=null; }
+				@Override public boolean hasValue() { return value!=null; }
 
 				@Override
 				protected Vector<? extends JSON_TreeNode<?>> createChildren() {
@@ -722,6 +746,7 @@ class TreeNodes {
 
 		static class VDF_File extends TextFile implements ParsedTextContentSource {
 			
+			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
 			private VDFParser.Data vdfData;
 
 			VDF_File(TreeNode parent, File file) {
@@ -735,38 +760,6 @@ class TreeNodes {
 			static boolean is(File file) {
 				return fileNameEndsWith(file,".vdf");
 			}
-			
-			private static final ContextMenu contextMenu = new ContextMenu();
-			private static class ContextMenu extends AbstractContextMenu {
-				private static final long serialVersionUID = 5425019454611480985L;
-				
-				//private final JMenuItem miFullInfo;
-				//private final JMenuItem miPath;
-				//private final JMenuItem miName;
-				//private final JMenuItem miValue;
-				@SuppressWarnings("unused")
-				private VDFParser.VDFTreeNode clickedTreeNode;
-				
-				ContextMenu() {
-					clickedTreeNode = null;
-					// TODO
-					add(/*miFullInfo =*/ SteamInspector.createMenuItem("Copy Full Info", true, e->{}/*ClipboardTools.copyToClipBoard(clickedTreeNode.getFullInfo()   )*/));
-					add(/*miPath     =*/ SteamInspector.createMenuItem("Copy Path"     , true, e->{}/*ClipboardTools.copyToClipBoard(clickedTreeNode.getPath()       )*/));
-					add(/*miName     =*/ SteamInspector.createMenuItem("Copy Name"     , true, e->{}/*ClipboardTools.copyToClipBoard(clickedTreeNode.name            )*/));
-					add(/*miValue    =*/ SteamInspector.createMenuItem("Copy Value"    , true, e->{}/*ClipboardTools.copyToClipBoard(clickedTreeNode.value.toString())*/));
-				}
-				
-				@Override
-				public void showContextMenu(Component invoker, int x, int y, Object clickedTreeNode) {
-					if (clickedTreeNode instanceof VDFParser.VDFTreeNode) {
-						this.clickedTreeNode = (VDFParser.VDFTreeNode) clickedTreeNode;
-//						miName.setEnabled(this.clickedTreeNode.name!=null);
-//						miValue.setEnabled(this.clickedTreeNode.value.type.isSimple);
-						show(invoker, x, y);
-					} else
-						this.clickedTreeNode = null;
-				}
-			};
 			
 			@Override ContentType getContentType() {
 				return ContentType.ParsedText;

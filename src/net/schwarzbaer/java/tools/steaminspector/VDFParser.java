@@ -8,6 +8,7 @@ import java.util.Vector;
 
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContextMenuHandler;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.DataTreeNode;
 
 class VDFParser {
 
@@ -265,7 +266,7 @@ class VDFParser {
 		}
 
 		TreeRoot getRootTreeNode(boolean isLarge, TreeContextMenuHandler tcmh) {
-			return new TreeRoot(new VDFTreeNode(null, "VDF Root", rootPairs), false, !isLarge, tcmh);
+			return new TreeRoot(VDFTreeNode.createRoot(rootPairs), false, !isLarge, tcmh);
 		}
 
 		private void add(ValuePair valuePair) {
@@ -274,20 +275,23 @@ class VDFParser {
 
 	}
 	
-	static class VDFTreeNode extends SteamInspector.BaseTreeNode<VDFTreeNode> {
+	static class VDFTreeNode extends SteamInspector.BaseTreeNode<VDFTreeNode> implements DataTreeNode {
 
 		private final Vector<ValuePair> pairArray;
+		private final ValuePair valuePair;
 
-		private VDFTreeNode(VDFTreeNode parent, String title, Vector<ValuePair> pairArray) {
+		private VDFTreeNode(VDFTreeNode parent, ValuePair valuePair, String title, Vector<ValuePair> pairArray) {
 			super(parent, title, pairArray!=null, pairArray==null);
+			this.valuePair = valuePair;
 			this.pairArray = pairArray;
+		}
+		private static VDFTreeNode createRoot(Vector<ValuePair> rootPairs) {
+			return new VDFTreeNode(null, null, "VDF Root", rootPairs);
 		}
 		private static VDFTreeNode create(VDFTreeNode parent, ValuePair valuePair) {
 			switch (valuePair.datablock.type) {
-			case String:
-				return new VDFTreeNode(parent, toTitle(valuePair.label.str,valuePair.datablock.str), null);
-			case Array:
-				return new VDFTreeNode(parent, valuePair.label.str, valuePair.datablock.array);
+			case String: return new VDFTreeNode(parent, valuePair, toTitle(valuePair.label.str,valuePair.datablock.str), null);
+			case Array : return new VDFTreeNode(parent, valuePair, valuePair.label.str, valuePair.datablock.array);
 			}
 			throw new IllegalStateException();
 		}
@@ -302,6 +306,25 @@ class VDFParser {
 				pairArray.forEach(vp->children.add(create(this,vp)));
 			return children;
 		}
+
+		@Override public String getPath() {
+			// TODO Auto-generated method stub
+			return null;
+		}
+
+		@Override public String getName    () {
+			return valuePair==null ? null : valuePair.label.str;
+		}
+		@Override public boolean hasName () { return valuePair!=null; }
+		@Override public boolean hasValue() { return valuePair!=null; }
 		
+		@Override public String getValueStr() {
+			//if (valuePair==null) return null;
+			switch (valuePair.datablock.type) {
+			case String: return String.format("\"%s\"", valuePair.datablock.str);
+			case Array : return String.format("Array[%d]", valuePair.datablock.array.size());
+			}
+			throw new IllegalStateException();
+		}
 	}
 }

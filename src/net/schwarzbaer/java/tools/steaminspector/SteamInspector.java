@@ -90,19 +90,19 @@ class SteamInspector {
 	private StandardMainWindow mainWindow = null;
 	private JTree tree = null;
 	private JPanel fileContentPanel = null;
-	private final ExtendedTextOutput hexTableOutput;
-	private final ExtendedTextOutput plainTextOutput;
-	private final ExtendedTextOutput extendedTextOutput;
-	private final ExtendedTextOutput parsedTextOutput;
+	private final ExtendedOutput hexTableOutput;
+	private final ExtendedOutput plainTextOutput;
+	private final ExtendedOutput extendedTextOutput;
+	private final ExtendedOutput parsedTextOutput;
 	private final ImageOutput imageOutput;
 	private final OutputDummy outputDummy;
 	private FileContentOutput lastFileContentOutput;
 	
 	SteamInspector() {
-		hexTableOutput     = new ExtendedTextOutput(BaseTreeNode.ContentType.Bytes);
-		plainTextOutput    = new ExtendedTextOutput(BaseTreeNode.ContentType.PlainText);
-		extendedTextOutput = new ExtendedTextOutput(BaseTreeNode.ContentType.ExtendedText);
-		parsedTextOutput   = new ExtendedTextOutput(BaseTreeNode.ContentType.ParsedText);
+		hexTableOutput     = new ExtendedOutput(BaseTreeNode.ContentType.Bytes);
+		plainTextOutput    = new ExtendedOutput(BaseTreeNode.ContentType.PlainText);
+		extendedTextOutput = new ExtendedOutput(BaseTreeNode.ContentType.ExtendedText);
+		parsedTextOutput   = new ExtendedOutput(BaseTreeNode.ContentType.ParsedText);
 		imageOutput = new ImageOutput();
 		outputDummy = new OutputDummy();
 		lastFileContentOutput = outputDummy;
@@ -815,7 +815,7 @@ class SteamInspector {
 		}
 	}
 
-	static class ExtendedTextOutput extends MultiOutput {
+	static class ExtendedOutput extends MultiOutput {
 		
 		private final ContentType type;
 		private final Component mainComp;
@@ -825,7 +825,7 @@ class SteamInspector {
 		private final TextOutput plainText;
 		private final ParsedTreeOutput parsedTree;
 		
-		ExtendedTextOutput(BaseTreeNode.ContentType type) {
+		ExtendedOutput(BaseTreeNode.ContentType type) {
 			this.type = type;
 			
 			switch (type) {
@@ -1047,7 +1047,7 @@ class SteamInspector {
 	interface ParsedTextContentSource extends ExtendedTextContentSource, TreeContentSource {}
 	
 	interface TreeContextMenuHandler {
-		void showContextMenu(Component invoker, int x, int y, Object clickedTreeNode);
+		void showContextMenu(JTree invoker, int x, int y, Object clickedTreeNode);
 	}
 	
 	static abstract class AbstractContextMenu extends JPopupMenu implements TreeContextMenuHandler {
@@ -1069,7 +1069,7 @@ class SteamInspector {
 			this.expandAllRows = expandAllRows;
 			this.tcmh = tcmh;
 		}
-		@Override public void showContextMenu(Component invoker, int x, int y, Object clickedTreeNode) {
+		@Override public void showContextMenu(JTree invoker, int x, int y, Object clickedTreeNode) {
 			if (tcmh!=null)
 				tcmh.showContextMenu(invoker, x, y, clickedTreeNode);
 		}
