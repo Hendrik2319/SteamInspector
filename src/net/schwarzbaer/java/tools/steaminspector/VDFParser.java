@@ -275,7 +275,7 @@ class VDFParser {
 
 	}
 	
-	static class VDFTreeNode extends SteamInspector.BaseTreeNode<VDFTreeNode> implements DataTreeNode {
+	static class VDFTreeNode extends SteamInspector.BaseTreeNode<VDFTreeNode,VDFTreeNode> implements DataTreeNode {
 
 		private final Vector<ValuePair> pairArray;
 		private final ValuePair valuePair;
@@ -306,17 +306,18 @@ class VDFParser {
 				pairArray.forEach(vp->children.add(create(this,vp)));
 			return children;
 		}
-
-		@Override public String getPath() {
-			// TODO Auto-generated method stub
-			return null;
-		}
-
-		@Override public String getName    () {
-			return valuePair==null ? null : valuePair.label.str;
-		}
+		
 		@Override public boolean hasName () { return valuePair!=null; }
 		@Override public boolean hasValue() { return valuePair!=null; }
+
+		@Override public String getPath() {
+			if (parent==null || valuePair==null) return "RootPairs";
+			return parent.getPath()+"["+parent.getIndex(this)+"]."+getName();
+		}
+
+		@Override public String getName() {
+			return valuePair==null ? null : valuePair.label.str;
+		}
 		
 		@Override public String getValueStr() {
 			//if (valuePair==null) return null;

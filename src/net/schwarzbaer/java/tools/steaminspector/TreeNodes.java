@@ -110,7 +110,7 @@ class TreeNodes {
 	
 	static class FileSystem {
 		
-		static class Root extends BaseTreeNode<TreeNode> {
+		static class Root extends BaseTreeNode<TreeNode,TreeNode> {
 		
 			Root() { super(null, "FolderStructure.Root", true, false); }
 		
@@ -140,7 +140,7 @@ class TreeNodes {
 		
 		}
 
-		static class LibraryCacheRoot extends BaseTreeNode<TreeNode> {
+		static class LibraryCacheRoot extends BaseTreeNode<TreeNode,TreeNode> {
 		
 			private File folder;
 
@@ -216,7 +216,7 @@ class TreeNodes {
 				
 			}
 
-			static class ImageGroup1<KeyType1,KeyType2> extends BaseTreeNode<TreeNode> {
+			static class ImageGroup1<KeyType1,KeyType2> extends BaseTreeNode<TreeNode,TreeNode> {
 
 				private final Collection<KeyType1> keys1;
 				private final Collection<KeyType2> keys2;
@@ -240,7 +240,7 @@ class TreeNodes {
 				}
 			}
 
-			static class ImageGroup2<KeyType> extends BaseTreeNode<TreeNode> {
+			static class ImageGroup2<KeyType> extends BaseTreeNode<TreeNode,TreeNode> {
 
 				private final Collection<KeyType> keys;
 				private final Function<KeyType, File> getFile;
@@ -299,7 +299,7 @@ class TreeNodes {
 			}
 		}
 
-		static abstract class FileSystemNode extends BaseTreeNode<FileSystemNode> {
+		static abstract class FileSystemNode extends BaseTreeNode<TreeNode,FileSystemNode> {
 			
 			protected final File fileObj;
 			
@@ -566,9 +566,9 @@ class TreeNodes {
 		interface DataTreeNode {
 			default String getFullInfo() {
 				String str = "";
-				str += !hasName()  ? "Name : none"  : String.format("Name : \"%s\"", getName());
-				str += !hasValue() ? "Value : none" : String.format("Value : %s", getValueStr());
-				str += String.format("Path : %s", getPath());
+				str += !hasName()  ? String.format("Name : none%n")  : String.format("Name : \"%s\"%n", getName());
+				str += !hasValue() ? String.format("Value : none%n") : String.format("Value : %s%n", getValueStr());
+				str += String.format("Path : %s%n", getPath());
 				return str;
 			}
 			String getName();
@@ -659,7 +659,7 @@ class TreeNodes {
 				return JSON_TreeNode.create(parseResult,isLarge());
 			}
 			
-			static class JSON_TreeNode<ValueType> extends SteamInspector.BaseTreeNode<JSON_TreeNode<?>> implements DataTreeNode {
+			static class JSON_TreeNode<ValueType> extends BaseTreeNode<JSON_TreeNode<?>,JSON_TreeNode<?>> implements DataTreeNode {
 
 				private final Vector<ValueType> children;
 				private final Function<ValueType, String> getName;

@@ -166,6 +166,7 @@ class SteamInspector {
 		
 		mainWindow = new StandardMainWindow("Steam Inspector");
 		mainWindow.startGUI(contentPane,createMenuBar());
+		mainWindow.setIconImagesFromResource("/images/","Logo016.png","Logo024.png","Logo032.png","Logo048.png","Logo286.png");
 		
 		if (settings.isSet(AppSettings.ValueGroup.WindowPos )) mainWindow.setLocation(settings.getWindowPos ());
 		if (settings.isSet(AppSettings.ValueGroup.WindowSize)) mainWindow.setSize    (settings.getWindowSize());
@@ -189,7 +190,7 @@ class SteamInspector {
 	protected void showContent(Object selectedNode) {
 		boolean hideOutput = true;
 		if (selectedNode instanceof BaseTreeNode) {
-			BaseTreeNode<?> baseTreeNode = (BaseTreeNode<?>) selectedNode;
+			BaseTreeNode<?,?> baseTreeNode = (BaseTreeNode<?,?>) selectedNode;
 			BaseTreeNode.ContentType contentType = baseTreeNode.getContentType();
 			if (contentType!=null) {
 				switch (contentType) {
@@ -1118,7 +1119,7 @@ class SteamInspector {
 		public Component getTreeCellRendererComponent(JTree tree, Object value, boolean isSelected, boolean isExpanded, boolean isLeaf, int row, boolean hasFocus) {
 			Component component = super.getTreeCellRendererComponent(tree, value, isSelected, isExpanded, isLeaf, row, hasFocus);
 			if (value instanceof BaseTreeNode) {
-				BaseTreeNode<?> baseTreeNode = (BaseTreeNode<?>) value;
+				BaseTreeNode<?,?> baseTreeNode = (BaseTreeNode<?,?>) value;
 				Icon icon = baseTreeNode.getIcon();
 				if (icon!=null) setIcon(icon);
 			}
@@ -1127,24 +1128,24 @@ class SteamInspector {
 		}
 	}
 
-	static abstract class BaseTreeNode<NodeType extends TreeNode> implements TreeNode {
+	static abstract class BaseTreeNode<ParentNodeType extends TreeNode, ChildNodeType extends TreeNode> implements TreeNode {
 		
 		enum ContentType { PlainText, Bytes, ExtendedText, ParsedText, Image, }
 		
-		protected final TreeNode parent;
+		protected final ParentNodeType parent;
 		protected final String title;
 		protected final boolean allowsChildren;
 		protected final boolean isLeaf;
-		protected Vector<? extends NodeType> children;
+		protected Vector<? extends ChildNodeType> children;
 		protected final Icon icon;
 
-		protected BaseTreeNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf) {
+		protected BaseTreeNode(ParentNodeType parent, String title, boolean allowsChildren, boolean isLeaf) {
 			this(parent, title, allowsChildren, isLeaf, (Icon)null);
 		}
-		protected BaseTreeNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf, TreeIcons icon) {
+		protected BaseTreeNode(ParentNodeType parent, String title, boolean allowsChildren, boolean isLeaf, TreeIcons icon) {
 			this(parent, title, allowsChildren, isLeaf, TreeNodes.TreeIconsIS.getCachedIcon(icon));
 		}
-		protected BaseTreeNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf, Icon icon) {
+		protected BaseTreeNode(ParentNodeType parent, String title, boolean allowsChildren, boolean isLeaf, Icon icon) {
 			this.parent = parent;
 			this.title = title;
 			this.allowsChildren = allowsChildren;
@@ -1159,10 +1160,10 @@ class SteamInspector {
 		ContentType getContentType() { return null; }
 		Icon getIcon() { return icon; }
 
-		protected abstract Vector<? extends NodeType> createChildren();
+		protected abstract Vector<? extends ChildNodeType> createChildren();
 		@Override public String toString() { return title; }
 
-		@Override public TreeNode getParent() { return parent; }
+		@Override public ParentNodeType getParent() { return parent; }
 		@Override public boolean getAllowsChildren() { return allowsChildren; }
 		@Override public boolean isLeaf() { return isLeaf; }
 		
@@ -1171,7 +1172,7 @@ class SteamInspector {
 			return children.size();
 		}
 
-		@Override public TreeNode getChildAt(int childIndex) {
+		@Override public ChildNodeType getChildAt(int childIndex) {
 			checkChildren("getChildAt(childIndex)");
 			if (childIndex<0 || childIndex>=children.size()) return null;
 			return children.get(childIndex);
@@ -1194,7 +1195,7 @@ class SteamInspector {
 			if (children==null) children=createChildren();
 		}
 		
-		static class DummyTextNode extends BaseTreeNode<DummyTextNode> {
+		static class DummyTextNode extends BaseTreeNode<TreeNode,DummyTextNode> {
 
 			private BiFunction<DummyTextNode, Integer, DummyTextNode> createChild;
 
