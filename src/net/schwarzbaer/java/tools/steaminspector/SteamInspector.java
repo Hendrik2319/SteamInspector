@@ -32,6 +32,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
 import javax.swing.Icon;
 import javax.swing.JButton;
@@ -53,11 +54,14 @@ import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.JTree;
+import javax.swing.ListCellRenderer;
 import javax.swing.ListModel;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
+import javax.swing.border.Border;
+import javax.swing.event.ListDataEvent;
 import javax.swing.event.ListDataListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.tree.DefaultTreeCellRenderer;
@@ -69,7 +73,6 @@ import javax.swing.tree.TreeSelectionModel;
 import net.schwarzbaer.gui.ImageView;
 import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AppSettings.ValueKey;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode.ContentType;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FileSystemNode;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.ImageFile;
@@ -425,7 +428,7 @@ class SteamInspector {
 		}
 	}
 
-	private static final boolean SHOW_THREADING = true;
+	private static final boolean SHOW_THREADING = false;
 	private static Long lastTimeMillis = null;
 	private static void showMessageFromThread(String format, Object... args) {
 		if (SHOW_THREADING) {
@@ -445,20 +448,34 @@ class SteamInspector {
 	static class FolderSettingsDialog extends StandardDialog {
 		private static final long serialVersionUID = 4253868170530477053L;
 		private static final int RMD = GridBagConstraints.REMAINDER;
+		private static final Color COLOR_FILE_EXISTS     = Color.GREEN.darker();
+		private static final Color COLOR_FILE_NOT_EXISTS = Color.RED;
 		
 		private final JTextField txtImageViewer;
 		private final JTextField txtTextEditor;
 		private final JTextField txtSteamClientFolder;
+		private JFileChooser folderChooser;
 
 		public FolderSettingsDialog(Window parent, String title) {
 			super(parent, title);
 			
-			ToggleBox tglbxImageViewer       = createToggleBox(null, 100,5,  "file exists",   "file not exists", "?????", Color.GREEN.darker(), Color.RED, null);
-			ToggleBox tglbxTextEditor        = createToggleBox(null, 100,5,  "file exists",   "file not exists", "?????", Color.GREEN.darker(), Color.RED, null);
-			ToggleBox tglbxSteamClientFolder = createToggleBox(null, 100,5,"folder exists", "folder not exists", "?????", Color.GREEN.darker(), Color.RED, null);
+			folderChooser = new JFileChooser("./");
+			folderChooser.setMultiSelectionEnabled(false);
+			folderChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+
+			ToggleBox tglbxImageViewer       = createToggleBox(null, 100,5,  "file exists",   "file not exists", "?????", COLOR_FILE_EXISTS, COLOR_FILE_NOT_EXISTS, null);
+			ToggleBox tglbxTextEditor        = createToggleBox(null, 100,5,  "file exists",   "file not exists", "?????", COLOR_FILE_EXISTS, COLOR_FILE_NOT_EXISTS, null);
+			ToggleBox tglbxSteamClientFolder = createToggleBox(null, 100,5,"folder exists", "folder not exists", "?????", COLOR_FILE_EXISTS, COLOR_FILE_NOT_EXISTS, null);
 			txtImageViewer       = createFileField(File::isFile     , tglbxImageViewer      , AppSettings.ValueKey.ImageViewer      );
 			txtTextEditor        = createFileField(File::isFile     , tglbxTextEditor       , AppSettings.ValueKey.TextEditor       );
 			txtSteamClientFolder = createFileField(File::isDirectory, tglbxSteamClientFolder, AppSettings.ValueKey.SteamClientFolder);
+			JButton btnSetImageViewer       = createButton("...", true, e->selectFile(this,executableFileChooser, AppSettings.ValueKey.ImageViewer      , txtImageViewer      ));
+			JButton btnSetTextEditor        = createButton("...", true, e->selectFile(this,executableFileChooser, AppSettings.ValueKey.TextEditor       , txtTextEditor       ));
+			JButton btnSetSteamClientFolder = createButton("...", true, e->selectFile(this,folderChooser        , AppSettings.ValueKey.SteamClientFolder, txtSteamClientFolder));
+			
+			FolderListModel folderListModel = new FolderListModel(AppSettings.ValueKey.SteamLibraryFolders);
+			JList<File> folderList = new JList<>(folderListModel);
+			folderList.setCellRenderer(new FolderListRenderer());
 			
 			JPanel contentPane = new JPanel(new GridBagLayout());
 			GridBagConstraints c = new GridBagConstraints();
@@ -487,9 +504,9 @@ class SteamInspector {
 			c.weightx = 0;
 			c.weighty = 0;
 			c.gridx = 2;
-			c.gridy=0;  contentPane.add(createButton("...", true, e->{}),c);
-			c.gridy+=2; contentPane.add(createButton("...", true, e->{}),c);
-			c.gridy+=2; contentPane.add(createButton("...", true, e->{}),c);
+			c.gridy=0;  contentPane.add(btnSetImageViewer      ,c);
+			c.gridy+=2; contentPane.add(btnSetTextEditor       ,c);
+			c.gridy+=2; contentPane.add(btnSetSteamClientFolder,c);
 			
 			c.weightx = 0;
 			c.weighty = 0;
@@ -501,53 +518,163 @@ class SteamInspector {
 			c.gridwidth = 1;
 			c.gridy = nextRow;
 			c.gridx=0; c.weightx = 0; c.weighty = 0; c.gridheight =   1; contentPane.add(createLabel("Steam Library Folders : ",JLabel.CENTER),c);
-			c.gridx++; c.weightx = 1; c.weighty = 1; c.gridheight = RMD; contentPane.add(new JScrollPane(new JList<>(new FolderList())),c);
+			c.gridx++; c.weightx = 1; c.weighty = 1; c.gridheight = RMD; contentPane.add(new JScrollPane(folderList),c);
 			c.gridx++; c.weightx = 0; c.weighty = 0; c.gridheight =   1;
 			c.gridwidth = 2;
-			contentPane.add(createButton("Add"   , true, e->{}),c); c.gridy++;
-			contentPane.add(createButton("Remove", true, e->{}),c); c.gridy++;
+			contentPane.add(createButton("Add"   , true, e->folderListModel.add(selectFile(this,folderChooser))),c); c.gridy++;
+			contentPane.add(createButton("Remove", true, e->folderListModel.remove(folderList.getSelectedIndices())),c); c.gridy++;
 			c.weighty = 1;
 			contentPane.add(new JLabel(),c);
 			c.gridx=0; c.gridy = nextRow+1; c.gridheight = RMD; c.gridwidth = 1;
 			contentPane.add(new JLabel(),c);
 			
 			
+			contentPane.setPreferredSize(new Dimension(600,300));
 			this.createGUI(contentPane,createButton("Close", true, e->{closeDialog();}));
-			setPreferredSize(new Dimension(500,400));
 		}
 
-		private JTextField createFileField(Predicate<File> isOK, ToggleBox tglbx, ValueKey key) {
+		private File selectFile(Component parent, JFileChooser fileChooser) {
+			return selectFile(parent, null, fileChooser);
+		}
+		private File selectFile(Component parent, String title, JFileChooser fileChooser) {
+			if (title!=null) fileChooser.setDialogTitle(title);
+			if (fileChooser.showOpenDialog(parent)==JFileChooser.APPROVE_OPTION)
+				return fileChooser.getSelectedFile();
+			return null;
+		}
+
+		private void selectFile(Component parent, JFileChooser fileChooser, AppSettings.ValueKey key, JTextField fileField) {
+			selectFile(parent, null, fileChooser, key, fileField);
+		}
+		private void selectFile(Component parent, String title, JFileChooser fileChooser, AppSettings.ValueKey key, JTextField fileField) {
+			File currentValue = settings.getFile(key, null);
+			if (currentValue.exists()) {
+				fileChooser.setCurrentDirectory(currentValue.getParentFile());
+				fileChooser.setSelectedFile(currentValue);
+			}
+			File selectedFile = selectFile(parent, title, fileChooser);
+			if (selectedFile!=null) {
+				settings.putFile(key, selectedFile);
+				fileField.setText(selectedFile.getAbsolutePath());
+			}
+		}
+
+		private JTextField createFileField(Predicate<File> isOK, ToggleBox tglbx, AppSettings.ValueKey key) {
 			File initialValue = settings.getFile(key, null);
 			String initialValueStr = initialValue==null ? "" : initialValue.getAbsolutePath();
+			tglbx.setValue(initialValue==null ? null : isOK.test(initialValue));
 			return createTextField(initialValueStr,File::new,tglbx.passThrough(isOK),file->settings.putFile(key, file));
 		}
 
-		private class FolderList implements ListModel<File> {
-		
-			@Override
-			public int getSize() {
-				// TODO Auto-generated method stub
-				return 0;
+		private static class FolderListRenderer implements ListCellRenderer<File> {
+			private static final Border BORDER_NOT_FOCUSED = BorderFactory.createEmptyBorder(1,1,1,1);
+			private static final Border BORDER_FOCUSED = BorderFactory.createDashedBorder(Color.BLACK);
+			private static final int DEFAULT_HEIGHT = 20;
+			private final JPanel rendererComp;
+			private final JLabel pathLabel;
+			private final JLabel statusLabel;
+			private final JLabel status2Label;
+
+			FolderListRenderer() {
+				rendererComp = new JPanel();
+				rendererComp.setLayout(new BoxLayout(rendererComp,BoxLayout.X_AXIS));
+				rendererComp.add(pathLabel = new JLabel());
+				rendererComp.add(statusLabel = new JLabel());
+				rendererComp.add(status2Label = new JLabel());
+				//rendererComp.setPreferredSize(new Dimension(300,DEFAULT_HEIGHT));
 			}
+			
+			@Override
+			public Component getListCellRendererComponent(JList<? extends File> list, File value, int index, boolean isSelected, boolean cellHasFocus) {
+				boolean exists = value!=null && value.isDirectory();
+				boolean hasSteamApps = value!=null && new File(value,TreeNodes.KnownFolders.STEAMAPPS_SUBPATH).isDirectory();
+				
+				pathLabel   .setText(value==null ? "<null>" : value.getAbsolutePath());
+				statusLabel .setText(exists ? "   folder exists" : "   folder not exists");
+				status2Label.setText(exists && !hasSteamApps ? " but has no "+TreeNodes.KnownFolders.STEAMAPPS_SUBPATH+" sub folder" : "");
+				rendererComp.setBorder(cellHasFocus ? BORDER_FOCUSED : BORDER_NOT_FOCUSED);
+				
+				if (isSelected) {
+					rendererComp.setBackground(list.getSelectionBackground());
+					pathLabel   .setForeground(list.getSelectionForeground());
+					statusLabel .setForeground(list.getSelectionForeground());
+					status2Label.setForeground(list.getSelectionForeground());
+				} else {
+					rendererComp.setBackground(list.getBackground());
+					pathLabel   .setForeground(list.getForeground());
+					statusLabel .setForeground(exists       ? COLOR_FILE_EXISTS : COLOR_FILE_NOT_EXISTS);
+					status2Label.setForeground(hasSteamApps ? COLOR_FILE_EXISTS : COLOR_FILE_NOT_EXISTS);
+				}
+				
+				int prefWidth = 5;
+				Dimension prefSize;
+				prefSize = pathLabel   .getPreferredSize(); prefWidth += prefSize==null ? 0 : prefSize.width;
+				prefSize = statusLabel .getPreferredSize(); prefWidth += prefSize==null ? 0 : prefSize.width;
+				prefSize = status2Label.getPreferredSize(); prefWidth += prefSize==null ? 0 : prefSize.width;
+				rendererComp.setPreferredSize(new Dimension(prefWidth, DEFAULT_HEIGHT));
+				return rendererComp;
+			}
+		
+		}
+
+		private class FolderListModel implements ListModel<File> {
+		
+			private final AppSettings.ValueKey appSettingsKey;
+			private final Vector<ListDataListener> listDataListeners;
+			private final Vector<File> folders;
+
+			public FolderListModel(AppSettings.ValueKey appSettingsKey) {
+				this.appSettingsKey = appSettingsKey;
+				listDataListeners = new Vector<>();
+				folders = new Vector<>();
+				
+				File[] files = settings.getFiles(this.appSettingsKey);
+				if (files!=null)
+					folders.addAll(Arrays.asList(files));
+			}
+			@Override public void    addListDataListener(ListDataListener l) { listDataListeners.   add(l); }
+			@Override public void removeListDataListener(ListDataListener l) { listDataListeners.remove(l); }
+			
+			void fireIntervalAddedEvent(Object source, int index0, int index1) {
+				ListDataEvent e = new ListDataEvent(source, ListDataEvent.INTERVAL_ADDED, index0, index1);
+				listDataListeners.forEach(l->l.intervalAdded(e));
+			}
+			@SuppressWarnings("unused")
+			void fireIntervalRemovedEvent(Object source, int index0, int index1) {
+				ListDataEvent e = new ListDataEvent(source, ListDataEvent.INTERVAL_REMOVED, index0, index1);
+				listDataListeners.forEach(l->l.intervalRemoved(e));
+			}
+			void fireContentsChangedEvent(Object source, int index0, int index1) {
+				ListDataEvent e = new ListDataEvent(source, ListDataEvent.CONTENTS_CHANGED, index0, index1);
+				listDataListeners.forEach(l->l.contentsChanged(e));
+			}
+
+			public void remove(int[] indices) {
+				if (indices==null || indices.length==0) return;
+				int oldSize = folders.size();
+				for (int i=indices.length-1; i>=0; i--)
+					folders.remove(indices[i]);
+				fireContentsChangedEvent(this, 0, oldSize);
+				settings.putFiles(appSettingsKey, folders);
+			}
+
+			public void add(File file) {
+				if (file==null) return;
+				for (File folder:folders)
+					if (folder.equals(file)) return;
+				folders.add(file);
+				fireIntervalAddedEvent(this, folders.size()-1, folders.size()-1);
+				settings.putFiles(appSettingsKey, folders);
+			}
+
+			@Override public int getSize() { return folders.size(); }
 		
 			@Override
 			public File getElementAt(int index) {
-				// TODO Auto-generated method stub
+				if (0<=index && index<folders.size())
+					return folders.get(index);
 				return null;
 			}
-		
-			@Override
-			public void addListDataListener(ListDataListener l) {
-				// TODO Auto-generated method stub
-		
-			}
-		
-			@Override
-			public void removeListDataListener(ListDataListener l) {
-				// TODO Auto-generated method stub
-		
-			}
-		
 		}
 		
 	}
@@ -981,12 +1108,12 @@ class SteamInspector {
 		}
 	}
 
-	static class ParsedTreeOutput extends FileContentOutput {
+	static class DataTreeOutput extends FileContentOutput {
 		private JTree view;
 		private JScrollPane scrollPane;
 		private TreeRoot treeRoot;
 
-		ParsedTreeOutput() {
+		DataTreeOutput() {
 			treeRoot = null;
 			view = new JTree();
 			view.setRootVisible(false);
@@ -1060,7 +1187,7 @@ class SteamInspector {
 		
 		private final HexTableOutput hexView;
 		private final TextOutput plainText;
-		private final ParsedTreeOutput parsedTree;
+		private final DataTreeOutput dataTree;
 		
 		ExtendedOutput(BaseTreeNode.ContentType type) {
 			this.type = type;
@@ -1069,29 +1196,29 @@ class SteamInspector {
 			case Bytes:
 				hexView    = new HexTableOutput();
 				plainText  = null;
-				parsedTree = null;
+				dataTree = null;
 				mainComp   = hexView.getMainComponent();
 				break;
 			
 			case PlainText:
 				hexView    = null;
 				plainText  = new TextOutput();
-				parsedTree = null;
+				dataTree = null;
 				mainComp   = plainText.getMainComponent();
 				break;
 			
 			case ExtendedText:
 				add("Hex Table" , hexView   = new HexTableOutput());
 				add("Plain Text", plainText = new TextOutput    ());
-				parsedTree = null;
+				dataTree = null;
 				setActiveTab(1);
 				mainComp  = super.getMainComponent();
 				break;
 				
 			case ParsedText:
-				add("Hex Table" , hexView    = new HexTableOutput  ());
-				add("Plain Text", plainText  = new TextOutput      ());
-				add("Parsed"    , parsedTree = new ParsedTreeOutput());
+				add("Hex Table" , hexView   = new HexTableOutput  ());
+				add("Plain Text", plainText = new TextOutput      ());
+				add("Data Tree" , dataTree  = new DataTreeOutput());
 				setActiveTab(2);
 				mainComp  = super.getMainComponent();
 				break;
@@ -1109,23 +1236,23 @@ class SteamInspector {
 		}
 
 		void setSource(BytesContentSource source) {
-			if (type!=ContentType.Bytes || hexView==null || plainText!=null || parsedTree!=null) throw new IllegalStateException();
+			if (type!=ContentType.Bytes || hexView==null || plainText!=null || dataTree!=null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 		}
 
 		void setSource(TextContentSource source) {
-			if (type!=ContentType.PlainText || hexView!=null || plainText==null || parsedTree!=null) throw new IllegalStateException();
+			if (type!=ContentType.PlainText || hexView!=null || plainText==null || dataTree!=null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 		}
 		
 		void setSource(ExtendedTextContentSource source) {
-			if (type!=ContentType.ExtendedText || hexView==null || plainText==null || parsedTree!=null) throw new IllegalStateException();
+			if (type!=ContentType.ExtendedText || hexView==null || plainText==null || dataTree!=null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 			setActiveTab(1);
 		}
 
 		void setSource(ParsedTextContentSource source) {
-			if (type!=ContentType.ParsedText || hexView==null || plainText==null || parsedTree==null) throw new IllegalStateException();
+			if (type!=ContentType.ParsedText || hexView==null || plainText==null || dataTree==null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 			setActiveTab(2);
 		}
@@ -1139,7 +1266,7 @@ class SteamInspector {
 			
 			if (hexView   !=null) hexView   .showLoadingMsg();
 			if (plainText !=null) plainText .showLoadingMsg();
-			if (parsedTree!=null) parsedTree.showLoadingMsg();
+			if (dataTree!=null) dataTree.showLoadingMsg();
 			
 			runningContentLoadWorker = createWorker.apply(source);
 			runningContentLoadWorker.execute();
@@ -1183,7 +1310,7 @@ class SteamInspector {
 			}
 			private void setParsedTree(TreeRoot treeRoot) {
 				showMessageFromThread("ContentLoadWorker.setParsedTree started");
-				parsedTree.setRoot(treeRoot);
+				dataTree.setRoot(treeRoot);
 				showMessageFromThread("ContentLoadWorker.setParsedTree finished");
 			}
 			

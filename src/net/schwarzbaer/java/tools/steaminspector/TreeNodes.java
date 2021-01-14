@@ -68,7 +68,7 @@ class TreeNodes {
 	
 	static class KnownFolders {
 		
-		private static String STEAMAPPS_SUBPATH = "steamapps";
+		static String STEAMAPPS_SUBPATH = "steamapps";
 		
 		enum SteamClientSubFolders {
 			USERDATA             ("userdata"),
@@ -82,10 +82,18 @@ class TreeNodes {
 		
 		static void forEachSteamAppsFolder(BiConsumer<Integer,File> action) {
 			if (action==null) return;
+			
+			int inc = 0;
+			File steamClientFolder = getSteamClientFolder();
+			if (steamClientFolder!=null) {
+				action.accept(0, new File(steamClientFolder,STEAMAPPS_SUBPATH));
+				inc = 1;
+			}
+			
 			File[] folders = getSteamLibraryFolders();
 			if (folders!=null)
 				for (int i=0; i<folders.length; i++)
-					action.accept(i, new File(folders[i],STEAMAPPS_SUBPATH));
+					action.accept(i+inc, new File(folders[i],STEAMAPPS_SUBPATH));
 		}
 
 		static File getSteamClientSubFolder(SteamClientSubFolders subFolder) {
@@ -187,6 +195,7 @@ class TreeNodes {
 				if (folder!=null && folder.isDirectory()) children.add(new FolderRoot(this,"Game Icons (as Folder)",folder));
 				
 				folder = FOLDER_TEST_FILES;
+				try { folder = folder.getCanonicalFile(); } catch (IOException e) {}
 				if (folder.isDirectory()) children.add(new FolderRoot(this,"Test Files",folder));
 				
 				return children;
