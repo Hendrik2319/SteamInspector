@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Vector;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -31,6 +32,7 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value.Type;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractContextMenu;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AppSettings.ValueKey;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BytesContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextContentSource;
@@ -50,11 +52,11 @@ class TreeNodes {
 	static CachedIcons<JsonTreeIcons> JsonTreeIconsIS;
 	
 	private static final File FOLDER_TEST_FILES                  = new File("./test");
-	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS      = new File("C:\\__Games\\SteamLibrary\\steamapps\\");
-	private static final File FOLDER_STEAM_USERDATA              = new File("C:\\Program Files (x86)\\Steam\\userdata");
-	private static final File FOLDER_STEAM_APPCACHE              = new File("C:\\Program Files (x86)\\Steam\\appcache");
-	private static final File FOLDER_STEAM_APPCACHE_LIBRARYCACHE = new File("C:\\Program Files (x86)\\Steam\\appcache\\librarycache");
-	private static final File FOLDER_STEAM_STEAM_GAMES           = new File("C:\\Program Files (x86)\\Steam\\steam\\games");
+//	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS      = new File("C:\\__Games\\SteamLibrary\\steamapps\\");
+//	private static final File FOLDER_STEAM_USERDATA              = new File("C:\\Program Files (x86)\\Steam\\userdata");
+//	private static final File FOLDER_STEAM_APPCACHE              = new File("C:\\Program Files (x86)\\Steam\\appcache");
+//	private static final File FOLDER_STEAM_APPCACHE_LIBRARYCACHE = new File("C:\\Program Files (x86)\\Steam\\appcache\\librarycache");
+//	private static final File FOLDER_STEAM_STEAM_GAMES           = new File("C:\\Program Files (x86)\\Steam\\steam\\games");
 	// C:\Program Files (x86)\Steam\appcache\librarycache
 	//        425580_icon.jpg 
 	//        425580_header.jpg 
@@ -63,7 +65,47 @@ class TreeNodes {
 	//        425580_library_hero_blur.jpg 
 	//        425580_logo.png 
 	// eb32e3c266a74c7d51835ebf7c866bf2dbf59b47.ico    ||   C:\Program Files (x86)\Steam\steam\games
+	
+	static class KnownFolders {
+		
+		private static String STEAMAPPS_SUBPATH = "steamapps";
+		
+		enum SteamClientSubFolders {
+			USERDATA             ("userdata"),
+			APPCACHE             ("appcache"),
+			APPCACHE_LIBRARYCACHE("appcache\\librarycache"),
+			STEAM_GAMES          ("steam\\games"),
+			;
+			private final String path;
+			SteamClientSubFolders(String path) { this.path = path; }
+		}
+		
+		static void forEachSteamAppsFolder(BiConsumer<Integer,File> action) {
+			if (action==null) return;
+			File[] folders = getSteamLibraryFolders();
+			if (folders!=null)
+				for (int i=0; i<folders.length; i++)
+					action.accept(i, new File(folders[i],STEAMAPPS_SUBPATH));
+		}
 
+		static File getSteamClientSubFolder(SteamClientSubFolders subFolder) {
+			if (subFolder==null) return null;
+			File steamClientFolder = getSteamClientFolder();
+			if (steamClientFolder==null) return null;
+			return new File(steamClientFolder,subFolder.path);
+		}
+
+		static File[] getSteamLibraryFolders() {
+			ValueKey key = SteamInspector.AppSettings.ValueKey.SteamLibraryFolders;
+			return SteamInspector.settings.getFiles(key);
+		}
+
+		static File getSteamClientFolder() {
+			ValueKey folderKey = SteamInspector.AppSettings.ValueKey.SteamClientFolder;
+			return SteamInspector.settings.getFile(folderKey, null);
+		}
+	}
+	
 	static void loadIcons() {
 		TreeIconsIS     = IconSource.createCachedIcons(16, 16, "/images/TreeIcons.png"    , TreeIcons.values());
 		JsonTreeIconsIS = IconSource.createCachedIcons(16, 16, "/images/JsonTreeIcons.png", JsonTreeIcons.values());
@@ -119,22 +161,33 @@ class TreeNodes {
 			protected Vector<TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				
-				if (FOLDER_STEAMLIBRARY_STEAMAPPS.isDirectory()) {
-					children.add(new AppManifestsRoot(this,FOLDER_STEAMLIBRARY_STEAMAPPS));
-					children.add(new FolderRoot(this,"AppManifests (as Folder)",FOLDER_STEAMLIBRARY_STEAMAPPS));
+				KnownFolders.forEachSteamAppsFolder((i,folder)->{
+					if (folder!=null && folder.isDirectory())
+						children.add(new AppManifestsRoot(this,folder));
+				});
+				KnownFolders.forEachSteamAppsFolder((i,folder)->{
+					if (folder!=null && folder.isDirectory())
+						children.add(new FolderRoot(this,"AppManifests (as Folder)",folder));
+				});
+				
+				File folder;
+				folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.USERDATA);
+				if (folder!=null && folder.isDirectory()) children.add(new FolderRoot(this,"UserData (as Folder)",folder));
+				
+				folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE);
+				if (folder!=null && folder.isDirectory()) children.add(new FolderRoot(this,"AppCache (as Folder)",folder));
+				
+				folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
+				if (folder!=null && folder.isDirectory()) {
+					children.add(new FolderRoot(this,"LibraryCache (as Folder)",folder));
+					children.add(new LibraryCacheRoot(this,folder));
 				}
-				if (FOLDER_STEAM_USERDATA.isDirectory())
-					children.add(new FolderRoot(this,"UserData (as Folder)",FOLDER_STEAM_USERDATA));
-				if (FOLDER_STEAM_APPCACHE.isDirectory())
-					children.add(new FolderRoot(this,"AppCache (as Folder)",FOLDER_STEAM_APPCACHE));
-				if (FOLDER_STEAM_APPCACHE_LIBRARYCACHE.isDirectory()) {
-					children.add(new FolderRoot(this,"LibraryCache (as Folder)",FOLDER_STEAM_APPCACHE_LIBRARYCACHE));
-					children.add(new LibraryCacheRoot(this,FOLDER_STEAM_APPCACHE_LIBRARYCACHE));
-				}
-				if (FOLDER_STEAM_STEAM_GAMES.isDirectory())
-					children.add(new FolderRoot(this,"Game Icons (as Folder)",FOLDER_STEAM_STEAM_GAMES));
-				if (FOLDER_TEST_FILES.isDirectory())
-					children.add(new FolderRoot(this,"Test Files",FOLDER_TEST_FILES));
+				
+				folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.STEAM_GAMES);
+				if (folder!=null && folder.isDirectory()) children.add(new FolderRoot(this,"Game Icons (as Folder)",folder));
+				
+				folder = FOLDER_TEST_FILES;
+				if (folder.isDirectory()) children.add(new FolderRoot(this,"Test Files",folder));
 				
 				return children;
 			}

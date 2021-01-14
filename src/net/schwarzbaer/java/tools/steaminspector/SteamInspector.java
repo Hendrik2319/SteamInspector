@@ -1,14 +1,20 @@
 package net.schwarzbaer.java.tools.steaminspector;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Point;
+import java.awt.Window;
 import java.awt.event.ActionListener;
 import java.awt.event.ComponentEvent;
 import java.awt.event.ComponentListener;
+import java.awt.event.FocusEvent;
+import java.awt.event.FocusListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
@@ -23,13 +29,16 @@ import java.util.concurrent.ExecutionException;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.Icon;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
@@ -42,11 +51,14 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
+import javax.swing.JTextField;
 import javax.swing.JTree;
+import javax.swing.ListModel;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
+import javax.swing.event.ListDataListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.tree.DefaultTreeCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
@@ -55,6 +67,7 @@ import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 
 import net.schwarzbaer.gui.ImageView;
+import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AppSettings.ValueKey;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode.ContentType;
@@ -110,7 +123,7 @@ class SteamInspector {
 
 	public static class AppSettings extends Settings<AppSettings.ValueGroup,AppSettings.ValueKey> {
 		public enum ValueKey {
-			WindowX, WindowY, WindowWidth, WindowHeight, TextEditor, ImageViewer,
+			WindowX, WindowY, WindowWidth, WindowHeight, TextEditor, ImageViewer, SteamClientFolder, SteamLibraryFolders,
 		}
 
 		public enum ValueGroup implements Settings.GroupKeys<ValueKey> {
@@ -131,12 +144,19 @@ class SteamInspector {
 	
 	private void createGUI() {
 		
-		JPanel optionPanel = new JPanel(new GridLayout(1,0,3,3));
-		optionPanel.add(new JLabel("Structure: "));
 		ButtonGroup bg = new ButtonGroup();
+		JPanel optionPanel = new JPanel(new GridLayout(1,0,3,3));
 		optionPanel.add(createRadioButton("Files & Folders", true, true,bg,b->{ tree.setModel(new DefaultTreeModel(new TreeNodes.FileSystem.Root())); tree.setRootVisible(false); }));
-		optionPanel.add(createRadioButton("Games"          ,false,false,bg,b->{}));
+		optionPanel.add(createRadioButton("Games"          ,false, true,bg,b->{}));
 		optionPanel.add(createRadioButton("Players, Games" ,false,false,bg,b->{}));
+		
+		JPanel dataTopPanel = new JPanel(new GridBagLayout());
+		GridBagConstraints c = new GridBagConstraints();
+		c.fill = GridBagConstraints.BOTH;
+		c.weightx = 0;
+		dataTopPanel.add(new JLabel("Structure: "),c);
+		c.weightx = 1;
+		dataTopPanel.add(optionPanel,c);
 		
 		tree = new JTree(new TreeNodes.FileSystem.Root());
 		tree.setRootVisible(false);
@@ -152,17 +172,18 @@ class SteamInspector {
 		JScrollPane treePanel = new JScrollPane(tree);
 		treePanel.setPreferredSize(new Dimension(500, 800));
 		
-		JPanel treePanel2 = new JPanel(new BorderLayout(3,3));
-		treePanel2.setBorder(BorderFactory.createTitledBorder("Found Data"));
-		treePanel2.add(optionPanel, BorderLayout.NORTH);
-		treePanel2.add(treePanel, BorderLayout.CENTER);
+		JPanel dataPanel = new JPanel(new BorderLayout(3,3));
+		dataPanel.setBorder(BorderFactory.createTitledBorder("Found Data"));
+		dataPanel.add(dataTopPanel, BorderLayout.NORTH);
+		dataPanel.add(treePanel, BorderLayout.CENTER);
 		
 		fileContentPanel = new JPanel(new BorderLayout(3,3));
 		fileContentPanel.setBorder(BorderFactory.createTitledBorder("File Content"));
 		fileContentPanel.setPreferredSize(new Dimension(1000,800));
 		fileContentPanel.add(lastFileContentOutput.getMainComponent());
 		
-		JSplitPane contentPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, treePanel2, fileContentPanel);
+		JSplitPane contentPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, dataPanel, fileContentPanel);
+		contentPane.setBorder(BorderFactory.createEmptyBorder(2,2,2,2));
 		
 		mainWindow = new StandardMainWindow("Steam Inspector");
 		mainWindow.startGUI(contentPane,createMenuBar());
@@ -184,6 +205,8 @@ class SteamInspector {
 		JMenu settingsMenu = menuBar.add(new JMenu("Settings"));
 		settingsMenu.add(createMenuItem("Set Path to "+ TextFile.externalViewerInfo.viewerName+" ...", true, e->getExecutableFor(mainWindow,  TextFile.externalViewerInfo)));
 		settingsMenu.add(createMenuItem("Set Path to "+ImageFile.externalViewerInfo.viewerName+" ...", true, e->getExecutableFor(mainWindow, ImageFile.externalViewerInfo)));
+		settingsMenu.addSeparator();
+		settingsMenu.add(createMenuItem("Set All Paths ...", true, e->new FolderSettingsDialog(mainWindow, "Define Paths").showDialog()));
 		return menuBar;
 	}
 
@@ -299,10 +322,113 @@ class SteamInspector {
 		return comp;
 	}
 	
-	private static final boolean CHECK_THREADING = true;
+	static JCheckBox createCheckBox(String text, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
+		JCheckBox comp = new JCheckBox(text, isSelected);
+		comp.setEnabled(isEnabled);
+		if (setValue!=null) comp.addActionListener(e->setValue.accept(comp.isSelected()));
+		return comp;
+	}
+
+	static Component createHorizontalLine() {
+		JLabel comp = new JLabel();
+		comp.setBorder(BorderFactory.createEtchedBorder());
+		return comp;
+	}
+
+	static JLabel createLabel(String text, int vertAlign) {
+		JLabel comp = new JLabel(text);
+		comp.setVerticalAlignment(vertAlign);
+		return comp;
+	}
+
+	static ToggleBox createToggleBox(Boolean value, int minWidth, int minHeight, String strTrue, String strFalse, String strNull, Color colorTrue, Color colorFalse, Color colorNull) {
+		ToggleBox comp = new ToggleBox(value, strTrue, strFalse, strNull, colorTrue, colorFalse, colorNull);
+		Dimension size = new Dimension(minWidth,minHeight);
+		comp.setMinimumSize(size);
+		comp.setPreferredSize(size);
+		return comp;
+	}
+	
+	static <A> JTextField createTextField(String initialValue, Function<String,A> convert, Predicate<A> check, Consumer<A> setValue) {
+		JTextField comp = new JTextField(initialValue);
+		Color defaultBG = comp.getBackground();
+		Color errorBG = Color.RED;
+		if (setValue!=null && convert!=null) {
+			Runnable action = ()->{
+				String str = comp.getText();
+				A value = convert.apply(str);
+				if (check.test(value)) {
+					comp.setBackground(defaultBG);
+					setValue.accept(value);
+				} else
+					comp.setBackground(errorBG);
+			};
+			comp.addActionListener(e->action.run());
+			comp.addFocusListener(new FocusListener() {
+				@Override public void focusGained(FocusEvent e) {}
+				@Override public void focusLost(FocusEvent e) { action.run(); }
+			});
+		}
+		
+		return comp;
+	}
+	
+	static class ToggleBox extends JLabel {
+		private static final long serialVersionUID = 8024197163969547939L;
+		
+		private Boolean value;
+		private final String strTrue;
+		private final String strFalse;
+		private final String strNull;
+		private final Color colorTrue;
+		private final Color colorFalse;
+		private final Color colorNull;
+	
+		public ToggleBox(Boolean value, String strTrue, String strFalse, String strNull, Color colorTrue, Color colorFalse, Color colorNull) {
+			this.strTrue = strTrue;
+			this.strFalse = strFalse;
+			this.strNull = strNull;
+			this.colorTrue = colorTrue;
+			this.colorFalse = colorFalse;
+			this.colorNull = colorNull;
+			setValue(value);
+			setBorder(BorderFactory.createEtchedBorder());
+		}
+	
+		public void setValue(Boolean value) {
+			this.value = value;
+			updateBoxText();
+		}
+	
+		public void updateBoxText() {
+			if (value==null)
+				setBoxText(strNull,colorNull);
+			else if (value)
+				setBoxText(strTrue,colorTrue);
+			else
+				setBoxText(strFalse,colorFalse);
+		}
+	
+		public void setBoxText(String str, Color color) {
+			setText(str);
+			setForeground(color);
+			//setOpaque(color!=null);
+			//setBackground(color);
+		}
+		
+		public <A> Predicate<A> passThrough(Predicate<A> isOK) {
+			return val -> {
+				boolean b = isOK.test(val);
+				setValue(b);
+				return b;
+			};
+		}
+	}
+
+	private static final boolean SHOW_THREADING = true;
 	private static Long lastTimeMillis = null;
 	private static void showMessageFromThread(String format, Object... args) {
-		if (CHECK_THREADING) {
+		if (SHOW_THREADING) {
 			Thread currentThread = Thread.currentThread();
 			int threadHash = currentThread==null ? 0 : currentThread.hashCode();
 			long currentTimeMillis = System.currentTimeMillis();
@@ -316,10 +442,120 @@ class SteamInspector {
 		}
 	}
 	
+	static class FolderSettingsDialog extends StandardDialog {
+		private static final long serialVersionUID = 4253868170530477053L;
+		private static final int RMD = GridBagConstraints.REMAINDER;
+		
+		private final JTextField txtImageViewer;
+		private final JTextField txtTextEditor;
+		private final JTextField txtSteamClientFolder;
+
+		public FolderSettingsDialog(Window parent, String title) {
+			super(parent, title);
+			
+			ToggleBox tglbxImageViewer       = createToggleBox(null, 100,5,  "file exists",   "file not exists", "?????", Color.GREEN.darker(), Color.RED, null);
+			ToggleBox tglbxTextEditor        = createToggleBox(null, 100,5,  "file exists",   "file not exists", "?????", Color.GREEN.darker(), Color.RED, null);
+			ToggleBox tglbxSteamClientFolder = createToggleBox(null, 100,5,"folder exists", "folder not exists", "?????", Color.GREEN.darker(), Color.RED, null);
+			txtImageViewer       = createFileField(File::isFile     , tglbxImageViewer      , AppSettings.ValueKey.ImageViewer      );
+			txtTextEditor        = createFileField(File::isFile     , tglbxTextEditor       , AppSettings.ValueKey.TextEditor       );
+			txtSteamClientFolder = createFileField(File::isDirectory, tglbxSteamClientFolder, AppSettings.ValueKey.SteamClientFolder);
+			
+			JPanel contentPane = new JPanel(new GridBagLayout());
+			GridBagConstraints c = new GridBagConstraints();
+			c.fill = GridBagConstraints.BOTH;
+			
+			c.weightx = 0;
+			c.weighty = 0;
+			c.gridx = 0;
+			c.gridheight = 1;
+			c.gridy=0; c.gridwidth=1;   contentPane.add(createLabel("Image Viewer : ",JLabel.CENTER),c);
+			c.gridy++; c.gridwidth=RMD; contentPane.add(createHorizontalLine(),c);
+			c.gridy++; c.gridwidth=1;   contentPane.add(createLabel("Text Editor : ",JLabel.CENTER),c);
+			c.gridy++; c.gridwidth=RMD; contentPane.add(createHorizontalLine(),c);
+			c.gridy++; c.gridwidth=1;   contentPane.add(createLabel("Steam Client Folder : ",JLabel.CENTER),c);
+			c.gridy++; c.gridwidth=RMD; contentPane.add(createHorizontalLine(),c);
+			c.gridwidth=1;
+			int nextRow = c.gridy+1;
+			
+			c.weightx = 1;
+			c.weighty = 0;
+			c.gridx = 1;
+			c.gridy=0;  contentPane.add(txtImageViewer      ,c);
+			c.gridy+=2; contentPane.add(txtTextEditor       ,c);
+			c.gridy+=2; contentPane.add(txtSteamClientFolder,c);
+			
+			c.weightx = 0;
+			c.weighty = 0;
+			c.gridx = 2;
+			c.gridy=0;  contentPane.add(createButton("...", true, e->{}),c);
+			c.gridy+=2; contentPane.add(createButton("...", true, e->{}),c);
+			c.gridy+=2; contentPane.add(createButton("...", true, e->{}),c);
+			
+			c.weightx = 0;
+			c.weighty = 0;
+			c.gridx = 3;
+			c.gridy=0;  contentPane.add(tglbxImageViewer      ,c);
+			c.gridy+=2; contentPane.add(tglbxTextEditor       ,c);
+			c.gridy+=2; contentPane.add(tglbxSteamClientFolder,c);
+			
+			c.gridwidth = 1;
+			c.gridy = nextRow;
+			c.gridx=0; c.weightx = 0; c.weighty = 0; c.gridheight =   1; contentPane.add(createLabel("Steam Library Folders : ",JLabel.CENTER),c);
+			c.gridx++; c.weightx = 1; c.weighty = 1; c.gridheight = RMD; contentPane.add(new JScrollPane(new JList<>(new FolderList())),c);
+			c.gridx++; c.weightx = 0; c.weighty = 0; c.gridheight =   1;
+			c.gridwidth = 2;
+			contentPane.add(createButton("Add"   , true, e->{}),c); c.gridy++;
+			contentPane.add(createButton("Remove", true, e->{}),c); c.gridy++;
+			c.weighty = 1;
+			contentPane.add(new JLabel(),c);
+			c.gridx=0; c.gridy = nextRow+1; c.gridheight = RMD; c.gridwidth = 1;
+			contentPane.add(new JLabel(),c);
+			
+			
+			this.createGUI(contentPane,createButton("Close", true, e->{closeDialog();}));
+			setPreferredSize(new Dimension(500,400));
+		}
+
+		private JTextField createFileField(Predicate<File> isOK, ToggleBox tglbx, ValueKey key) {
+			File initialValue = settings.getFile(key, null);
+			String initialValueStr = initialValue==null ? "" : initialValue.getAbsolutePath();
+			return createTextField(initialValueStr,File::new,tglbx.passThrough(isOK),file->settings.putFile(key, file));
+		}
+
+		private class FolderList implements ListModel<File> {
+		
+			@Override
+			public int getSize() {
+				// TODO Auto-generated method stub
+				return 0;
+			}
+		
+			@Override
+			public File getElementAt(int index) {
+				// TODO Auto-generated method stub
+				return null;
+			}
+		
+			@Override
+			public void addListDataListener(ListDataListener l) {
+				// TODO Auto-generated method stub
+		
+			}
+		
+			@Override
+			public void removeListDataListener(ListDataListener l) {
+				// TODO Auto-generated method stub
+		
+			}
+		
+		}
+		
+	}
+	
 	static class ExternalViewerInfo {
 		private final String viewerName;
 		private final AppSettings.ValueKey viewerKey;
-		ExternalViewerInfo(String viewerName, ValueKey viewerKey) {
+		ExternalViewerInfo(String viewerName, AppSettings.ValueKey viewerKey) {
 			this.viewerName = viewerName;
 			this.viewerKey = viewerKey;
 		}
