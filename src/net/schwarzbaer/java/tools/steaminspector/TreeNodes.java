@@ -1,5 +1,6 @@
 package net.schwarzbaer.java.tools.steaminspector;
 
+import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -20,9 +21,11 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import javax.imageio.ImageIO;
+import javax.swing.BorderFactory;
 import javax.swing.Icon;
 import javax.swing.JFileChooser;
 import javax.swing.JMenuItem;
+import javax.swing.JTextArea;
 import javax.swing.JTree;
 import javax.swing.tree.TreeNode;
 
@@ -31,7 +34,7 @@ import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value.Type;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractContextMenu;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AppSettings.ValueKey;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BytesContentSource;
@@ -169,26 +172,31 @@ class TreeNodes {
 			protected Vector<TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				
+				Vector<File> steamAppsFolder = new Vector<>(); 
 				KnownFolders.forEachSteamAppsFolder((i,folder)->{
 					if (folder!=null && folder.isDirectory())
-						children.add(new AppManifestsRoot(this,folder));
+						steamAppsFolder.add(folder);
 				});
-				KnownFolders.forEachSteamAppsFolder((i,folder)->{
-					if (folder!=null && folder.isDirectory())
-						children.add(new FolderRoot(this,"AppManifests (as Folder)",folder));
-				});
+				if (!steamAppsFolder.isEmpty()) {
+					children.add(new AppManifestsRoot(this,steamAppsFolder));
+					children.add(new FolderRoot(this,"SteamApps Folder",steamAppsFolder,File::getAbsolutePath));
+				}
 				
 				File folder;
+				
+				folder = KnownFolders.getSteamClientFolder();
+				if (folder!=null && folder.isDirectory()) children.add(new FolderRoot(this,"SteamClient Folder",folder));
+				
 				folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.USERDATA);
-				if (folder!=null && folder.isDirectory()) children.add(new FolderRoot(this,"UserData (as Folder)",folder));
+				if (folder!=null && folder.isDirectory()) children.add(new FolderRoot(this,"<UserData>",folder));
 				
 				folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE);
-				if (folder!=null && folder.isDirectory()) children.add(new FolderRoot(this,"AppCache (as Folder)",folder));
+				if (folder!=null && folder.isDirectory()) children.add(new FolderRoot(this,"<AppCache>",folder));
 				
 				folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
 				if (folder!=null && folder.isDirectory()) {
-					children.add(new FolderRoot(this,"LibraryCache (as Folder)",folder));
-					children.add(new LibraryCacheRoot(this,folder));
+					children.add(new FolderRoot(this,"<LibraryCache>",folder));
+					children.add(new GameImagesRoot(this,folder));
 				}
 				
 				folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.STEAM_GAMES);
@@ -203,12 +211,12 @@ class TreeNodes {
 		
 		}
 
-		static class LibraryCacheRoot extends BaseTreeNode<TreeNode,TreeNode> {
+		static class GameImagesRoot extends BaseTreeNode<TreeNode,TreeNode> {
 		
 			private File folder;
 
-			LibraryCacheRoot(TreeNode parent, File folder) {
-				super(parent, "LibraryCache", true, false, TreeIcons.RootFolder);
+			GameImagesRoot(TreeNode parent, File folder) {
+				super(parent, "Game Images", true, false, TreeIcons.RootFolder);
 				this.folder = folder;
 			}
 
@@ -331,20 +339,37 @@ class TreeNodes {
 			}
 		}
 
-		static class AppManifestsRoot extends FolderRoot {
+		static class AppManifestsRoot extends BaseTreeNode<TreeNode,TreeNode> {
 		
-			AppManifestsRoot(TreeNode parent, File folder) {
-				super(parent, "AppManifests", folder, TreeIcons.RootFolder);
+			private final File folder;
+			private final Vector<File> folders;
+
+			AppManifestsRoot(TreeNode parent, String title, File folder) {
+				super(parent, title, folder!=null, folder==null, TreeIcons.Folder);
+				this.folder = folder;
+				this.folders = null;
 			}
 		
+			public AppManifestsRoot(Root parent, Vector<File> folders) {
+				super(parent, "AppManifests", folders!=null, folders==null || folders.isEmpty(), TreeIcons.RootFolder);
+				this.folder = null;
+				this.folders = folders;
+			}
+
 			@Override
-			protected Vector<? extends AppManifestNode> createChildren() {
-				Vector<AppManifestNode> children = new Vector<>();
+			protected Vector<? extends TreeNode> createChildren() {
+				Vector<TreeNode> children = new Vector<>();
 				
-				File[] files = fileObj.listFiles((FileFilter) AppManifestNode::is);
-				Arrays.sort(files,Comparator.comparing(AppManifestNode::getAppIDFromFile, Comparator.nullsLast(Comparator.naturalOrder())));
-				for (File file:files)
-					children.add(new AppManifestNode(this, file));
+				if (folders!=null) {
+					for (File folder:folders)
+						children.add(new AppManifestsRoot(this, folder.getAbsolutePath(), folder));
+					
+				} else if (folder!=null) {
+					File[] files = folder.listFiles((FileFilter) AppManifestNode::is);
+					Arrays.sort(files,Comparator.comparing(AppManifestNode::getAppIDFromFile, Comparator.nullsLast(Comparator.naturalOrder())));
+					for (File file:files)
+						children.add(new AppManifestNode(this, file));
+				}
 				
 				return children;
 			}
@@ -353,15 +378,24 @@ class TreeNodes {
 
 		static class FolderRoot extends FolderNode {
 			private final String rootTitle;
+			
 			FolderRoot(TreeNode parent, String rootTitle, File folder) {
 				this(parent, rootTitle, folder, TreeIcons.RootFolder_Simple);
 			}
-			protected FolderRoot(TreeNode parent, String rootTitle, File folder, TreeIcons icon) {
+			FolderRoot(TreeNode parent, String rootTitle, File folder, TreeIcons icon) {
 				super(parent, folder, icon);
 				this.rootTitle = rootTitle;
 			}
+			FolderRoot(TreeNode parent, String rootTitle, Vector<File> folders) {
+				this(parent, rootTitle, folders, null);
+			}
+			FolderRoot(TreeNode parent, String rootTitle, Vector<File> folders, Function<File,String> getNodeTitle) {
+				super(parent, rootTitle, folders, getNodeTitle, TreeIcons.RootFolder_Simple);
+				this.rootTitle = rootTitle;
+			}
 			@Override public String toString() {
-				return String.format("%s [%s]", rootTitle, fileObj.getAbsolutePath());
+				if (fileObj!=null) return String.format("%s [%s]", rootTitle, fileObj.getAbsolutePath());
+				return rootTitle;
 			}
 		}
 
@@ -384,25 +418,37 @@ class TreeNodes {
 
 		static class FolderNode extends FileSystemNode {
 			
-			private final Vector<File> files;
+			protected final Vector<File> files;
+			protected final Function<File, String> getNodeTitle;
 
 			FolderNode(TreeNode parent, File folder) {
-				this(parent, folder, TreeIcons.Folder);
+				this(parent, null, folder, TreeIcons.Folder);
 			}
-			protected FolderNode(TreeNode parent, File folder, TreeIcons icon) {
-				super(parent, folder, folder.getName(), true, false, icon);
+			FolderNode(TreeNode parent, String title, File folder) {
+				this(parent, title, folder, TreeIcons.Folder);
+			}
+			FolderNode(TreeNode parent, File folder, TreeIcons icon) {
+				this(parent, null, folder, icon);
+			}
+			FolderNode(TreeNode parent, String title, File folder, TreeIcons icon) {
+				super(parent, folder, title==null ? folder.getName() : title, true, false, icon);
 				this.files = null;
+				this.getNodeTitle = null;
 			}
 			FolderNode(TreeNode parent, String title, Vector<File> files, TreeIcons icon) {
+				this(parent, title, files, null, icon);
+			}
+			FolderNode(TreeNode parent, String title, Vector<File> files, Function<File,String> getNodeTitle, TreeIcons icon) {
 				super(parent, null, title, true, files.isEmpty(), icon);
 				this.files = files;
+				this.getNodeTitle = getNodeTitle;
 			}
 		
 			@Override
 			protected Vector<? extends FileSystemNode> createChildren() {
 				File[] files = this.files!=null ? this.files.toArray(new File[this.files.size()]) : getFilesAndFolders(fileObj);
 				sortFiles(files);
-				return createNodes(this,files);
+				return createNodes(this,files,getNodeTitle);
 			}
 			
 			static File[] getFilesAndFolders(File folder) {
@@ -467,14 +513,17 @@ class TreeNodes {
 				return null;
 			}
 			
-			static Vector<? extends FileSystemNode> createNodes(TreeNode parent, File[] files) {
+			static Vector<? extends FileSystemNode> createNodes(TreeNode parent, File[] files, Function<File, String> getNodeTitle) {
 				Vector<FileSystemNode> children = new Vector<>();
 				
 				for (File file:files) {
-					if (file.isDirectory())
-						children.add(new FolderNode(parent, file));
-					
-					else if (file.isFile()) {
+					if (file.isDirectory()) {
+						if (getNodeTitle==null)
+							children.add(new FolderNode(parent, file));
+						else
+							children.add(new FolderNode(parent, getNodeTitle.apply(file), file));
+						
+					} else if (file.isFile()) {
 						
 						if (TextFile.is(file))
 							children.add(new TextFile(parent, file));
@@ -574,7 +623,7 @@ class TreeNodes {
 			}
 			
 			static boolean is(File file) {
-				return fileNameEndsWith(file,".jpg",".jpeg",".png",".bmp",".ico");
+				return fileNameEndsWith(file,".jpg",".jpeg",".png",".bmp",".ico",".tga");
 			}
 
 			@Override ContentType getContentType() {
@@ -588,10 +637,24 @@ class TreeNodes {
 				if (bytes==null) return null;
 				try (ByteArrayInputStream byteStream = new ByteArrayInputStream(bytes)) {
 					imageContent = ImageIO.read(byteStream);
+					if (imageContent==null)
+						imageContent = createImageOfMessage("Can't read image.",200,25,Color.RED);
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
 				return imageContent;
+			}
+
+			private BufferedImage createImageOfMessage(String message, int width, int height, Color textColor) {
+				BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+				JTextArea label = new JTextArea(message);
+				label.setBorder(BorderFactory.createDashedBorder(Color.BLACK));
+				label.setLineWrap(true);
+				label.setWrapStyleWord(true);
+				label.setSize(width, height);
+				label.setForeground(textColor);
+				label.paint(image.getGraphics());
+				return image;
 			}
 		}
 
@@ -614,7 +677,7 @@ class TreeNodes {
 			}
 
 			static boolean is(File file) {
-				return false;
+				return fileNameEndsWith(file, ".txt");
 			}
 
 			@Override ContentType getContentType() {
@@ -644,7 +707,7 @@ class TreeNodes {
 			boolean hasValue();
 			
 		}
-		static class DataTreeNodeContextMenu extends AbstractContextMenu {
+		static class DataTreeNodeContextMenu extends AbstractTreeContextMenu {
 			private static final long serialVersionUID = 7620430144231207201L;
 			private final JMenuItem miFullInfo;
 			private final JMenuItem miPath;

@@ -37,6 +37,7 @@ import javax.swing.ButtonGroup;
 import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JList;
@@ -63,6 +64,8 @@ import javax.swing.UnsupportedLookAndFeelException;
 import javax.swing.border.Border;
 import javax.swing.event.ListDataEvent;
 import javax.swing.event.ListDataListener;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.tree.DefaultTreeCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
@@ -170,7 +173,7 @@ class SteamInspector {
 			if (path==null) return;
 			showContent(path.getLastPathComponent());
 		});
-		new TreeContextMenues(tree);
+		new MainTreeContextMenues(tree);
 		
 		JScrollPane treePanel = new JScrollPane(tree);
 		treePanel.setPreferredSize(new Dimension(500, 800));
@@ -303,9 +306,9 @@ class SteamInspector {
 		fileContentPanel.repaint();
 	}
 
-	static JRadioButton createRadioButton(String title, boolean selected, boolean enabled, ButtonGroup bg, Consumer<Boolean> setValue) {
-		JRadioButton comp = new JRadioButton(title, selected);
-		comp.setEnabled(enabled);
+	static JRadioButton createRadioButton(String title, boolean isSelected, boolean isEnabled, ButtonGroup bg, Consumer<Boolean> setValue) {
+		JRadioButton comp = new JRadioButton(title, isSelected);
+		comp.setEnabled(isEnabled);
 		if (bg!=null) bg.add(comp);
 		if (setValue!=null) comp.addActionListener(e->setValue.accept(comp.isSelected()));
 		return comp;
@@ -318,15 +321,22 @@ class SteamInspector {
 		return comp;
 	}
 	
-	static JMenuItem createMenuItem(String title, boolean enabled, ActionListener al) {
+	static JCheckBoxMenuItem createCheckBoxMenuItem(String title, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
+		JCheckBoxMenuItem comp = new JCheckBoxMenuItem(title, isSelected);
+		comp.setEnabled(isEnabled);
+		if (setValue!=null) comp.addActionListener(e->setValue.accept(comp.isSelected()));
+		return comp;
+	}
+	
+	static JMenuItem createMenuItem(String title, boolean isEnabled, ActionListener al) {
 		JMenuItem comp = new JMenuItem(title);
-		comp.setEnabled(enabled);
+		comp.setEnabled(isEnabled);
 		if (al!=null) comp.addActionListener(al);
 		return comp;
 	}
 	
-	static JCheckBox createCheckBox(String text, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
-		JCheckBox comp = new JCheckBox(text, isSelected);
+	static JCheckBox createCheckBox(String title, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
+		JCheckBox comp = new JCheckBox(title, isSelected);
 		comp.setEnabled(isEnabled);
 		if (setValue!=null) comp.addActionListener(e->setValue.accept(comp.isSelected()));
 		return comp;
@@ -701,12 +711,29 @@ class SteamInspector {
 		} else
 			return null;
 	}
+	
+	static class AbstractComponentContextMenu extends JPopupMenu {
+		private static final long serialVersionUID = -7319873585613172787L;
 
-	static class TreeContextMenues {
+		AbstractComponentContextMenu() {}
+		AbstractComponentContextMenu(Component invoker) { addTo(invoker); }
+
+		void addTo(Component invoker) {
+			invoker.addMouseListener(new MouseAdapter() {
+				@Override public void mouseClicked(MouseEvent e) {
+					if (e.getButton()==MouseEvent.BUTTON3) {
+						show(invoker, e.getX(),e.getY());
+					}
+				}
+			});
+		}
+	}
+
+	static class MainTreeContextMenues {
 
 		private FileContextMenu fileContextMenu;
 
-		TreeContextMenues(JTree tree) {
+		MainTreeContextMenues(JTree tree) {
 			
 			fileContextMenu = new FileContextMenu(tree);
 			
@@ -1067,13 +1094,23 @@ class SteamInspector {
 		protected final JTextArea view;
 		protected final JScrollPane scrollPane;
 		private float storedScrollPos;
+		private boolean isWordWrapActive;
 		
 		TextOutput() {
+			isWordWrapActive = true;
 			view = new JTextArea();
 			view.setEditable(false);
 			scrollPane = new JScrollPane(view);
+			updateWordWrap();
+			new ContextMenu();
 		}
 		
+		private void updateWordWrap() {
+			//System.out.printf("TextOutput[%08X].updateWordWrap [isWordWrapActive:%s]%n", hashCode(), isWordWrapActive);
+			view.setLineWrap(isWordWrapActive);
+			view.setWrapStyleWord(true);
+		}
+
 		@Override Component getMainComponent() {
 			return scrollPane;
 		}
@@ -1105,6 +1142,24 @@ class SteamInspector {
 
 		void setScrollPos(float scrollPos) {
 			this.storedScrollPos = scrollPos;
+		}
+		
+		private class ContextMenu extends AbstractComponentContextMenu {
+			private static final long serialVersionUID = 476878064035243596L;
+			ContextMenu() {
+				addTo(view);
+				JCheckBoxMenuItem chkbxWordWrap = createCheckBoxMenuItem("Word Wrap", isWordWrapActive, true, b->{ isWordWrapActive=b; updateWordWrap(); });
+				add(chkbxWordWrap);
+				addPopupMenuListener(new PopupMenuListener() {
+					@Override public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+						chkbxWordWrap.setSelected(isWordWrapActive);
+					}
+					
+					@Override public void popupMenuWillBecomeInvisible(PopupMenuEvent e) {}
+					@Override public void popupMenuCanceled(PopupMenuEvent e) {}
+				});
+			}
+			
 		}
 	}
 
@@ -1414,7 +1469,7 @@ class SteamInspector {
 		void showContextMenu(JTree invoker, int x, int y, Object clickedTreeNode);
 	}
 	
-	static abstract class AbstractContextMenu extends JPopupMenu implements TreeContextMenuHandler {
+	static abstract class AbstractTreeContextMenu extends JPopupMenu implements TreeContextMenuHandler {
 		private static final long serialVersionUID = -7162801786069506030L;
 	}
 	
