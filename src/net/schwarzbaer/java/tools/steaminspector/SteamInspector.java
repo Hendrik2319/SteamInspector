@@ -362,6 +362,51 @@ class SteamInspector {
 		return comp;
 	}
 	
+	static class ModifiedTextField<A> extends JTextField {
+		private static final long serialVersionUID = -814226398681252148L;
+		private final Color defaultBG;
+		private final Color errorBG;
+		private Function<String, A> convert;
+		private Predicate<A> check;
+		private Consumer<A> setValue;
+
+		public ModifiedTextField(String initialValue, Function<String, A> convert, Predicate<A> check, Consumer<A> setValue) {
+			super(initialValue);
+			this.convert = convert;
+			this.check = check;
+			this.setValue = setValue;
+			defaultBG = getBackground();
+			errorBG = Color.RED;
+			if (this.setValue!=null && this.convert!=null) {
+				addActionListener(e->sendChangedValue());
+				addFocusListener(new FocusListener() {
+					@Override public void focusGained(FocusEvent e) {}
+					@Override public void focusLost  (FocusEvent e) { sendChangedValue(); }
+				});
+			}
+		}
+
+		public void setValue(A value, Function<A, String> convert) {
+			setText(convert.apply(value));
+			setBackground(check.test(value) ? defaultBG : errorBG);
+		}
+
+		private void sendChangedValue() {
+			String str = getText();
+			A value = convert.apply(str);
+			if (check.test(value)) {
+				setBackground(defaultBG);
+				setValue.accept(value);
+			} else
+				setBackground(errorBG);
+		}
+		
+	}
+	
+	static <A> ModifiedTextField<A> createModifiedTextField(String initialValue, Function<String,A> convert, Predicate<A> check, Consumer<A> setValue) {
+		return new ModifiedTextField<A>(initialValue, convert, check, setValue);
+	}
+	
 	static <A> JTextField createTextField(String initialValue, Function<String,A> convert, Predicate<A> check, Consumer<A> setValue) {
 		JTextField comp = new JTextField(initialValue);
 		Color defaultBG = comp.getBackground();
@@ -461,9 +506,9 @@ class SteamInspector {
 		private static final Color COLOR_FILE_EXISTS     = Color.GREEN.darker();
 		private static final Color COLOR_FILE_NOT_EXISTS = Color.RED;
 		
-		private final JTextField txtImageViewer;
-		private final JTextField txtTextEditor;
-		private final JTextField txtSteamClientFolder;
+		private final ModifiedTextField<File> txtImageViewer;
+		private final ModifiedTextField<File> txtTextEditor;
+		private final ModifiedTextField<File> txtSteamClientFolder;
 		private JFileChooser folderChooser;
 
 		public FolderSettingsDialog(Window parent, String title) {
@@ -553,27 +598,28 @@ class SteamInspector {
 			return null;
 		}
 
-		private void selectFile(Component parent, JFileChooser fileChooser, AppSettings.ValueKey key, JTextField fileField) {
+		private void selectFile(Component parent, JFileChooser fileChooser, AppSettings.ValueKey key, ModifiedTextField<File> fileField) {
 			selectFile(parent, null, fileChooser, key, fileField);
 		}
-		private void selectFile(Component parent, String title, JFileChooser fileChooser, AppSettings.ValueKey key, JTextField fileField) {
+		private void selectFile(Component parent, String title, JFileChooser fileChooser, AppSettings.ValueKey key, ModifiedTextField<File> fileField) {
 			File currentValue = settings.getFile(key, null);
-			if (currentValue.exists()) {
+			if (currentValue!=null && currentValue.exists()) {
 				fileChooser.setCurrentDirectory(currentValue.getParentFile());
 				fileChooser.setSelectedFile(currentValue);
 			}
 			File selectedFile = selectFile(parent, title, fileChooser);
 			if (selectedFile!=null) {
 				settings.putFile(key, selectedFile);
-				fileField.setText(selectedFile.getAbsolutePath());
+				//fileField.setText(selectedFile.getAbsolutePath());
+				fileField.setValue(selectedFile, File::getAbsolutePath);
 			}
 		}
 
-		private JTextField createFileField(Predicate<File> isOK, ToggleBox tglbx, AppSettings.ValueKey key) {
+		private ModifiedTextField<File> createFileField(Predicate<File> isOK, ToggleBox tglbx, AppSettings.ValueKey key) {
 			File initialValue = settings.getFile(key, null);
 			String initialValueStr = initialValue==null ? "" : initialValue.getAbsolutePath();
 			tglbx.setValue(initialValue==null ? null : isOK.test(initialValue));
-			return createTextField(initialValueStr,File::new,tglbx.passThrough(isOK),file->settings.putFile(key, file));
+			return createModifiedTextField(initialValueStr,File::new,tglbx.passThrough(isOK),file->settings.putFile(key, file));
 		}
 
 		private static class FolderListRenderer implements ListCellRenderer<File> {
