@@ -8,7 +8,7 @@ import java.util.Vector;
 
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContextMenuHandler;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.DataTreeNode;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.DataTreeNode;
 
 class VDFParser {
 
@@ -266,7 +266,8 @@ class VDFParser {
 		}
 
 		TreeRoot getRootTreeNode(boolean isLarge, TreeContextMenuHandler tcmh) {
-			return new TreeRoot(VDFTreeNode.createRoot(rootPairs), false, !isLarge, tcmh);
+			return new TreeRoot(new VDFTreeNode(rootPairs), false, !isLarge, tcmh);
+			//return new TreeRoot(VDFTreeNode.createRoot(rootPairs), false, !isLarge, tcmh);
 		}
 
 		private void add(ValuePair valuePair) {
@@ -276,22 +277,112 @@ class VDFParser {
 	}
 	
 	static class VDFTreeNode extends SteamInspector.BaseTreeNode<VDFTreeNode,VDFTreeNode> implements DataTreeNode {
+		
+		private final Vector<ValuePair> valuePairArray;
+		final String name;
+		final String value;
+
+		VDFTreeNode(Vector<ValuePair> valuePairArray) { // Root
+			super(null,"VDF Tree Root",true,valuePairArray==null || valuePairArray.isEmpty());
+			this.valuePairArray = valuePairArray;
+			this.name = null;
+			this.value = null;
+		}
+		VDFTreeNode(VDFTreeNode parent, String name, String value) { // String Value
+			super(parent, String.format("%s : \"%s\"", name, value), false, true);
+			this.valuePairArray = null;
+			this.name = name;
+			this.value = value;
+		}
+		VDFTreeNode(VDFTreeNode parent, String name, Vector<ValuePair> valuePairArray) { // Array Value
+			super(parent, name, true,valuePairArray==null || valuePairArray.isEmpty());
+			this.valuePairArray = valuePairArray;
+			this.name = name;
+			this.value = null;
+		}
+		
+		@Override public String getPath() {
+			if (parent==null) return "Root";
+			return parent.getPath()+"["+parent.getIndex(this)+"]."+name;
+		}
+		
+		VDFTreeNode getSubNode(String... path) {
+			VDFTreeNode node = this;
+			int i = 0;
+			while (path!=null && i<path.length) {
+				if (node.valuePairArray==null)
+					return null;
+				
+				String subNodeName = path[i];
+				if (subNodeName==null) return null;
+				
+				node.checkChildren("getSubNode()");
+				boolean subNodeFound = false;
+				for (VDFTreeNode subNode:children)
+					if (subNodeName.equals(subNode.name)) {
+						subNodeFound = true;
+						node = subNode;
+						i++;
+						break;
+					}
+				if (!subNodeFound)
+					return null;
+			}
+			return node;
+		}
+		
+		@Override public String getAccessCall() {
+			return String.format("<root>.getSubNode(%s)", getAccessPath());
+		}
+		private String getAccessPath() {
+			if (parent==null) return "";
+			String path = parent.getAccessPath();
+			if (!path.isEmpty()) path += ",";
+			return path + "\""+name+"\"";
+		}
+		
+		@Override public boolean hasName() { return name!=null; }
+		@Override public String  getName() { return name; }
+		@Override public boolean hasValue() { return value!=null || (valuePairArray!=null && !valuePairArray.isEmpty()); }
+		@Override public String getValueStr() {
+			if (value!=null) return value;
+			if (valuePairArray!=null) return String.format("Array of %d values ", valuePairArray.size());
+			return null;
+		}
+		
+		@Override
+		protected Vector<? extends VDFTreeNode> createChildren() {
+			Vector<VDFTreeNode> children = new Vector<>();
+			if (valuePairArray!=null)
+				valuePairArray.forEach(valuePair->{
+					switch (valuePair.datablock.type) {
+					case String: children.add(new VDFTreeNode(this, valuePair.label.str, valuePair.datablock.str  )); break;
+					case Array : children.add(new VDFTreeNode(this, valuePair.label.str, valuePair.datablock.array)); break;
+					}
+				});
+			return children;
+		}
+		
+	}
+	
+	static class VDFTreeNode_old extends SteamInspector.BaseTreeNode<VDFTreeNode_old,VDFTreeNode_old> implements DataTreeNode {
 
 		private final Vector<ValuePair> pairArray;
 		private final ValuePair valuePair;
 
-		private VDFTreeNode(VDFTreeNode parent, ValuePair valuePair, String title, Vector<ValuePair> pairArray) {
+		private VDFTreeNode_old(VDFTreeNode_old parent, ValuePair valuePair, String title, Vector<ValuePair> pairArray) {
 			super(parent, title, pairArray!=null, pairArray==null);
 			this.valuePair = valuePair;
 			this.pairArray = pairArray;
 		}
-		private static VDFTreeNode createRoot(Vector<ValuePair> rootPairs) {
-			return new VDFTreeNode(null, null, "VDF Root", rootPairs);
+		@SuppressWarnings("unused")
+		private static VDFTreeNode_old createRoot(Vector<ValuePair> rootPairs) {
+			return new VDFTreeNode_old(null, null, "VDF Root", rootPairs);
 		}
-		private static VDFTreeNode create(VDFTreeNode parent, ValuePair valuePair) {
+		private static VDFTreeNode_old create(VDFTreeNode_old parent, ValuePair valuePair) {
 			switch (valuePair.datablock.type) {
-			case String: return new VDFTreeNode(parent, valuePair, toTitle(valuePair.label.str,valuePair.datablock.str), null);
-			case Array : return new VDFTreeNode(parent, valuePair, valuePair.label.str, valuePair.datablock.array);
+			case String: return new VDFTreeNode_old(parent, valuePair, toTitle(valuePair.label.str,valuePair.datablock.str), null);
+			case Array : return new VDFTreeNode_old(parent, valuePair, valuePair.label.str, valuePair.datablock.array);
 			}
 			throw new IllegalStateException();
 		}
@@ -300,8 +391,8 @@ class VDFParser {
 		}
 		
 		@Override
-		protected Vector<? extends VDFTreeNode> createChildren() {
-			Vector<VDFTreeNode> children = new Vector<>();
+		protected Vector<? extends VDFTreeNode_old> createChildren() {
+			Vector<VDFTreeNode_old> children = new Vector<>();
 			if (pairArray!=null)
 				pairArray.forEach(vp->children.add(create(this,vp)));
 			return children;
@@ -313,6 +404,10 @@ class VDFParser {
 		@Override public String getPath() {
 			if (parent==null || valuePair==null) return "RootPairs";
 			return parent.getPath()+"["+parent.getIndex(this)+"]."+getName();
+		}
+
+		@Override public String getAccessCall() {
+			return "AccessCall["+getPath()+"]";
 		}
 
 		@Override public String getName() {

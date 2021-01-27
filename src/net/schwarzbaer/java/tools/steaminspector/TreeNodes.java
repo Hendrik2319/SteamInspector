@@ -32,6 +32,7 @@ import javax.swing.tree.TreeNode;
 import net.schwarzbaer.gui.IconSource;
 import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Data.PathIsNotSolvableException;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value.Type;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeContextMenu;
@@ -162,6 +163,68 @@ class TreeNodes {
 		}
 	}
 	
+	interface DataTreeNode {
+		default String getFullInfo() {
+			String str = "";
+			str += !hasName()  ? String.format("Name : none%n")  : String.format("Name : \"%s\"%n", getName());
+			str += !hasValue() ? String.format("Value : none%n") : String.format("Value : %s%n", getValueStr());
+			str += String.format("Path : %s%n", getPath());
+			str += String.format("AccessCall : %s%n", getAccessCall());
+			return str;
+		}
+		String getName();
+		String getValueStr();
+		String getPath();
+		String getAccessCall();
+		boolean hasName();
+		boolean hasValue();
+		
+	}
+
+	static class DataTreeNodeContextMenu extends AbstractTreeContextMenu {
+		private static final long serialVersionUID = 7620430144231207201L;
+		
+		private final JMenuItem miName;
+		private final JMenuItem miValue;
+		private final JMenuItem miPath;
+		private final JMenuItem miAccessCall;
+		private final JMenuItem miFullInfo;
+		private DataTreeNode clickedTreeNode;
+		private JTree invoker;
+		
+		DataTreeNodeContextMenu() {
+			clickedTreeNode = null;
+			invoker = null;
+			add(miName       = SteamInspector.createMenuItem("Copy Name"       , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getName())));
+			add(miValue      = SteamInspector.createMenuItem("Copy Value"      , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getValueStr())));
+			add(miPath       = SteamInspector.createMenuItem("Copy Path"       , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getPath())));
+			add(miAccessCall = SteamInspector.createMenuItem("Copy Access Call", true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getAccessCall())));
+			add(miFullInfo   = SteamInspector.createMenuItem("Copy Full Info"  , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getFullInfo())));
+			addSeparator();
+			add(SteamInspector.createMenuItem("Expand Full Tree", true, e->{
+				if (invoker!=null)
+					for (int i=0; i<invoker.getRowCount(); i++)
+						invoker.expandRow(i);
+			}));
+		}
+		
+		@Override
+		public void showContextMenu(JTree invoker, int x, int y, Object clickedTreeNode) {
+			this.invoker = invoker;
+			this.clickedTreeNode = null;
+			if (clickedTreeNode instanceof DataTreeNode)
+				this.clickedTreeNode = (DataTreeNode) clickedTreeNode;
+			
+			miName      .setEnabled(this.clickedTreeNode!=null && this.clickedTreeNode.hasName());
+			miValue     .setEnabled(this.clickedTreeNode!=null && this.clickedTreeNode.hasValue());
+			miPath      .setEnabled(this.clickedTreeNode!=null);
+			miAccessCall.setEnabled(this.clickedTreeNode!=null);
+			miFullInfo  .setEnabled(this.clickedTreeNode!=null);
+			
+			show(invoker, x, y);
+		}
+	}
+
 	static class FileSystem {
 		
 		static class Root extends BaseTreeNode<TreeNode,TreeNode> {
@@ -692,61 +755,6 @@ class TreeNodes {
 			}
 		}
 		
-		interface DataTreeNode {
-			default String getFullInfo() {
-				String str = "";
-				str += !hasName()  ? String.format("Name : none%n")  : String.format("Name : \"%s\"%n", getName());
-				str += !hasValue() ? String.format("Value : none%n") : String.format("Value : %s%n", getValueStr());
-				str += String.format("Path : %s%n", getPath());
-				return str;
-			}
-			String getName();
-			String getValueStr();
-			String getPath();
-			boolean hasName();
-			boolean hasValue();
-			
-		}
-		static class DataTreeNodeContextMenu extends AbstractTreeContextMenu {
-			private static final long serialVersionUID = 7620430144231207201L;
-			private final JMenuItem miFullInfo;
-			private final JMenuItem miPath;
-			private final JMenuItem miName;
-			private final JMenuItem miValue;
-			private DataTreeNode clickedTreeNode;
-			private JTree invoker;
-			
-			DataTreeNodeContextMenu() {
-				clickedTreeNode = null;
-				invoker = null;
-				add(miFullInfo = SteamInspector.createMenuItem("Copy Full Info", true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getFullInfo())));
-				add(miPath     = SteamInspector.createMenuItem("Copy Path"     , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getPath())));
-				add(miName     = SteamInspector.createMenuItem("Copy Name"     , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getName())));
-				add(miValue    = SteamInspector.createMenuItem("Copy Value"    , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getValueStr())));
-				addSeparator();
-				add(SteamInspector.createMenuItem("Expand Full Tree", true, e->{
-					if (invoker!=null)
-						for (int i=0; i<invoker.getRowCount(); i++)
-							invoker.expandRow(i);
-				}));
-			}
-			
-			@Override
-			public void showContextMenu(JTree invoker, int x, int y, Object clickedTreeNode) {
-				this.invoker = invoker;
-				this.clickedTreeNode = null;
-				if (clickedTreeNode instanceof DataTreeNode)
-					this.clickedTreeNode = (DataTreeNode) clickedTreeNode;
-				
-				miFullInfo.setEnabled(this.clickedTreeNode!=null);
-				miPath    .setEnabled(this.clickedTreeNode!=null);
-				miName    .setEnabled(this.clickedTreeNode!=null && this.clickedTreeNode.hasName());
-				miValue   .setEnabled(this.clickedTreeNode!=null && this.clickedTreeNode.hasValue());
-				
-				show(invoker, x, y);
-			}
-		};
-
 		static class JSON_File extends TextFile implements ParsedTextContentSource {
 			
 			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
@@ -790,19 +798,20 @@ class TreeNodes {
 			
 			static class JSON_TreeNode<ValueType> extends BaseTreeNode<JSON_TreeNode<?>,JSON_TreeNode<?>> implements DataTreeNode {
 
-				private final Vector<ValueType> children;
+				private final Vector<ValueType> childValues;
 				private final Function<ValueType, String> getName;
 				private final Function<ValueType, JSON_Data.Value> getValue;
-				private final String name;
-				private final JSON_Data.Value value;
+				final String name;
+				final JSON_Data.Value value;
 
-				private JSON_TreeNode(JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, JSON_Data.Value value, Vector<ValueType> children, Function<ValueType,String> getName, Function<ValueType,JSON_Data.Value> getValue) {
-					super(parent, title, children!=null, children==null || children.isEmpty(), icon==null ? null : JsonTreeIconsIS.getCachedIcon(icon));
+				private JSON_TreeNode(JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, JSON_Data.Value value, Vector<ValueType> childValues, Function<ValueType,String> getName, Function<ValueType,JSON_Data.Value> getValue) {
+					super(parent, title, childValues!=null, childValues==null || childValues.isEmpty(), icon==null ? null : JsonTreeIconsIS.getCachedIcon(icon));
 					this.name = name;
 					this.value = value;
-					this.children = children;
+					this.childValues = childValues;
 					this.getName = getName;
 					this.getValue = getValue;
+					if (this.value==null) throw new IllegalArgumentException("JSON_TreeNode( ... , value == null, ... ) is not allowed");
 				}
 
 				@Override public String getPath() {
@@ -816,6 +825,25 @@ class TreeNodes {
 					String nameRef = name!=null ? "."+name : "";
 					return parent.getPath()+indexInParent+nameRef;
 				}
+				
+				JSON_Data.Value getSubNodeValue(Object... path) {
+					try {
+						return JSON_Data.getSubNode(value, path);
+					} catch (PathIsNotSolvableException e) {
+						return null;
+					}
+				}
+
+				@Override public String getAccessCall() {
+					return String.format("<root>.getSubNode|Value(%s)", getAccessPath());
+				}
+				private String getAccessPath() {
+					if (parent==null) return "";
+					String path = parent.getAccessPath();
+					if (!path.isEmpty()) path += ",";
+					JSON_Data.Value.Type parentType = parent.getValueType();
+					return path + (parentType==JSON_Data.Value.Type.Array ? parent.getIndex(this) : "\""+name+"\"");
+				}
 
 				@Override public String getName    () { return name; }
 				@Override public String getValueStr() { return value.toString(); }
@@ -825,9 +853,9 @@ class TreeNodes {
 
 				@Override
 				protected Vector<? extends JSON_TreeNode<?>> createChildren() {
-					if (children==null) return null;
+					if (childValues==null) return null;
 					Vector<JSON_TreeNode<?>> childNodes = new Vector<>();
-					for (ValueType value:children) childNodes.add(create(this,getName.apply(value),getValue.apply(value)));
+					for (ValueType value:childValues) childNodes.add(create(this,getName.apply(value),getValue.apply(value)));
 					return childNodes;
 				}
 				

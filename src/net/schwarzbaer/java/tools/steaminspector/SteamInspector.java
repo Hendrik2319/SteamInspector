@@ -1653,7 +1653,7 @@ class SteamInspector {
 			return children.elements();
 		}
 
-		private void checkChildren(String methodeLabel) {
+		protected void checkChildren(String methodeLabel) {
 //			if (!allowsChildren) throw new IllegalStateException(String.format("TreeNode.%s from \"not allows children\" TreeNode", methodeLabel));
 			if (!allowsChildren) children=new Vector<>();
 			if (children==null) children=createChildren();
