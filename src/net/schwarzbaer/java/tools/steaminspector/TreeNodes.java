@@ -757,8 +757,11 @@ class TreeNodes {
 		
 		static class JSON_File extends TextFile implements ParsedTextContentSource {
 			
+			private static class NV extends JSON_Data.NamedValueExtra.Dummy{}
+			private static class V extends JSON_Data.ValueExtra.Dummy{}
+			
 			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
-			private JSON_Parser.Result parseResult;
+			private JSON_Parser.Result<NV,V> parseResult;
 
 			JSON_File(TreeNode parent, File file) {
 				this(parent, file, TreeIcons.JSONFile);
@@ -781,7 +784,7 @@ class TreeNodes {
 				if (parseResult==null) {
 					String text = getContentAsText();
 					if (text==null) return null;
-					JSON_Parser parser = new JSON_Parser(text);
+					JSON_Parser<NV,V> parser = new JSON_Parser<>(text,null);
 					try {
 						parseResult = parser.parse_withParseException();
 					} catch (JSON_Parser.ParseException e) {
@@ -800,11 +803,11 @@ class TreeNodes {
 
 				private final Vector<ValueType> childValues;
 				private final Function<ValueType, String> getName;
-				private final Function<ValueType, JSON_Data.Value> getValue;
+				private final Function<ValueType, JSON_Data.Value<NV,V>> getValue;
 				final String name;
-				final JSON_Data.Value value;
+				final JSON_Data.Value<NV,V> value;
 
-				private JSON_TreeNode(JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, JSON_Data.Value value, Vector<ValueType> childValues, Function<ValueType,String> getName, Function<ValueType,JSON_Data.Value> getValue) {
+				private JSON_TreeNode(JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, JSON_Data.Value<NV,V> value, Vector<ValueType> childValues, Function<ValueType,String> getName, Function<ValueType,JSON_Data.Value<NV,V>> getValue) {
 					super(parent, title, childValues!=null, childValues==null || childValues.isEmpty(), icon==null ? null : JsonTreeIconsIS.getCachedIcon(icon));
 					this.name = name;
 					this.value = value;
@@ -826,7 +829,7 @@ class TreeNodes {
 					return parent.getPath()+indexInParent+nameRef;
 				}
 				
-				JSON_Data.Value getSubNodeValue(Object... path) {
+				JSON_Data.Value<NV,V> getSubNodeValue(Object... path) {
 					try {
 						return JSON_Data.getSubNode(value, path);
 					} catch (PathIsNotSolvableException e) {
@@ -859,18 +862,18 @@ class TreeNodes {
 					return childNodes;
 				}
 				
-				public static TreeRoot create(JSON_Parser.Result parseResult, boolean isLarge) {
-					if (parseResult.object!=null) return new TreeRoot(create(null,null,new JSON_Data.ObjectValue(parseResult.object)),true,!isLarge,contextMenu);
-					if (parseResult.array !=null) return new TreeRoot(create(null,null,new JSON_Data. ArrayValue(parseResult.array )),true,!isLarge,contextMenu);
+				public static TreeRoot create(JSON_Parser.Result<NV,V> parseResult, boolean isLarge) {
+					if (parseResult.object!=null) return new TreeRoot(create(null,null,new JSON_Data.ObjectValue<NV,V>(parseResult.object,null)),true,!isLarge,contextMenu);
+					if (parseResult.array !=null) return new TreeRoot(create(null,null,new JSON_Data. ArrayValue<NV,V>(parseResult.array ,null)),true,!isLarge,contextMenu);
 					return BaseTreeNode.DummyTextNode.createSingleTextLineTree_("Parse Error: Parser returns neither an JSON array nor an JSON object");
 				}
 				
-				private static JSON_TreeNode<?> create(JSON_TreeNode<?> parent, String name, JSON_Data.Value value) {
+				private static JSON_TreeNode<?> create(JSON_TreeNode<?> parent, String name, JSON_Data.Value<NV,V> value) {
 					String title = getTitle(name,value);
 					JsonTreeIcons icon = getIcon(value.type);
 					switch (value.type) {
-					case Object: return new JSON_TreeNode<>(parent, title, icon, name, value, ((JSON_Data.ObjectValue)value).value, vt->vt.name, vt->vt.value);
-					case Array : return new JSON_TreeNode<>(parent, title, icon, name, value, ((JSON_Data.ArrayValue )value).value, vt->null, vt->vt);
+					case Object: return new JSON_TreeNode<>(parent, title, icon, name, value, value.castToObjectValue().value, vt->vt.name, vt->vt.value);
+					case Array : return new JSON_TreeNode<>(parent, title, icon, name, value, value.castToArrayValue ().value, vt->null, vt->vt);
 					default    : return new JSON_TreeNode<>(parent, title, icon, name, value, null, null, null);
 					}
 				}
@@ -889,15 +892,15 @@ class TreeNodes {
 					return null;
 				}
 				
-				private static String getTitle(String name, JSON_Data.Value value) {
+				private static String getTitle(String name, JSON_Data.Value<NV,V> value) {
 					switch (value.type) {
-					case Object : return getTitle(name, "{", ((JSON_Data. ObjectValue) value).value.size(), "}");
-					case Array  : return getTitle(name, "[", ((JSON_Data.  ArrayValue) value).value.size(), "]");
-					case Bool   : return getTitle(name, "" , ((JSON_Data.   BoolValue) value).value, "");
-					case String : return getTitle(name, "" , ((JSON_Data. StringValue) value).value, "");
-					case Integer: return getTitle(name, "" , ((JSON_Data.IntegerValue) value).value, "");
-					case Float  : return getTitle(name, "" , ((JSON_Data.  FloatValue) value).value, "");
-					case Null   : return getTitle(name, "" , ((JSON_Data.   NullValue) value).value, "");
+					case Object : return getTitle(name, "{", value.castToObjectValue ().value.size(), "}");
+					case Array  : return getTitle(name, "[", value.castToArrayValue  ().value.size(), "]");
+					case Bool   : return getTitle(name, "" , value.castToBoolValue   ().value, "");
+					case String : return getTitle(name, "" , value.castToStringValue ().value, "");
+					case Integer: return getTitle(name, "" , value.castToIntegerValue().value, "");
+					case Float  : return getTitle(name, "" , value.castToFloatValue  ().value, "");
+					case Null   : return getTitle(name, "" , value.castToNullValue   ().value, "");
 					}
 					return null;
 				}
