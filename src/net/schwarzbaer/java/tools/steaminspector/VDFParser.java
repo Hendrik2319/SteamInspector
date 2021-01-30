@@ -76,6 +76,11 @@ class VDFParser {
 			return new ValuePair(Block.createClosingBracketDummy(), Block.createClosingBracketDummy());
 		}
 
+		@Override
+		public String toString() {
+			return String.format("ValuePair [label=%s, datablock=%s]", label, datablock);
+		}
+
 		public boolean isClosingBracketDummy() {
 			return label.isClosingBracketDummy() || datablock.isClosingBracketDummy();
 		}
@@ -130,6 +135,17 @@ class VDFParser {
 			this.type = Type.Array;
 			this.str = null;
 			this.array = array;
+		}
+
+		@Override
+		public String toString() {
+			if (isClosingBracketDummy()) return "ClosingBracketDummy-Block";
+			if (type!=null)
+				switch (type) {
+				case Array : return String.format("%s-Block [%s]", type, array==null ? "null" : array.size()+" items");
+				case String: return String.format("%s-Block [%s]", type, str  ==null ? "null" : "\""+str+"\"");
+				}
+			return String.format("Block [type=%s, str=%s, array=%s]", type, str, array);
 		}
 
 		static Block createClosingBracketDummy() {
@@ -265,9 +281,13 @@ class VDFParser {
 			rootPairs = new Vector<>();
 		}
 
-		TreeRoot getRootTreeNode(boolean isLarge, TreeContextMenuHandler tcmh) {
-			return new TreeRoot(new VDFTreeNode(rootPairs), false, !isLarge, tcmh);
+		TreeRoot getTreeRoot(boolean isLarge, TreeContextMenuHandler tcmh) {
+			return new TreeRoot(createVDFTreeNode(), false, !isLarge, tcmh);
 			//return new TreeRoot(VDFTreeNode.createRoot(rootPairs), false, !isLarge, tcmh);
+		}
+
+		VDFTreeNode createVDFTreeNode() {
+			return new VDFTreeNode(rootPairs);
 		}
 
 		private void add(ValuePair valuePair) {
@@ -318,7 +338,7 @@ class VDFParser {
 				
 				node.checkChildren("getSubNode()");
 				boolean subNodeFound = false;
-				for (VDFTreeNode subNode:children)
+				for (VDFTreeNode subNode:node.children)
 					if (subNodeName.equals(subNode.name)) {
 						subNodeFound = true;
 						node = subNode;

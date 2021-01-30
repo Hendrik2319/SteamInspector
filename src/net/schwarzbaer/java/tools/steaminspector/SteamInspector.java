@@ -7,7 +7,6 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-import java.awt.GridLayout;
 import java.awt.Point;
 import java.awt.Window;
 import java.awt.event.ActionListener;
@@ -30,6 +29,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
@@ -38,6 +38,7 @@ import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JCheckBoxMenuItem;
+import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JList;
@@ -108,6 +109,7 @@ class SteamInspector {
 	
 	private StandardMainWindow mainWindow = null;
 	private JTree tree = null;
+	private TreeType selectedTreeType = null;
 	private JPanel fileContentPanel = null;
 	private final ExtendedOutput hexTableOutput;
 	private final ExtendedOutput plainTextOutput;
@@ -129,7 +131,7 @@ class SteamInspector {
 
 	public static class AppSettings extends Settings<AppSettings.ValueGroup,AppSettings.ValueKey> {
 		public enum ValueKey {
-			WindowX, WindowY, WindowWidth, WindowHeight, TextEditor, ImageViewer, SteamClientFolder, SteamLibraryFolders,
+			WindowX, WindowY, WindowWidth, WindowHeight, TextEditor, ImageViewer, SteamClientFolder, SteamLibraryFolders, SelectedTreeType,
 		}
 
 		public enum ValueGroup implements Settings.GroupKeys<ValueKey> {
@@ -148,13 +150,46 @@ class SteamInspector {
 		public void      setWindowSize(Dimension size) {        putDimension(ValueKey.WindowWidth,ValueKey.WindowHeight,size); }
 	}
 	
+	enum TreeType {
+		FilesNFolders("Discovered Folders, Some Simple Extracts", TreeNodes.FileSystem.Root::new, false),
+		GamesNPlayers("Discovered Players & Games", ()-> {
+			TreeNodes.PlayersNGames.loadData();
+			return new TreeNodes.PlayersNGames.Root();
+		}, true),
+		;
+		private final String label;
+		private final Supplier<TreeNode> createRoot;
+		private final boolean isRootVisible;
+
+		TreeType(String label, Supplier<TreeNode> createRoot, boolean isRootVisible) {
+			this.label = label;
+			this.createRoot = createRoot;
+			this.isRootVisible = isRootVisible;
+		}
+		
+		@Override public String toString() {
+			return label;
+		}
+	}
+	
 	private void createGUI() {
 		
-		ButtonGroup bg = new ButtonGroup();
-		JPanel optionPanel = new JPanel(new GridLayout(1,0,3,3));
-		optionPanel.add(createRadioButton("Files & Folders", true, true,bg,b->{ tree.setModel(new DefaultTreeModel(new TreeNodes.FileSystem.Root())); tree.setRootVisible(false); }));
-		optionPanel.add(createRadioButton("Games"          ,false, true,bg,b->{}));
-		optionPanel.add(createRadioButton("Players, Games" ,false,false,bg,b->{}));
+//		ButtonGroup bg = new ButtonGroup();
+//		JPanel treeTypePanel = new JPanel(new GridLayout(1,0,3,3));
+//		treeTypePanel.add(createRadioButton("Files & Folders", true, true,bg,b->{ tree.setModel(new DefaultTreeModel(new TreeNodes.FileSystem.Root())); tree.setRootVisible(false); }));
+//		treeTypePanel.add(createRadioButton("Games"          ,false, true,bg,b->{}));
+//		treeTypePanel.add(createRadioButton("Players, Games" ,false,false,bg,b->{}));
+		
+		JComboBox<TreeType> cmbbxTreeType = new JComboBox<>(TreeType.values());
+		selectedTreeType = settings.getEnum(AppSettings.ValueKey.SelectedTreeType,TreeType.class);
+		cmbbxTreeType.setSelectedItem(selectedTreeType);
+		
+		cmbbxTreeType.addActionListener(e->{
+			Object obj = cmbbxTreeType.getSelectedItem();
+			selectedTreeType = obj instanceof TreeType ? (TreeType)obj : null;
+			rebuildTree();
+			settings.putEnum(AppSettings.ValueKey.SelectedTreeType, selectedTreeType);
+		});
 		
 		JPanel dataTopPanel = new JPanel(new GridBagLayout());
 		GridBagConstraints c = new GridBagConstraints();
@@ -162,10 +197,12 @@ class SteamInspector {
 		c.weightx = 0;
 		dataTopPanel.add(new JLabel("Structure: "),c);
 		c.weightx = 1;
-		dataTopPanel.add(optionPanel,c);
+		dataTopPanel.add(cmbbxTreeType,c);
+		c.weightx = 0;
+		dataTopPanel.add(createButton("Reload", true, e->rebuildTree()),c);
 		
-		tree = new JTree(new TreeNodes.FileSystem.Root());
-		tree.setRootVisible(false);
+		tree = new JTree(/*new TreeNodes.FileSystem.Root()*/);
+		//tree.setRootVisible(false);
 		tree.setCellRenderer(new BaseTreeNodeRenderer());
 		tree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
 		tree.addTreeSelectionListener(e->{
@@ -204,6 +241,18 @@ class SteamInspector {
 			@Override public void componentResized(ComponentEvent e) { settings.setWindowSize( mainWindow.getSize() ); }
 			@Override public void componentMoved  (ComponentEvent e) { settings.setWindowPos ( mainWindow.getLocation() ); }
 		});
+		
+		rebuildTree();
+	}
+
+	private void rebuildTree() {
+		if (selectedTreeType==null || selectedTreeType.createRoot==null) {
+			tree.setModel(null);
+			tree.setRootVisible(selectedTreeType==null ? true : selectedTreeType.isRootVisible);
+		} else {
+			tree.setModel(new DefaultTreeModel(selectedTreeType.createRoot.get()));
+			tree.setRootVisible(selectedTreeType.isRootVisible);
+		}
 	}
 
 	private JMenuBar createMenuBar() {

@@ -44,7 +44,11 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerIn
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.AppManifest;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Game;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.ImageFile;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.ParseException;
+import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;
 import net.schwarzbaer.system.ClipboardTools;
 
 class TreeNodes {
@@ -123,6 +127,18 @@ class TreeNodes {
 		JsonTreeIconsIS = IconSource.createCachedIcons(16, 16, "/images/JsonTreeIcons.png", JsonTreeIcons.values());
 	}
 	
+	static boolean fileNameEndsWith(File file, String... suffixes) {
+		String name = file.getName().toLowerCase();
+		for (String suffix:suffixes)
+			if (name.endsWith(suffix))
+				return true;
+		return false;
+	}
+
+	static boolean isImageFile(File file) {
+		return fileNameEndsWith(file,".jpg",".jpeg",".png",".bmp",".ico",".tga");
+	}
+	
 	static String getSizeStr(File file) {
 		long length = file==null ? 0 : file.length();
 		return getSizeStr(length);
@@ -136,6 +152,25 @@ class TreeNodes {
 		return "["+length+"]";
 	}
 	
+	static File[] getFilesAndFolders(File folder) {
+		File[] files = folder.listFiles((FileFilter) file -> {
+			String name = file.getName();
+			if (file.isDirectory())
+				return !name.equals(".") && !name.equals("..");
+			return file.isFile();
+		});
+		return files;
+	}
+	
+	static Integer parseNumber(String name) {
+		try {
+			int n = Integer.parseInt(name);
+			if (name.equals(Integer.toString(n))) return n;
+		}
+		catch (NumberFormatException e) {}
+		return null;
+	}
+
 	static class HashMatrix<KeyType1,KeyType2,ValueType> {
 		
 		private final HashMap<KeyType1,HashMap<KeyType2,ValueType>> matrix;
@@ -154,6 +189,17 @@ class TreeNodes {
 			map.put(key2, value);
 			keySet1.add(key1);
 			keySet2.add(key2);
+		}
+		
+		HashMap<KeyType2, ValueType> getMapCopy(KeyType1 key1) {
+			HashMap<KeyType2, ValueType> map = matrix.get(key1);
+			if (map==null) return null;
+			return new HashMap<>(map);
+		}
+		
+		Collection<ValueType> getCollection(KeyType1 key1) {
+			HashMap<KeyType2, ValueType> map = matrix.get(key1);
+			return map.values();
 		}
 		
 		ValueType get(KeyType1 key1, KeyType2 key2) {
@@ -225,6 +271,275 @@ class TreeNodes {
 		}
 	}
 
+	static class Data {
+	
+		static class AppManifest {
+			
+			private static final String prefix = "appmanifest_";
+			private static final String suffix = ".acf";
+			
+			@SuppressWarnings("unused")
+			private final int appID;
+			private final File file;
+			private VDFTreeNode vdfTree = null;
+			
+			AppManifest(int appID, File file) {
+				this.appID = appID;
+				this.file = file;
+			}
+		
+			static Integer getAppIDFromFile(File file) {
+				// appmanifest_275850.acf 
+				if (!file.isFile()) return null;
+				String name = file.getName();
+				if (!name.startsWith(prefix)) return null;
+				if (!name.endsWith(suffix)) return null;
+				String idStr = name.substring(prefix.length(), name.length()-suffix.length());
+				try { return Integer.parseInt(idStr); }
+				catch (NumberFormatException e) { return null; }
+			}
+
+			void loadData() {
+				if (file==null) return;
+				
+				String text = null;
+				try {
+					byte[] bytes = Files.readAllBytes(file.toPath());
+					text = new String(bytes,StandardCharsets.UTF_8);
+				} catch (IOException e) {}
+				
+				vdfTree = null;
+				if (text!=null)
+					try {
+						VDFParser.Data vdfData = VDFParser.parse(text);
+						vdfTree = vdfData.createVDFTreeNode();
+					} catch (ParseException e) {}
+			}
+
+			String getGameTitle() {
+				if (vdfTree!=null) {
+					VDFTreeNode appNameNode = vdfTree.getSubNode("AppState","name");
+					if (appNameNode!=null) return appNameNode.value;
+				}
+				return null;
+			}
+		}
+		
+		static class Game {
+			
+			private final int appID;
+			private final AppManifest appManifest;
+			private final HashMap<String, File> imageFiles;
+			
+			Game(int appID, AppManifest appManifest, HashMap<String, File> imageFiles) {
+				this.appID = appID;
+				this.appManifest = appManifest;
+				this.imageFiles = imageFiles;
+				if (this.appManifest!=null) this.appManifest.loadData();
+			}
+			
+			String getTitle() {
+				if (appManifest!=null)
+					return appManifest.getGameTitle()+" ["+appID+"]";
+				return "Game "+appID;
+			}
+
+			Icon getIcon() {
+				if (imageFiles!=null) {
+					File iconImageFile = imageFiles.get("icon");
+					if (iconImageFile!=null) {
+						try {
+							BufferedImage image = ImageIO.read(iconImageFile);
+							return IconSource.getScaledIcon(image, 16, 16);
+						} catch (IOException e) {}
+					}
+				}
+				return null;
+			}
+		}
+	
+		static class GameImages {
+			
+			@SuppressWarnings("unused")
+			private final File folder;
+			private final Vector<File> otherFiles;
+			private final Vector<File> imageFiles;
+			private final HashMatrix<Integer, String, File> appImages;
+		
+			GameImages(File folder) {
+				this.folder = folder;
+				File[] files = getFilesAndFolders(folder);
+				
+				otherFiles = new Vector<>();
+				imageFiles = new Vector<>();
+				appImages = new HashMatrix<>();
+				
+				for (File file:files) {
+					if (file.isDirectory()) {
+						otherFiles.add(file);
+						
+					} else if (ImageFile.is(file)) {
+						ImageFileName ifn = ImageFileName.parse(file.getName());
+						if (ifn==null || ifn.label==null || ifn.number==null)
+							imageFiles.add(file);
+						else
+							appImages.put(ifn.number, ifn.label, file);
+						
+					} else
+						otherFiles.add(file);
+				}
+			}
+			
+			public Collection<? extends Integer> getGameIDs() {
+				return appImages.keySet1;
+			}
+
+			public Vector<Integer> getSortedGameIDs() {
+				Vector<Integer> keySet1 = new Vector<>(getGameIDs());
+				keySet1.sort(null);
+				return keySet1;
+			}
+		
+			public Vector<String> getSortedImageTypes() {
+				Vector<String>  keySet2 = new Vector<>(appImages.keySet2);
+				keySet2.sort(null);
+				return keySet2;
+			}
+		
+			public File getImageFile(Integer gameID, String ImageType) { return appImages.get(gameID, ImageType); }
+			public File getImageFile(String ImageType, Integer gameID) { return appImages.get(gameID, ImageType); }
+		
+			public HashMap<String, File> getImageFileMap(Integer gameID) {
+				return appImages.getMapCopy(gameID);
+			}
+			
+			public File[] getImageFileArrays(Integer gameID) {
+				Collection<File> files = appImages.getCollection(gameID);
+				return files.toArray(new File[files.size()]);
+			}
+
+			static class ImageFileName {
+			
+				private final Integer number;
+				private final String label;
+			
+				public ImageFileName(Integer number, String label) {
+					this.number = number;
+					this.label = label;
+				}
+			
+				static ImageFileName parse(String name) {
+					// 1000410_library_600x900.jpg
+					int pos = name.lastIndexOf('.');
+					if (pos>=0) name = name.substring(0, pos);
+					pos = name.indexOf('_');
+					if (pos<0) return null;
+					String numberStr = name.substring(0, pos);
+					String labelStr  = name.substring(pos+1);
+					Integer number = parseNumber(numberStr);
+					if (number==null) return null;
+					return new ImageFileName(number,labelStr);
+				}
+				
+			}
+		}
+	}
+	static class PlayersNGames {
+		
+		private static Data.GameImages gameImages = null;
+		private static final HashMap<Integer,Data.AppManifest> appManifests = new HashMap<>();
+		private static final Vector<Data.Game> games = new Vector<>();
+	
+		static void loadData() {
+			File gameImagesFolder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
+			if (gameImagesFolder==null || !gameImagesFolder.isDirectory()) gameImages = null;
+			else gameImages = new Data.GameImages(gameImagesFolder);
+			
+			appManifests.clear();;
+			KnownFolders.forEachSteamAppsFolder((i,folder)->{
+				if (folder!=null && folder.isDirectory()) {
+					File[] files = folder.listFiles(file->Data.AppManifest.getAppIDFromFile(file)!=null);
+					for (File file:files) {
+						Integer appID = Data.AppManifest.getAppIDFromFile(file);
+						appManifests.put(appID, new Data.AppManifest(appID,file));
+					}
+				}
+			});
+			
+			
+			HashSet<Integer> idSet = new HashSet<>();
+			idSet.addAll(appManifests.keySet());
+			if (gameImages!=null)
+				idSet.addAll(gameImages.getGameIDs());
+			
+			games.clear();
+			for (Integer appID:idSet) {
+				HashMap<String, File> imageFiles = gameImages==null ? null : gameImages.getImageFileMap(appID);
+				AppManifest appManifest = appManifests.get(appID);
+				if (appManifest!=null) appManifest.loadData();
+				games.add(new Data.Game(appID, appManifest, imageFiles));
+			}
+			Comparator<Game> gameComp = Comparator.<Data.Game,Integer>comparing(g -> g==null ? 2 : g.appManifest!=null ? 0 : 1);
+			gameComp = gameComp.thenComparing(g -> g==null ? Integer.MAX_VALUE : g.appID);
+			games.sort(gameComp);
+		}
+
+		static class Root extends BaseTreeNode<TreeNode,TreeNode> {
+			Root() {
+				super(null, "PlayersNGames.Root", true, false);
+			}
+			
+			@Override
+			protected Vector<? extends TreeNode> createChildren() {
+				Vector<TreeNode> children = new Vector<>();
+				children.add(new GamesRoot(this));
+				return children;
+			}
+			
+		}
+		
+		static class GamesRoot extends BaseTreeNode<Root,GameNode> {
+			GamesRoot(Root parent) {
+				super(parent, "Games", true, false);
+			}
+	
+			@Override
+			protected Vector<? extends GameNode> createChildren() {
+				Vector<GameNode> children = new Vector<>();
+				
+				for (Game game:games) {
+					children.add(new GameNode(this, game));
+				}
+				
+				return children;
+			}
+		}
+		
+		static class GameNode extends BaseTreeNode<GamesRoot,TreeNode> {
+	
+			private final Game game;
+
+			protected GameNode(GamesRoot parent, Game game) {
+				super(parent, game.getTitle(), true, false, game.getIcon());
+				this.game = game;
+			}
+	
+			@Override
+			protected Vector<? extends TreeNode> createChildren() {
+				Vector<TreeNode> children = new Vector<>();
+				
+				if (game.appManifest!=null)
+					children.add(new FileSystem.AppManifestNode(this, game.appManifest.file));
+				
+				if (game.imageFiles!=null && !game.imageFiles.isEmpty())
+					children.add(new FileSystem.FolderNode(this, "Images", game.imageFiles.values(), TreeIcons.ImageFile));
+				
+				return children;
+			}
+		}
+		
+	}
+	
 	static class FileSystem {
 		
 		static class Root extends BaseTreeNode<TreeNode,TreeNode> {
@@ -291,63 +606,17 @@ class TreeNodes {
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				
-				File[] files = FolderNode.getFilesAndFolders(folder);
+				Data.GameImages gameImages = new Data.GameImages(folder);
 				
-				Vector<File> otherFiles = new Vector<>();
-				Vector<File> imageFiles = new Vector<>();
-				HashMatrix<Integer, String, File> appImages = new HashMatrix<>();
-				
-				for (File file:files) {
-					if (file.isDirectory()) {
-						otherFiles.add(file);
-						
-					} else if (ImageFile.is(file)) {
-						ImageFileName ifn = ImageFileName.parse(file.getName());
-						if (ifn==null || ifn.label==null || ifn.number==null)
-							imageFiles.add(file);
-						else
-							appImages.put(ifn.number, ifn.label, file);
-						
-					} else
-						otherFiles.add(file);
-				}
+				Vector<Integer> keySet1 = gameImages.getSortedGameIDs();
+				Vector<String>  keySet2 = gameImages.getSortedImageTypes();
 				
 				Vector<TreeNode> children = new Vector<>();
-				
-				Vector<Integer> keySet1 = new Vector<>(appImages.keySet1); keySet1.sort(null);
-				Vector<String>  keySet2 = new Vector<>(appImages.keySet2); keySet2.sort(null);
-				
-				children.add(new ImageGroup1<Integer, String>(this, "Images (by Game)" ,  true, keySet1, keySet2, appImages::get));
-				children.add(new ImageGroup1<String, Integer>(this, "Images (by Label)", false, keySet2, keySet1, (k2,k1)->appImages.get(k1,k2)));
-				children.add(new FolderNode(this, "Other Images", imageFiles, TreeIcons.Folder));
-				children.add(new FolderNode(this, "Other Files", otherFiles, TreeIcons.Folder));
-				
+				children.add(new ImageGroup1<Integer, String>(this, "Images (by Game)" ,  true, keySet1, keySet2, gameImages::getImageFile));
+				children.add(new ImageGroup1<String, Integer>(this, "Images (by Label)", false, keySet2, keySet1, gameImages::getImageFile));
+				children.add(new FolderNode(this, "Other Images", gameImages.imageFiles, TreeIcons.Folder));
+				children.add(new FolderNode(this, "Other Files", gameImages.otherFiles, TreeIcons.Folder));
 				return children;
-			}
-			
-			static class ImageFileName {
-
-				private final Integer number;
-				private final String label;
-
-				public ImageFileName(Integer number, String label) {
-					this.number = number;
-					this.label = label;
-				}
-
-				static ImageFileName parse(String name) {
-					// 1000410_library_600x900.jpg
-					int pos = name.lastIndexOf('.');
-					if (pos>=0) name = name.substring(0, pos);
-					pos = name.indexOf('_');
-					if (pos<0) return null;
-					String numberStr = name.substring(0, pos);
-					String labelStr  = name.substring(pos+1);
-					Integer number = FolderNode.parseNumber(numberStr);
-					if (number==null) return null;
-					return new ImageFileName(number,labelStr);
-				}
-				
 			}
 
 			static class ImageGroup1<KeyType1,KeyType2> extends BaseTreeNode<TreeNode,TreeNode> {
@@ -429,7 +698,7 @@ class TreeNodes {
 					
 				} else if (folder!=null) {
 					File[] files = folder.listFiles((FileFilter) AppManifestNode::is);
-					Arrays.sort(files,Comparator.comparing(AppManifestNode::getAppIDFromFile, Comparator.nullsLast(Comparator.naturalOrder())));
+					Arrays.sort(files,Comparator.comparing(Data.AppManifest::getAppIDFromFile, Comparator.nullsLast(Comparator.naturalOrder())));
 					for (File file:files)
 						children.add(new AppManifestNode(this, file));
 				}
@@ -481,7 +750,7 @@ class TreeNodes {
 
 		static class FolderNode extends FileSystemNode {
 			
-			protected final Vector<File> files;
+			protected final File[] files;
 			protected final Function<File, String> getNodeTitle;
 
 			FolderNode(TreeNode parent, File folder) {
@@ -498,30 +767,26 @@ class TreeNodes {
 				this.files = null;
 				this.getNodeTitle = null;
 			}
-			FolderNode(TreeNode parent, String title, Vector<File> files, TreeIcons icon) {
+			FolderNode(TreeNode parent, String title, Collection<File> files, TreeIcons icon) {
 				this(parent, title, files, null, icon);
 			}
-			FolderNode(TreeNode parent, String title, Vector<File> files, Function<File,String> getNodeTitle, TreeIcons icon) {
-				super(parent, null, title, true, files.isEmpty(), icon);
+			FolderNode(TreeNode parent, String title, Collection<File> files, Function<File,String> getNodeTitle, TreeIcons icon) {
+				this(parent, title, files==null ? null : files.toArray(new File[files.size()]), getNodeTitle, icon);
+			}
+			FolderNode(TreeNode parent, String title, File[] files, TreeIcons icon) {
+				this(parent, title, files, null, icon);
+			}
+			FolderNode(TreeNode parent, String title, File[] files, Function<File,String> getNodeTitle, TreeIcons icon) {
+				super(parent, null, title, true, files==null || files.length==0, icon);
 				this.files = files;
 				this.getNodeTitle = getNodeTitle;
 			}
 		
 			@Override
 			protected Vector<? extends FileSystemNode> createChildren() {
-				File[] files = this.files!=null ? this.files.toArray(new File[this.files.size()]) : getFilesAndFolders(fileObj);
-				sortFiles(files);
-				return createNodes(this,files,getNodeTitle);
-			}
-			
-			static File[] getFilesAndFolders(File folder) {
-				File[] files = folder.listFiles((FileFilter) file -> {
-					String name = file.getName();
-					if (file.isDirectory())
-						return !name.equals(".") && !name.equals("..");
-					return file.isFile();
-				});
-				return files;
+				File[] files_ = files!=null ? files : getFilesAndFolders(fileObj);
+				sortFiles(files_);
+				return createNodes(this,files_,getNodeTitle);
 			}
 			
 			static void sortFiles(File[] files) {
@@ -565,15 +830,6 @@ class TreeNodes {
 					if (other.extension==null) return +1;
 					return this.extension.compareToIgnoreCase(other.extension);
 				}
-			}
-			
-			static Integer parseNumber(String name) {
-				try {
-					int n = Integer.parseInt(name);
-					if (name.equals(Integer.toString(n))) return n;
-				}
-				catch (NumberFormatException e) {}
-				return null;
 			}
 			
 			static Vector<? extends FileSystemNode> createNodes(TreeNode parent, File[] files, Function<File, String> getNodeTitle) {
@@ -634,13 +890,6 @@ class TreeNodes {
 			static Icon getIconForFile(String filename) {
 				return new JFileChooser().getIcon(new File(filename));
 			}
-			static boolean fileNameEndsWith(File file, String... suffixes) {
-				String name = file.getName().toLowerCase();
-				for (String suffix:suffixes)
-					if (name.endsWith(suffix))
-						return true;
-				return false;
-			}
 
 			@Override
 			public String toString() {
@@ -686,7 +935,7 @@ class TreeNodes {
 			}
 			
 			static boolean is(File file) {
-				return fileNameEndsWith(file,".jpg",".jpeg",".png",".bmp",".ico",".tga");
+				return isImageFile(file);
 			}
 
 			@Override ContentType getContentType() {
@@ -945,41 +1194,25 @@ class TreeNodes {
 						return BaseTreeNode.DummyTextNode.createSingleTextLineTree_("Parse Error: %s", e.getMessage());
 					}
 				}
-				return vdfData==null ? null : vdfData.getRootTreeNode(isLarge(),contextMenu);
+				return vdfData==null ? null : vdfData.getTreeRoot(isLarge(),contextMenu);
 			}
 		}
 
 		static class AppManifestNode extends VDF_File {
 			
-			private static final String prefix = "appmanifest_";
-			private static final String suffix = ".acf";
-			
-			static boolean is(File file) {
-				return getAppIDFromFile(file) != null;
-			}
-		
-			static Integer getAppIDFromFile(File file) {
-				// appmanifest_275850.acf 
-				if (!file.isFile()) return null;
-				String name = file.getName();
-				if (!name.startsWith(prefix)) return null;
-				if (!name.endsWith(suffix)) return null;
-				String idStr = name.substring(prefix.length(), name.length()-suffix.length());
-				try { return Integer.parseInt(idStr); }
-				catch (NumberFormatException e) { return null; }
-			}
-		
 			private final int id;
-			private final File file;
 		
 			AppManifestNode(TreeNode parent, File file) {
 				super(parent, file, TreeIcons.AppManifest);
-				this.file = file;
-				id = getAppIDFromFile(file);
+				id = AppManifest.getAppIDFromFile(file);
 			}
 		
+			static boolean is(File file) {
+				return AppManifest.getAppIDFromFile(file) != null;
+			}
+
 			@Override public String toString() {
-				return String.format("App %d (%s, %s)", id, file==null ? "" : file.getName(), getSizeStr(file));
+				return String.format("App %d (%s, %s)", id, fileObj==null ? "" : fileObj.getName(), getSizeStr(fileObj));
 			}
 		}
 	}
