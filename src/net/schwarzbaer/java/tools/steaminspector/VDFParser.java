@@ -1,8 +1,11 @@
 package net.schwarzbaer.java.tools.steaminspector;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.LineNumberReader;
 import java.io.StringReader;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
 import java.util.Locale;
 import java.util.Vector;
 
@@ -31,6 +34,15 @@ class VDFParser {
 
 	private VDFParser(String text) {
 		this.text = text;
+	}
+	
+	public static Data parse(File file, Charset charset) throws ParseException {
+		try {
+			byte[] bytes = Files.readAllBytes(file.toPath());
+			return parse(new String(bytes,charset));
+		} catch (IOException e) {
+			return null;
+		}
 	}
 
 	public static Data parse(String text) throws ParseException {

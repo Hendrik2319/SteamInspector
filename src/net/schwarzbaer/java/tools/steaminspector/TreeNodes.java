@@ -15,10 +15,13 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Vector;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 import javax.imageio.ImageIO;
 import javax.swing.BorderFactory;
@@ -46,6 +49,10 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedTextConten
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.AppManifest;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Game;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.GameImages;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShot;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FolderNode;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.ImageFile;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.ParseException;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;
@@ -136,7 +143,7 @@ class TreeNodes {
 	}
 
 	static boolean isImageFile(File file) {
-		return fileNameEndsWith(file,".jpg",".jpeg",".png",".bmp",".ico",".tga");
+		return file.isFile() && fileNameEndsWith(file,".jpg",".jpeg",".png",".bmp",".ico",".tga");
 	}
 	
 	static String getSizeStr(File file) {
@@ -166,6 +173,15 @@ class TreeNodes {
 		try {
 			int n = Integer.parseInt(name);
 			if (name.equals(Integer.toString(n))) return n;
+		}
+		catch (NumberFormatException e) {}
+		return null;
+	}
+	
+	static Long parseLongNumber(String name) {
+		try {
+			long n = Long.parseLong(name);
+			if (name.equals(Long.toString(n))) return n;
 		}
 		catch (NumberFormatException e) {}
 		return null;
@@ -207,6 +223,25 @@ class TreeNodes {
 			if (map==null) return null;
 			return map.get(key2);
 		}
+	}
+
+	static class LabeledFile {
+		final String label;
+		final File file;
+		LabeledFile(File file) { this(null,file); }
+		LabeledFile(String label, File file) {
+			if (file==null) throw new IllegalArgumentException();
+			this.label = label!=null ? label : file.getName();
+			this.file = file;
+		}
+	}
+	
+	interface FileBasedNode {
+		LabeledFile getFile();
+	}
+	
+	interface ExternViewableNode {
+		ExternalViewerInfo getExternalViewerInfo();
 	}
 	
 	interface DataTreeNode {
@@ -273,6 +308,102 @@ class TreeNodes {
 
 	static class Data {
 	
+		static class ScreenShot {
+			final File image;
+			final File thumbnail;
+			ScreenShot(File image, File thumbnail) {
+				this.image = image;
+				this.thumbnail = thumbnail;
+			}
+		}
+		
+		static class ScreenShots {
+
+			final HashMap<Integer,Vector<ScreenShot>> list;
+
+			ScreenShots(File folder) {
+				
+				list = new HashMap<>();
+				File subFolder = new File(folder,"remote");
+				if (subFolder.isDirectory()) {
+					File[] folders = subFolder.listFiles(file->file.isDirectory() && parseNumber(file.getName())!=null);
+					for (File gameFolder:folders) {
+						Integer gameID = parseNumber(gameFolder.getName());
+						Vector<ScreenShot> screenShots = new Vector<>();
+						list.put(gameID, screenShots);
+						
+						File imagesFolder = new File(gameFolder,"screenshots");
+						if (imagesFolder.isDirectory()) {
+							File thumbnailsFolder = new File(imagesFolder,"thumbnails");
+							File[] imageFiles = imagesFolder.listFiles(TreeNodes::isImageFile);
+							for (File image:imageFiles) {
+								File thumbnail = null;
+								if (thumbnailsFolder.isDirectory())
+									thumbnail = new File(thumbnailsFolder,image.getName());
+								screenShots.add(new ScreenShot(image,thumbnail));
+							}
+						}
+					}
+				}
+			}
+			
+		}
+		static class Player {
+
+			final HashMap<Integer, File> gameDataFolders;
+			final ScreenShots screenShots;
+			final File configFolder;
+			final VDFTreeNode localconfig;
+			private long playerID;
+
+			Player(long playerID, File playerFolder) {
+				this.playerID = playerID;
+				File[] folders = playerFolder.listFiles(file->file.isDirectory() && parseNumber(file.getName())!=null);
+				
+				gameDataFolders = new HashMap<Integer,File>();
+				for (File folder:folders) {
+					String name = folder.getName();
+					if (!name.equals("7") && !name.equals("760")) {
+						Integer gameID = parseNumber(name);
+						gameDataFolders.put(gameID, folder);
+					}
+				}
+				File folder;
+				
+				folder = new File(playerFolder,"760");
+				if (folder.isDirectory()) {
+					screenShots = new ScreenShots(folder);
+				} else
+					screenShots = null;
+				
+				folder = new File(playerFolder,"config");
+				if (folder.isDirectory()) {
+					configFolder = folder;
+				} else
+					configFolder = null;
+				
+				VDFParser.Data localconfigData = null;
+				if (configFolder!=null) {
+					File localconfigFile = new File(configFolder,"localconfig.vdf");
+					if (localconfigFile.isFile()) {
+						try { localconfigData = VDFParser.parse(localconfigFile,StandardCharsets.UTF_8); }
+						catch (ParseException e) {}
+					}
+				}
+				localconfig = localconfigData!=null ? localconfigData.createVDFTreeNode() : null;
+			}
+
+			public String getName() {
+				if (localconfig != null) {
+					VDFTreeNode nameNode = localconfig.getSubNode("UserLocalConfigStore","friends","PersonaName");
+					if (nameNode!=null && nameNode.value!=null && !nameNode.value.isEmpty())
+						return nameNode.value;
+				}
+				return "Player "+playerID;
+			}
+
+		}
+
 		static class AppManifest {
 			
 			private static final String prefix = "appmanifest_";
@@ -281,11 +412,22 @@ class TreeNodes {
 			@SuppressWarnings("unused")
 			private final int appID;
 			private final File file;
-			private VDFTreeNode vdfTree = null;
+			private final VDFTreeNode vdfTree;
 			
 			AppManifest(int appID, File file) {
 				this.appID = appID;
 				this.file = file;
+				
+				if (this.file!=null) {
+					
+					VDFParser.Data vdfData = null;
+					try { vdfData = VDFParser.parse(this.file,StandardCharsets.UTF_8); }
+					catch (ParseException e) {}
+					
+					vdfTree = vdfData!=null ? vdfData.createVDFTreeNode() : null;
+					
+				} else
+					vdfTree = null;
 			}
 		
 			static Integer getAppIDFromFile(File file) {
@@ -297,23 +439,6 @@ class TreeNodes {
 				String idStr = name.substring(prefix.length(), name.length()-suffix.length());
 				try { return Integer.parseInt(idStr); }
 				catch (NumberFormatException e) { return null; }
-			}
-
-			void loadData() {
-				if (file==null) return;
-				
-				String text = null;
-				try {
-					byte[] bytes = Files.readAllBytes(file.toPath());
-					text = new String(bytes,StandardCharsets.UTF_8);
-				} catch (IOException e) {}
-				
-				vdfTree = null;
-				if (text!=null)
-					try {
-						VDFParser.Data vdfData = VDFParser.parse(text);
-						vdfTree = vdfData.createVDFTreeNode();
-					} catch (ParseException e) {}
 			}
 
 			String getGameTitle() {
@@ -330,12 +455,15 @@ class TreeNodes {
 			private final int appID;
 			private final AppManifest appManifest;
 			private final HashMap<String, File> imageFiles;
+			private final HashMap<Long, File> gameDataFolders;
+			private final HashMap<Long, Vector<ScreenShot>> screenShots;
 			
-			Game(int appID, AppManifest appManifest, HashMap<String, File> imageFiles) {
+			Game(int appID, AppManifest appManifest, HashMap<String, File> imageFiles, HashMap<Long, File> gameDataFolders, HashMap<Long, Vector<ScreenShot>> screenShots) {
 				this.appID = appID;
 				this.appManifest = appManifest;
 				this.imageFiles = imageFiles;
-				if (this.appManifest!=null) this.appManifest.loadData();
+				this.gameDataFolders = gameDataFolders;
+				this.screenShots = screenShots;
 			}
 			
 			String getTitle() {
@@ -446,56 +574,168 @@ class TreeNodes {
 	}
 	static class PlayersNGames {
 		
-		private static Data.GameImages gameImages = null;
-		private static final HashMap<Integer,Data.AppManifest> appManifests = new HashMap<>();
-		private static final Vector<Data.Game> games = new Vector<>();
+		private static final HashMap<Integer,Game> games = new HashMap<>();
+		private static final HashMap<Long,Player> players = new HashMap<>();
+		private static Comparator<Game> gameComparator;
 	
 		static void loadData() {
-			File gameImagesFolder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
-			if (gameImagesFolder==null || !gameImagesFolder.isDirectory()) gameImages = null;
-			else gameImages = new Data.GameImages(gameImagesFolder);
+			File folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
+			GameImages gameImages = null;
+			if (folder!=null && folder.isDirectory())
+				gameImages = new GameImages(folder);
 			
-			appManifests.clear();;
-			KnownFolders.forEachSteamAppsFolder((i,folder)->{
-				if (folder!=null && folder.isDirectory()) {
-					File[] files = folder.listFiles(file->Data.AppManifest.getAppIDFromFile(file)!=null);
+			HashMap<Integer,AppManifest> appManifests = new HashMap<>();
+			KnownFolders.forEachSteamAppsFolder((i,f)->{
+				if (f!=null && f.isDirectory()) {
+					File[] files = f.listFiles(file->AppManifest.getAppIDFromFile(file)!=null);
 					for (File file:files) {
-						Integer appID = Data.AppManifest.getAppIDFromFile(file);
-						appManifests.put(appID, new Data.AppManifest(appID,file));
+						Integer appID = AppManifest.getAppIDFromFile(file);
+						appManifests.put(appID, new AppManifest(appID,file));
 					}
 				}
 			});
 			
+			players.clear();;
+			folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.USERDATA);
+			File[] files = folder.listFiles(file->file.isDirectory() && parseLongNumber(file.getName())!=null);
+			for (File playerFolder:files) {
+				Long playerID = parseLongNumber(playerFolder.getName());
+				if (playerID==null) throw new IllegalStateException();
+				players.put(playerID, new Player(playerID,playerFolder));
+			}
 			
+			// collect all AppIDs
 			HashSet<Integer> idSet = new HashSet<>();
 			idSet.addAll(appManifests.keySet());
 			if (gameImages!=null)
 				idSet.addAll(gameImages.getGameIDs());
+			players.forEach((playerID,player)->{
+				idSet.addAll(player.gameDataFolders.keySet());
+				if (player.screenShots!=null)
+					idSet.addAll(player.screenShots.list.keySet());
+			});
+			
 			
 			games.clear();
 			for (Integer appID:idSet) {
 				HashMap<String, File> imageFiles = gameImages==null ? null : gameImages.getImageFileMap(appID);
+				
 				AppManifest appManifest = appManifests.get(appID);
-				if (appManifest!=null) appManifest.loadData();
-				games.add(new Data.Game(appID, appManifest, imageFiles));
+				
+				HashMap<Long,File> gameDataFolders = new HashMap<>();
+				HashMap<Long,Vector<ScreenShot>> screenShots = new HashMap<>();
+				players.forEach((playerID,player)->{
+					
+					File gameDataFolder = player.gameDataFolders.get(appID);
+					if (gameDataFolder!=null)
+						gameDataFolders.put(playerID, gameDataFolder);
+					
+					if (player.screenShots!=null) {
+						Vector<ScreenShot> screenShots_ = player.screenShots.list.get(appID);
+						if (screenShots_!=null && !screenShots_.isEmpty())
+							screenShots.put(playerID, screenShots_);
+					}
+				});
+				
+				games.put(appID, new Game(appID, appManifest, imageFiles, gameDataFolders, screenShots));
 			}
-			Comparator<Game> gameComp = Comparator.<Data.Game,Integer>comparing(g -> g==null ? 2 : g.appManifest!=null ? 0 : 1);
-			gameComp = gameComp.thenComparing(g -> g==null ? Integer.MAX_VALUE : g.appID);
-			games.sort(gameComp);
+			
+			gameComparator = Comparator.comparing(g -> g.appManifest!=null ? 0 : 1);
+			gameComparator = gameComparator.thenComparing(g -> g.appID);
+			gameComparator = Comparator.nullsLast(gameComparator);
+		}
+
+		private static String getPlayerName(Long playerID) {
+			if (playerID==null) return "Player ???";
+			Player game = players.get(playerID);
+			if (game==null) return "Player "+playerID;
+			return game.getName();
+		}
+
+		private static Icon getGameIcon(Integer gameID, TreeIcons defaultIcon) {
+			if (gameID==null) return TreeIconsIS.getCachedIcon(defaultIcon);
+			Data.Game game = games.get(gameID);
+			if (game==null) return TreeIconsIS.getCachedIcon(defaultIcon);
+			return game.getIcon();
+		}
+
+		private static String getGameTitle(Integer gameID) {
+			if (gameID==null) return "Game ???";
+			Data.Game game = games.get(gameID);
+			if (game==null) return "Game "+gameID;
+			return game.getTitle();
 		}
 
 		static class Root extends BaseTreeNode<TreeNode,TreeNode> {
 			Root() {
 				super(null, "PlayersNGames.Root", true, false);
 			}
-			
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				children.add(new GamesRoot(this));
+				children.add(new PlayersRoot(this));
 				return children;
 			}
-			
+		}
+		
+		static class PlayersRoot extends BaseTreeNode<Root,PlayerNode> {
+			PlayersRoot(Root parent) {
+				super(parent, "Players", true, false);
+			}
+	
+			@Override
+			protected Vector<? extends PlayerNode> createChildren() {
+				Vector<PlayerNode> children = new Vector<>();
+				
+				//players.forEach((playerID,player)->children.add(new PlayerNode(this, playerID, player)));
+				Comparator<Map.Entry<Long, Player>> entryOrder = Comparator.comparing(Map.Entry<Long, Player>::getKey);
+				Stream<Map.Entry<Long, Player>> sortedEntries = players.entrySet().stream().sorted(entryOrder);
+				sortedEntries.forEachOrdered(entry->children.add(new PlayerNode(this, entry.getKey(), entry.getValue())));
+				
+				return children;
+			}
+		}
+		
+		static class PlayerNode extends BaseTreeNode<PlayersRoot,TreeNode> {
+
+			//private long playerID;
+			private Player player;
+
+			public PlayerNode(PlayersRoot playersRoot, long playerID, Player player) {
+				super(playersRoot, player.getName()+"  ["+playerID+"]", true, false);
+				//this.playerID = playerID;
+				this.player = player;
+			}
+
+			@Override
+			protected Vector<? extends TreeNode> createChildren() {
+				Vector<TreeNode> children = new Vector<>();
+				
+				Comparator<Integer> idOrder = Comparator.<Integer,Game>comparing(id->games.get(id),gameComparator);
+				
+				if (player.gameDataFolders!=null && !player.gameDataFolders.isEmpty()) {
+					HashMap<File,String> folderLabels = new HashMap<>();
+					player.gameDataFolders.forEach((gameID,folder)->folderLabels.put(folder, getGameTitle(gameID)));
+					
+					HashMap<File,Icon> folderIcons = new HashMap<>();
+					player.gameDataFolders.forEach((gameID,folder)->folderIcons.put(folder, getGameIcon(gameID, TreeIcons.Folder)));
+					
+					Comparator<Map.Entry<Integer, File>> entryOrder = Comparator.comparing(Map.Entry<Integer, File>::getKey,idOrder);
+					Stream<Map.Entry<Integer, File>> sortedEntries = player.gameDataFolders.entrySet().stream().sorted(entryOrder);
+					File[] gameDataFolders = sortedEntries.map(entry->entry.getValue()).toArray(File[]::new);
+					
+					children.add(new FileSystem.FolderNode(this, "GameData Folders", gameDataFolders, true, folderLabels::get, folderIcons::get, TreeIcons.Folder));
+				}
+				if (player.screenShots!=null && !player.screenShots.list.isEmpty()) {
+					children.add(new ScreenShotsNode<Integer>(this,player.screenShots.list,id->getGameTitle(id),id->getGameIcon(id,TreeIcons.ImageFile),idOrder));
+				}
+				if (player.configFolder!=null) {
+					children.add(new FileSystem.FolderNode(this, "Config Folder", player.configFolder));
+				}
+				
+				return children;
+			}
 		}
 		
 		static class GamesRoot extends BaseTreeNode<Root,GameNode> {
@@ -506,11 +746,9 @@ class TreeNodes {
 			@Override
 			protected Vector<? extends GameNode> createChildren() {
 				Vector<GameNode> children = new Vector<>();
-				
-				for (Game game:games) {
-					children.add(new GameNode(this, game));
-				}
-				
+				Vector<Game> gamesVec = new Vector<>(games.values());
+				gamesVec.sort(gameComparator);
+				for (Game game:gamesVec) children.add(new GameNode(this, game));
 				return children;
 			}
 		}
@@ -534,7 +772,75 @@ class TreeNodes {
 				if (game.imageFiles!=null && !game.imageFiles.isEmpty())
 					children.add(new FileSystem.FolderNode(this, "Images", game.imageFiles.values(), TreeIcons.ImageFile));
 				
+				if (game.gameDataFolders!=null && !game.gameDataFolders.isEmpty()) {
+					HashMap<File,String> folderLabels = new HashMap<>();
+					game.gameDataFolders.forEach((playerID,folder)->folderLabels.put(folder, String.format("by %s", getPlayerName(playerID))));
+					
+					Stream<Entry<Long, File>> sorted = game.gameDataFolders.entrySet().stream().sorted(Comparator.comparing(Map.Entry<Long,File>::getKey));
+					File[] files = sorted.map(Map.Entry<Long,File>::getValue).toArray(File[]::new);
+					//Collection<File> files = game.gameDataFolders.values();
+					
+					children.add(new FileSystem.FolderNode(this, "GameDataFolders", files, true, folderLabels::get, TreeIcons.Folder));
+				}
+				if (game.screenShots!=null && !game.screenShots.isEmpty()) {
+					children.add(new ScreenShotsNode<>(this,game.screenShots,id->String.format("by %s", getPlayerName(id)),Comparator.<Long>naturalOrder()));
+				}
+					
 				return children;
+			}
+		}
+		
+		static class ScreenShotsNode<IDType> extends BaseTreeNode<TreeNode,FileSystem.FolderNode> {
+
+			private final HashMap<IDType, Vector<ScreenShot>> screenShots;
+			private final Function<IDType, String> getSubFolderName;
+			private final Function<IDType, Icon> getSubFolderIcon;
+			private final Comparator<IDType> subFolderOrder;
+
+			public ScreenShotsNode(TreeNode parent, HashMap<IDType, Vector<ScreenShot>> screenShots, Function<IDType,String> getSubFolderName) {
+				this(parent, screenShots, getSubFolderName, null, null);
+			}
+			public ScreenShotsNode(TreeNode parent, HashMap<IDType, Vector<ScreenShot>> screenShots, Function<IDType,String> getSubFolderName, Comparator<IDType> subFolderOrder) {
+				this(parent, screenShots, getSubFolderName, null, subFolderOrder);
+			}
+			public ScreenShotsNode(TreeNode parent, HashMap<IDType, Vector<ScreenShot>> screenShots, Function<IDType,String> getSubFolderName, Function<IDType,Icon> getSubFolderIcon) {
+				this(parent, screenShots, getSubFolderName, getSubFolderIcon, null);
+			}
+			public ScreenShotsNode(TreeNode parent, HashMap<IDType, Vector<ScreenShot>> screenShots, Function<IDType,String> getSubFolderName, Function<IDType,Icon> getSubFolderIcon, Comparator<IDType> subFolderOrder) {
+				super(parent, "ScreenShots", true, screenShots==null || screenShots.isEmpty());
+				this.screenShots = screenShots;
+				this.getSubFolderName = getSubFolderName;
+				this.getSubFolderIcon = getSubFolderIcon;
+				this.subFolderOrder = subFolderOrder;
+			}
+
+			@Override
+			protected Vector<? extends FolderNode> createChildren() {
+				Vector<FolderNode> children = new Vector<>();
+				
+				if (subFolderOrder!=null) {
+					Vector<Map.Entry<IDType, Vector<ScreenShot>>> vec = new Vector<>(screenShots.entrySet());
+					vec.sort(Comparator.comparing(Map.Entry<IDType, Vector<ScreenShot>>::getKey,subFolderOrder));
+					vec.forEach(entry->{
+						children.add(createScreenShotsFolderNode(entry.getKey(), entry.getValue()));
+					});
+					
+				} else
+					screenShots.forEach((id,screenShotsList)->{
+						children.add(createScreenShotsFolderNode(id, screenShotsList));
+					});
+				
+				return children;
+			}
+
+			private FileSystem.FolderNode createScreenShotsFolderNode(IDType id, Vector<ScreenShot> screenShotsList) {
+				Comparator<ScreenShot> order = Comparator.<ScreenShot,String>comparing(scrnsht->scrnsht.image.getName());
+				File[] files = screenShotsList.stream().sorted(order).map(scrnsht->scrnsht.image).toArray(File[]::new);
+				String title = getSubFolderName.apply(id);
+				Icon icon = getSubFolderIcon!=null ? getSubFolderIcon.apply(id) : null;
+				if (icon==null) icon = TreeIconsIS.getCachedIcon(TreeIcons.ImageFile);
+				FileSystem.FolderNode folderNode = new FileSystem.FolderNode(this, title, files, icon);
+				return folderNode;
 			}
 		}
 		
@@ -606,7 +912,7 @@ class TreeNodes {
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				
-				Data.GameImages gameImages = new Data.GameImages(folder);
+				GameImages gameImages = new GameImages(folder);
 				
 				Vector<Integer> keySet1 = gameImages.getSortedGameIDs();
 				Vector<String>  keySet2 = gameImages.getSortedImageTypes();
@@ -698,7 +1004,7 @@ class TreeNodes {
 					
 				} else if (folder!=null) {
 					File[] files = folder.listFiles((FileFilter) AppManifestNode::is);
-					Arrays.sort(files,Comparator.comparing(Data.AppManifest::getAppIDFromFile, Comparator.nullsLast(Comparator.naturalOrder())));
+					Arrays.sort(files,Comparator.comparing(AppManifest::getAppIDFromFile, Comparator.nullsLast(Comparator.naturalOrder())));
 					for (File file:files)
 						children.add(new AppManifestNode(this, file));
 				}
@@ -731,27 +1037,32 @@ class TreeNodes {
 			}
 		}
 
-		static abstract class FileSystemNode extends BaseTreeNode<TreeNode,FileSystemNode> {
+		static abstract class FileSystemNode extends BaseTreeNode<TreeNode,FileSystemNode> implements FileBasedNode {
 			
 			protected final File fileObj;
 			
 			protected FileSystemNode(TreeNode parent, File file, String title, boolean allowsChildren, boolean isLeaf) {
-				this(parent, file, title, allowsChildren, isLeaf, null);
+				this(parent, file, title, allowsChildren, isLeaf, (Icon)null);
+			}
+			protected FileSystemNode(TreeNode parent, File file, String title, boolean allowsChildren, boolean isLeaf, Icon icon) {
+				super(parent, title, allowsChildren, isLeaf, icon);
+				this.fileObj = file;
 			}
 			protected FileSystemNode(TreeNode parent, File file, String title, boolean allowsChildren, boolean isLeaf, TreeIcons icon) {
 				super(parent, title, allowsChildren, isLeaf, icon);
 				this.fileObj = file;
 			}
-			
-			ExternalViewerInfo getExternalViewerInfo() { return null; }
-			String getFileName() { return fileObj==null ? "" : fileObj.getName(); }
-			String getFilePath() { return fileObj==null ? "" : fileObj.getAbsolutePath(); }
+			@Override public LabeledFile getFile() {
+				return fileObj!=null ? new LabeledFile(fileObj) : null;
+			}
 		}
 
 		static class FolderNode extends FileSystemNode {
 			
 			protected final File[] files;
+			protected final boolean keepFileOrder;
 			protected final Function<File, String> getNodeTitle;
+			protected final Function<File, Icon> getNodeIcon;
 
 			FolderNode(TreeNode parent, File folder) {
 				this(parent, null, folder, TreeIcons.Folder);
@@ -762,31 +1073,53 @@ class TreeNodes {
 			FolderNode(TreeNode parent, File folder, TreeIcons icon) {
 				this(parent, null, folder, icon);
 			}
+			FolderNode(TreeNode parent, File folder, Icon icon) {
+				this(parent, null, folder, icon);
+			}
 			FolderNode(TreeNode parent, String title, File folder, TreeIcons icon) {
+				this(parent, title, folder, TreeIconsIS.getCachedIcon(icon));
+			}
+			FolderNode(TreeNode parent, String title, File folder, Icon icon) {
 				super(parent, folder, title==null ? folder.getName() : title, true, false, icon);
 				this.files = null;
+				this.keepFileOrder = false;
 				this.getNodeTitle = null;
+				this.getNodeIcon = null;
 			}
 			FolderNode(TreeNode parent, String title, Collection<File> files, TreeIcons icon) {
 				this(parent, title, files, null, icon);
 			}
 			FolderNode(TreeNode parent, String title, Collection<File> files, Function<File,String> getNodeTitle, TreeIcons icon) {
-				this(parent, title, files==null ? null : files.toArray(new File[files.size()]), getNodeTitle, icon);
+				this(parent, title, files==null ? null : files.toArray(new File[files.size()]), false, getNodeTitle, icon);
+			}
+			FolderNode(TreeNode parent, String title, File[] files, Icon icon) {
+				this(parent, title, files, false, null, icon);
 			}
 			FolderNode(TreeNode parent, String title, File[] files, TreeIcons icon) {
-				this(parent, title, files, null, icon);
+				this(parent, title, files, false, null, icon);
 			}
-			FolderNode(TreeNode parent, String title, File[] files, Function<File,String> getNodeTitle, TreeIcons icon) {
+			FolderNode(TreeNode parent, String title, File[] files, boolean keepFileOrder, Function<File,String> getNodeTitle, TreeIcons icon) {
+				this(parent, title, files, keepFileOrder, getNodeTitle, TreeIconsIS.getCachedIcon(icon));
+			}
+			FolderNode(TreeNode parent, String title, File[] files, boolean keepFileOrder, Function<File,String> getNodeTitle, Icon icon) {
+				this(parent, title, files, keepFileOrder, getNodeTitle, null, icon);
+			}
+			FolderNode(TreeNode parent, String title, File[] files, boolean keepFileOrder, Function<File,String> getNodeTitle, Function<File,Icon> getNodeIcon, TreeIcons icon) {
+				this(parent, title, files, keepFileOrder, getNodeTitle, getNodeIcon, TreeIconsIS.getCachedIcon(icon));
+			}
+			FolderNode(TreeNode parent, String title, File[] files, boolean keepFileOrder, Function<File,String> getNodeTitle, Function<File,Icon> getNodeIcon, Icon icon) {
 				super(parent, null, title, true, files==null || files.length==0, icon);
 				this.files = files;
+				this.keepFileOrder = keepFileOrder;
 				this.getNodeTitle = getNodeTitle;
+				this.getNodeIcon = getNodeIcon;
 			}
 		
 			@Override
 			protected Vector<? extends FileSystemNode> createChildren() {
 				File[] files_ = files!=null ? files : getFilesAndFolders(fileObj);
-				sortFiles(files_);
-				return createNodes(this,files_,getNodeTitle);
+				if (!keepFileOrder) sortFiles(files_);
+				return createNodes(this,files_,getNodeTitle,getNodeIcon);
 			}
 			
 			static void sortFiles(File[] files) {
@@ -832,15 +1165,18 @@ class TreeNodes {
 				}
 			}
 			
-			static Vector<? extends FileSystemNode> createNodes(TreeNode parent, File[] files, Function<File, String> getNodeTitle) {
+			static Vector<? extends FileSystemNode> createNodes(TreeNode parent, File[] files, Function<File, String> getNodeTitle, Function<File, Icon> getNodeIcon) {
 				Vector<FileSystemNode> children = new Vector<>();
 				
 				for (File file:files) {
 					if (file.isDirectory()) {
-						if (getNodeTitle==null)
-							children.add(new FolderNode(parent, file));
-						else
-							children.add(new FolderNode(parent, getNodeTitle.apply(file), file));
+						
+						String title = getNodeTitle!=null ? getNodeTitle.apply(file) : null;
+						
+						Icon icon = getNodeIcon!=null ? getNodeIcon.apply(file) : null;
+						if (icon==null) icon = TreeIconsIS.getCachedIcon(TreeIcons.Folder);
+						
+						children.add(new FolderNode(parent, title, file, icon));
 						
 					} else if (file.isFile()) {
 						
@@ -868,7 +1204,7 @@ class TreeNodes {
 			}
 		}
 
-		static class FileNode extends FileSystemNode implements BytesContentSource {
+		static class FileNode extends FileSystemNode implements BytesContentSource, ExternViewableNode {
 		
 			protected byte[] byteContent;
 			private final ExternalViewerInfo externalViewerInfo;
@@ -900,7 +1236,7 @@ class TreeNodes {
 				throw new UnsupportedOperationException("Call of FileSystem.FileNode.createChildren() is not supported.");
 			}
 
-			@Override ExternalViewerInfo getExternalViewerInfo() {
+			@Override public ExternalViewerInfo getExternalViewerInfo() {
 				return externalViewerInfo;
 			}
 			

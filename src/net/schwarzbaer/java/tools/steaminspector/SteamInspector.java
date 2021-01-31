@@ -78,9 +78,11 @@ import net.schwarzbaer.gui.ImageView;
 import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode.ContentType;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FileSystemNode;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.ExternViewableNode;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileBasedNode;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.ImageFile;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.TextFile;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.LabeledFile;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.system.ClipboardTools;
 import net.schwarzbaer.system.Settings;
@@ -174,12 +176,6 @@ class SteamInspector {
 	
 	private void createGUI() {
 		
-//		ButtonGroup bg = new ButtonGroup();
-//		JPanel treeTypePanel = new JPanel(new GridLayout(1,0,3,3));
-//		treeTypePanel.add(createRadioButton("Files & Folders", true, true,bg,b->{ tree.setModel(new DefaultTreeModel(new TreeNodes.FileSystem.Root())); tree.setRootVisible(false); }));
-//		treeTypePanel.add(createRadioButton("Games"          ,false, true,bg,b->{}));
-//		treeTypePanel.add(createRadioButton("Players, Games" ,false,false,bg,b->{}));
-		
 		JComboBox<TreeType> cmbbxTreeType = new JComboBox<>(TreeType.values());
 		selectedTreeType = settings.getEnum(AppSettings.ValueKey.SelectedTreeType,TreeType.class);
 		cmbbxTreeType.setSelectedItem(selectedTreeType);
@@ -201,8 +197,10 @@ class SteamInspector {
 		c.weightx = 0;
 		dataTopPanel.add(createButton("Reload", true, e->rebuildTree()),c);
 		
-		tree = new JTree(/*new TreeNodes.FileSystem.Root()*/);
-		//tree.setRootVisible(false);
+		TreeNode treeRoot = selectedTreeType==null || selectedTreeType.createRoot==null ? null : selectedTreeType.createRoot.get();
+		boolean isRootVisible = selectedTreeType==null ? true : selectedTreeType.isRootVisible;
+		tree = new JTree(treeRoot);
+		tree.setRootVisible(isRootVisible);
 		tree.setCellRenderer(new BaseTreeNodeRenderer());
 		tree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
 		tree.addTreeSelectionListener(e->{
@@ -210,7 +208,7 @@ class SteamInspector {
 			if (path==null) return;
 			showContent(path.getLastPathComponent());
 		});
-		new MainTreeContextMenues(tree);
+		new MainTreeContextMenue(tree);
 		
 		JScrollPane treePanel = new JScrollPane(tree);
 		treePanel.setPreferredSize(new Dimension(500, 800));
@@ -241,8 +239,6 @@ class SteamInspector {
 			@Override public void componentResized(ComponentEvent e) { settings.setWindowSize( mainWindow.getSize() ); }
 			@Override public void componentMoved  (ComponentEvent e) { settings.setWindowPos ( mainWindow.getLocation() ); }
 		});
-		
-		rebuildTree();
 	}
 
 	private void rebuildTree() {
@@ -258,8 +254,8 @@ class SteamInspector {
 	private JMenuBar createMenuBar() {
 		JMenuBar menuBar = new JMenuBar();
 		JMenu settingsMenu = menuBar.add(new JMenu("Settings"));
-		settingsMenu.add(createMenuItem("Set Path to "+ TextFile.externalViewerInfo.viewerName+" ...", true, e->getExecutableFor(mainWindow,  TextFile.externalViewerInfo)));
-		settingsMenu.add(createMenuItem("Set Path to "+ImageFile.externalViewerInfo.viewerName+" ...", true, e->getExecutableFor(mainWindow, ImageFile.externalViewerInfo)));
+		settingsMenu.add(createMenuItem("Set Path to "+ TextFile.externalViewerInfo.viewerName+" ...", true, e-> TextFile.externalViewerInfo.chooseExecutable(mainWindow)));
+		settingsMenu.add(createMenuItem("Set Path to "+ImageFile.externalViewerInfo.viewerName+" ...", true, e->ImageFile.externalViewerInfo.chooseExecutable(mainWindow)));
 		settingsMenu.addSeparator();
 		settingsMenu.add(createMenuItem("Set All Paths ...", true, e->new FolderSettingsDialog(mainWindow, "Define Paths").showDialog()));
 		return menuBar;
@@ -790,21 +786,28 @@ class SteamInspector {
 		ExternalViewerInfo(String viewerName, AppSettings.ValueKey viewerKey) {
 			this.viewerName = viewerName;
 			this.viewerKey = viewerKey;
+			if (this.viewerName==null) throw new IllegalArgumentException();
+			if (this.viewerKey ==null) throw new IllegalArgumentException();
 		}
-	}
-	
-	static File getExecutableFor(Component parent, ExternalViewerInfo externalViewerInfo) {
-		executableFileChooser.setDialogTitle("Select Executable of "+externalViewerInfo.viewerName);
-		if (settings.contains(externalViewerInfo.viewerKey)) {
-			File viewer = settings.getFile(externalViewerInfo.viewerKey);
-			executableFileChooser.setSelectedFile(viewer);
+		File getExecutable(Component parent) {
+			if (settings.contains(viewerKey))
+				return settings.getFile(viewerKey);
+			else
+				return chooseExecutable(parent);
 		}
-		if (executableFileChooser.showOpenDialog(parent)==JFileChooser.APPROVE_OPTION) {
-			File viewer = executableFileChooser.getSelectedFile();
-			settings.putFile(externalViewerInfo.viewerKey, viewer);
-			return viewer;
-		} else
-			return null;
+		File chooseExecutable(Component parent) {
+			executableFileChooser.setDialogTitle("Select Executable of "+viewerName);
+			if (settings.contains(viewerKey)) {
+				File viewer = settings.getFile(viewerKey);
+				executableFileChooser.setSelectedFile(viewer);
+			}
+			if (executableFileChooser.showOpenDialog(parent)==JFileChooser.APPROVE_OPTION) {
+				File viewer = executableFileChooser.getSelectedFile();
+				settings.putFile(viewerKey, viewer);
+				return viewer;
+			} else
+				return null;
+		}
 	}
 	
 	static class AbstractComponentContextMenu extends JPopupMenu {
@@ -824,101 +827,57 @@ class SteamInspector {
 		}
 	}
 
-	static class MainTreeContextMenues {
+	static class MainTreeContextMenue extends JPopupMenu {
+		private static final long serialVersionUID = -3729823093931172004L;
 
-		private FileContextMenu fileContextMenu;
-
-		MainTreeContextMenues(JTree tree) {
+		private final JMenuItem miCopyPath;
+		private final JMenuItem miExtViewer;
+		
+		private Object clickedNode = null;
+		private LabeledFile clickedFile = null;
+		private ExternalViewerInfo clickedExternalViewerInfo = null;
+		
+		MainTreeContextMenue(JTree tree) {
 			
-			fileContextMenu = new FileContextMenu(tree);
+			add(miCopyPath = createMenuItem("Copy Path to Clipboard", true, e->{
+				ClipboardTools.copyToClipBoard(clickedFile.file.getAbsolutePath());
+			}));
+			add(miExtViewer = createMenuItem("Open in External Viewer", true, e->{
+				File viewer = clickedExternalViewerInfo.getExecutable(tree);
+				if (viewer==null) return;
+				
+				try {
+					Runtime.getRuntime().exec(new String[] { viewer.getAbsolutePath(), clickedFile.file.getAbsolutePath() });
+				} catch (IOException e1) {
+					System.err.println("Exception occured while opening selected file in an external viewer:");
+					System.err.println("    selected file: "+clickedFile.file.getAbsolutePath());
+					System.err.println("    external viewer: "+viewer.getAbsolutePath());
+					e1.printStackTrace();
+				}
+			}));
 			
 			tree.addMouseListener(new MouseAdapter() {
 				@Override public void mouseClicked(MouseEvent e) {
 					if (e.getButton()==MouseEvent.BUTTON3) {
 						TreePath path = tree.getPathForLocation(e.getX(), e.getY());
 						if (path!=null) {
-							ContextMenu<?> contextMenu = getMenuFor(path.getLastPathComponent());
-							if (contextMenu!=null)
-								contextMenu.show(e.getX(),e.getY());
+							clickedNode = path.getLastPathComponent();
+							prepareMenueItems();
+							show(tree, e.getX(), e.getY());
 						}
 					}
 				}
 			});
 		}
 
-		private ContextMenu<?> getMenuFor(Object pathComponent) {
-			if (pathComponent instanceof FileSystemNode) {
-				fileContextMenu.setClickedNode((FileSystemNode) pathComponent);
-				return fileContextMenu;
-			}
-			return null;
-		}
-
-		private static class FileContextMenu extends ContextMenu<FileSystemNode> {
-			private static final long serialVersionUID = -7683322808189858630L;
-			private final JMenuItem miExtViewer;
-			private FileSystemNode clickedNode;
-			private ExternalViewerInfo externalViewerInfo;
-
-			FileContextMenu(Component invoker) {
-				super(invoker);
-				clickedNode = null;
-				externalViewerInfo = null;
-				
-				add(createMenuItem("Copy Path to Clipboard", true, e->ClipboardTools.copyToClipBoard(clickedNode.fileObj.getAbsolutePath())));
-				add(miExtViewer = createMenuItem("Open in External Viewer", true, e->{
-					File viewer;
-					if (externalViewerInfo.viewerKey==null) throw new IllegalArgumentException("ExternalViewerInfo.viewerKey must not be <null>.");
-					if (settings.contains(externalViewerInfo.viewerKey))
-						viewer = settings.getFile(externalViewerInfo.viewerKey);
-					else
-						viewer = getExecutableFor(invoker,externalViewerInfo);
-					
-					if (viewer==null) return;
-					
-					try {
-						Runtime.getRuntime().exec(new String[] { viewer.getAbsolutePath(), clickedNode.getFilePath() });
-					} catch (IOException e1) {
-						System.err.println("Exception occured while opening selected file in an external viewer:");
-						System.err.println("    selected file: "+clickedNode.getFilePath());
-						System.err.println("    external viewer: "+viewer.getAbsolutePath());
-						e1.printStackTrace();
-					}
-				}));
-			}
-
-			@Override
-			protected void setClickedNode(FileSystemNode clickedNode) {
-				this.clickedNode = clickedNode;
-				externalViewerInfo = this.clickedNode.getExternalViewerInfo();
-				if (externalViewerInfo==null) {
-					miExtViewer.setText("Open in External Viewer");
-					miExtViewer.setEnabled(false);
-				} else {
-					miExtViewer.setText(String.format("Open \"%s\" in %s", this.clickedNode.getFileName(), externalViewerInfo.viewerName));
-					miExtViewer.setEnabled(true);
-				}
-			}
+		protected void prepareMenueItems() {
+			clickedFile               = clickedNode instanceof FileBasedNode      ? ((FileBasedNode     ) clickedNode).getFile()               : null;
+			clickedExternalViewerInfo = clickedNode instanceof ExternViewableNode ? ((ExternViewableNode) clickedNode).getExternalViewerInfo() : null;
+			
+			miCopyPath .setEnabled(clickedFile!=null);
+			miExtViewer.setEnabled(clickedFile!=null && clickedExternalViewerInfo!=null);
 		}
 		
-		private abstract static class ContextMenu<TreeNodeType> extends JPopupMenu {
-			private static final long serialVersionUID = 7740906378931831629L;
-			
-			private Component invoker;
-
-			ContextMenu(Component invoker) {
-				this.invoker = invoker;
-			}
-			@SuppressWarnings("unused")
-			void show(TreeNodeType treeNode, int x, int y) {
-				setClickedNode(treeNode);
-				show(x,y);
-			}
-			void show(int x, int y) {
-				show(invoker, x, y);
-			}
-			protected abstract void setClickedNode(TreeNodeType treeNode);
-		}
 	}
 	
 	static abstract class FileContentOutput {
