@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Vector;
 import java.util.concurrent.ExecutionException;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -80,8 +79,6 @@ import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode.ContentType;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.ExternViewableNode;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileBasedNode;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.ImageFile;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.TextFile;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.LabeledFile;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.system.ClipboardTools;
@@ -117,6 +114,7 @@ class SteamInspector {
 	private final ExtendedOutput plainTextOutput;
 	private final ExtendedOutput extendedTextOutput;
 	private final ExtendedOutput parsedTextOutput;
+	private final DataTreeOutput treeOutput;
 	private final ImageOutput imageOutput;
 	private final OutputDummy outputDummy;
 	private FileContentOutput lastFileContentOutput;
@@ -126,6 +124,7 @@ class SteamInspector {
 		plainTextOutput    = new ExtendedOutput(BaseTreeNode.ContentType.PlainText);
 		extendedTextOutput = new ExtendedOutput(BaseTreeNode.ContentType.ExtendedText);
 		parsedTextOutput   = new ExtendedOutput(BaseTreeNode.ContentType.ParsedText);
+		treeOutput  = new DataTreeOutput();
 		imageOutput = new ImageOutput();
 		outputDummy = new OutputDummy();
 		lastFileContentOutput = outputDummy;
@@ -254,8 +253,8 @@ class SteamInspector {
 	private JMenuBar createMenuBar() {
 		JMenuBar menuBar = new JMenuBar();
 		JMenu settingsMenu = menuBar.add(new JMenu("Settings"));
-		settingsMenu.add(createMenuItem("Set Path to "+ TextFile.externalViewerInfo.viewerName+" ...", true, e-> TextFile.externalViewerInfo.chooseExecutable(mainWindow)));
-		settingsMenu.add(createMenuItem("Set Path to "+ImageFile.externalViewerInfo.viewerName+" ...", true, e->ImageFile.externalViewerInfo.chooseExecutable(mainWindow)));
+		settingsMenu.add(createMenuItem("Set Path to "+ExternalViewerInfo.TextEditor .viewerName+" ...", true, e->ExternalViewerInfo.TextEditor .chooseExecutable(mainWindow)));
+		settingsMenu.add(createMenuItem("Set Path to "+ExternalViewerInfo.ImageViewer.viewerName+" ...", true, e->ExternalViewerInfo.ImageViewer.chooseExecutable(mainWindow)));
 		settingsMenu.addSeparator();
 		settingsMenu.add(createMenuItem("Set All Paths ...", true, e->new FolderSettingsDialog(mainWindow, "Define Paths").showDialog()));
 		return menuBar;
@@ -313,6 +312,16 @@ class SteamInspector {
 							changeFileContentOutput(parsedTextOutput);
 							hideOutput = false;
 						}
+					} else
+						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
+					break;
+					
+				case DataTree:
+					if (baseTreeNode instanceof TreeContentSource) {
+						TreeContentSource source = (TreeContentSource) baseTreeNode;
+						treeOutput.setRoot(source.getContentAsTree());
+						changeFileContentOutput(treeOutput);
+						hideOutput = false;
 					} else
 						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
 					break;
@@ -781,8 +790,12 @@ class SteamInspector {
 	}
 	
 	static class ExternalViewerInfo {
+		static final ExternalViewerInfo TextEditor  = new ExternalViewerInfo( "Text Editor", SteamInspector.AppSettings.ValueKey.TextEditor );
+		static final ExternalViewerInfo ImageViewer = new ExternalViewerInfo( "Image Viewer", SteamInspector.AppSettings.ValueKey.ImageViewer );
+		
 		private final String viewerName;
 		private final AppSettings.ValueKey viewerKey;
+		
 		ExternalViewerInfo(String viewerName, AppSettings.ValueKey viewerKey) {
 			this.viewerName = viewerName;
 			this.viewerKey = viewerKey;
@@ -1261,7 +1274,7 @@ class SteamInspector {
 			showMessageFromThread("ParsedTreeOutput.setRoot finished");
 		}
 		@Override void showLoadingMsg() {
-			setRoot(BaseTreeNode.DummyTextNode.createSingleTextLineTree_("load content ..."));
+			setRoot(BaseTreeNode.SimpleTextNode.createSingleTextLineTree("load content ..."));
 		}
 	}
 	
@@ -1325,8 +1338,8 @@ class SteamInspector {
 				break;
 				
 			case ParsedText:
-				add("Hex Table" , hexView   = new HexTableOutput  ());
-				add("Plain Text", plainText = new TextOutput      ());
+				add("Hex Table" , hexView   = new HexTableOutput());
+				add("Plain Text", plainText = new TextOutput    ());
 				add("Data Tree" , dataTree  = new DataTreeOutput());
 				setActiveTab(2);
 				mainComp  = super.getMainComponent();
@@ -1602,7 +1615,7 @@ class SteamInspector {
 
 	static abstract class BaseTreeNode<ParentNodeType extends TreeNode, ChildNodeType extends TreeNode> implements TreeNode {
 		
-		enum ContentType { PlainText, Bytes, ExtendedText, ParsedText, Image, }
+		enum ContentType { PlainText, Bytes, ExtendedText, ParsedText, Image, DataTree, }
 		
 		protected final ParentNodeType parent;
 		protected final String title;
@@ -1667,32 +1680,14 @@ class SteamInspector {
 			if (children==null) children=createChildren();
 		}
 		
-		static class DummyTextNode extends BaseTreeNode<TreeNode,DummyTextNode> {
+		static class SimpleTextNode extends BaseTreeNode<TreeNode,SimpleTextNode> {
 
-			private BiFunction<DummyTextNode, Integer, DummyTextNode> createChild;
-
-			protected DummyTextNode(TreeNode parent, String title) {
-				this(parent, title, null);
-			}
-			protected DummyTextNode(TreeNode parent, String title, BiFunction<DummyTextNode,Integer,DummyTextNode> createChild) {
-				super(parent, title, createChild!=null, createChild==null);
-				this.createChild = createChild;
-			}
-
-			@Override
-			protected Vector<? extends DummyTextNode> createChildren() {
-				Vector<DummyTextNode> children = new Vector<>();
-				int i=0;
-				DummyTextNode child;
-				while ( (child=createChild.apply(this,i))!=null ) {
-					children.add(child);
-					i++;
-				}
-				return children;
-			}
+			SimpleTextNode(TreeNode parent, String format, Object...args) { this(parent, null, format, args); }
+			SimpleTextNode(TreeNode parent, Icon icon, String format, Object...args) { super(parent, String.format(Locale.ENGLISH, format, args), false, true, icon); }
+			@Override protected Vector<? extends SimpleTextNode> createChildren() { return new Vector<>(); }
 			
-			static TreeRoot createSingleTextLineTree_(String format, Object...args) {
-				return new TreeRoot( new DummyTextNode(null, String.format(Locale.ENGLISH, format, args)), true, true );
+			static TreeRoot createSingleTextLineTree(String format, Object...args) {
+				return new TreeRoot( new SimpleTextNode(null, format, args), true, true );
 			}
 		}
 	}
