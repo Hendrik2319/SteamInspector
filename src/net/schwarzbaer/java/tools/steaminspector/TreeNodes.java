@@ -35,8 +35,8 @@ import javax.swing.tree.TreeNode;
 import net.schwarzbaer.gui.IconSource;
 import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
-import net.schwarzbaer.java.lib.jsonparser.JSON_Data.PathIsNotSolvableException;
-import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value.Type;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Array;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AppSettings.ValueKey;
@@ -54,7 +54,6 @@ import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FolderNode;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.ImageFile;
-import net.schwarzbaer.java.tools.steaminspector.VDFParser.ParseException;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;
 import net.schwarzbaer.system.ClipboardTools;
 
@@ -236,6 +235,29 @@ class TreeNodes {
 		}
 	}
 	
+	static class FileNameNExt implements Comparable<FileNameNExt>{
+		final String name;
+		final String extension;
+		private FileNameNExt(String name, String extension) {
+			this.name = name;
+			this.extension = extension;
+		}
+		static FileNameNExt create(String filename) {
+			int pos = filename.lastIndexOf('.');
+			if (pos<0) return new FileNameNExt(filename, null);
+			return new FileNameNExt(filename.substring(0, pos), filename.substring(pos+1));
+		}
+		@Override
+		public int compareTo(FileNameNExt other) {
+			int comparedNames = this.name.compareToIgnoreCase(other.name);
+			if (comparedNames!=0) return comparedNames;
+			if (this .extension==null && other.extension==null) return 0;
+			if (this .extension==null) return -1;
+			if (other.extension==null) return +1;
+			return this.extension.compareToIgnoreCase(other.extension);
+		}
+	}
+
 	interface FileBasedNode {
 		LabeledFile getFile();
 	}
@@ -306,8 +328,15 @@ class TreeNodes {
 		}
 	}
 
+	static class ParseException extends Exception {
+		private static final long serialVersionUID = -7150324499542307039L;
+		ParseException(String format, Object...args) {
+			super(String.format(Locale.ENGLISH, format, args));
+		}
+	}
+
 	static class Data {
-	
+		
 		static class ScreenShot {
 			final File image;
 			final File thumbnail;
@@ -349,12 +378,17 @@ class TreeNodes {
 			
 		}
 		static class Player {
+			
+			private static class NV extends JSON_Data.NamedValueExtra.Dummy{}
+			private static class V  extends JSON_Data.ValueExtra.Dummy{}
 
+			final long playerID;
 			final HashMap<Integer, File> gameDataFolders;
 			final ScreenShots screenShots;
 			final File configFolder;
 			final VDFTreeNode localconfig;
-			private long playerID;
+			final HashMap<Integer,GameStateInfo> gameStateInfos;
+			final AchievementProgress achievementProgress;
 
 			Player(long playerID, File playerFolder) {
 				this.playerID = playerID;
@@ -370,6 +404,7 @@ class TreeNodes {
 				}
 				File folder;
 				
+				// Folders
 				folder = new File(playerFolder,"760");
 				if (folder.isDirectory()) {
 					screenShots = new ScreenShots(folder);
@@ -382,15 +417,66 @@ class TreeNodes {
 				} else
 					configFolder = null;
 				
+				// localconfig
 				VDFParser.Data localconfigData = null;
 				if (configFolder!=null) {
 					File localconfigFile = new File(configFolder,"localconfig.vdf");
 					if (localconfigFile.isFile()) {
 						try { localconfigData = VDFParser.parse(localconfigFile,StandardCharsets.UTF_8); }
-						catch (ParseException e) {}
+						catch (VDFParser.ParseException e) {}
 					}
 				}
 				localconfig = localconfigData!=null ? localconfigData.createVDFTreeNode() : null;
+				
+				if (localconfig!=null) {
+					// TODO: parse friends
+					// Root[0].UserLocalConfigStore[2].friends[1].###########
+					// localconfig.getSubNode("UserLocalConfigStore","friends").foreEachArray(...)
+				}
+				
+				gameStateInfos = new HashMap<>();
+				AchievementProgress achievementProgress_ = null;
+				if (configFolder!=null) {
+					File gameStateFolder = new File(configFolder,"librarycache");
+					if (gameStateFolder.isDirectory()) {
+						File[] files = gameStateFolder.listFiles(file->file.isFile());
+						for (File file:files) {
+							FileNameNExt fileNameNExt = FileNameNExt.create(file.getName());
+							if (fileNameNExt.extension!=null && fileNameNExt.extension.equalsIgnoreCase("json")) {
+								Integer gameID;
+								if (fileNameNExt.name.equalsIgnoreCase("achievement_progress")) {
+									// \config\librarycache\achievement_progress.json
+									JSON_Parser.Result<NV,V> result = new JSON_Parser<NV,V>(file,null).parse();
+									if (result!=null)
+										achievementProgress_ = AchievementProgress.parse(result.object);
+									
+								} else if ((gameID=parseNumber(fileNameNExt.name))!=null) {
+									// \config\librarycache\1465680.json
+									JSON_Parser.Result<NV, V> result=null;
+									try {
+										result = new JSON_Parser<NV,V>(file,null).parse_withParseException();
+									} catch (JSON_Parser.ParseException e) {
+										//e.printStackTrace();
+										System.err.printf("(JSON) ParseException: %s%n   in File \"%s\"%n", e.getMessage(), file.getAbsolutePath());
+									}
+									if (result!=null) {
+										GameStateInfo info = null;
+										try {
+											info = GameStateInfo.parse(result.array);
+										} catch (ParseException e) {
+											//e.printStackTrace();
+											System.err.printf("(GameStateInfo) ParseException: %s%n   in File \"%s\"%n", e.getMessage(), file.getAbsolutePath());
+										}
+										if (info!=null)
+											gameStateInfos.put(gameID, info);
+									}
+								}
+							}
+						}
+					}
+				}
+				achievementProgress = achievementProgress_;
+				
 			}
 
 			public String getName() {
@@ -401,7 +487,98 @@ class TreeNodes {
 				}
 				return "Player "+playerID;
 			}
+			
+			static class AchievementProgress {
 
+				public static AchievementProgress parse(JSON_Data.JSON_Object<NV,V> object) {
+					// TODO: parse AchievementProgress
+					return null;
+				}
+				
+			}
+			
+			static class GameStateInfo {
+
+				final Vector<GameStateInfoBlock> blocks;
+
+				public GameStateInfo(Vector<GameStateInfoBlock> blocks) {
+					this.blocks = blocks;
+					for (GameStateInfoBlock block:this.blocks) {
+						switch (block.label) {
+						case "achievements":
+							// TODO: parse GameStateInfo.Block["achievements"] 
+							break;
+							
+						case "badge":
+							// TODO: parse GameStateInfo.Block["badge"] 
+							break;
+							
+						case "descriptions":
+							// TODO: parse GameStateInfo.Block["descriptions"] 
+							break;
+						}
+					}
+				}
+
+				public static GameStateInfo parse(JSON_Array<NV,V> array) throws ParseException {
+					if (array==null) throw new ParseException("GameStateInfo isn't a JSON_Array");
+					Vector<GameStateInfoBlock> blocks = new Vector<>();
+					for (int i=0; i<array.size(); i++) {
+						JSON_Data.Value<NV,V> value = array.get(i);
+						GameStateInfoBlock block = GameStateInfoBlock.parse(i,value);
+						if (block!=null) blocks.add(block);
+					}
+					return new GameStateInfo(blocks);
+				}
+				
+				static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getValue(
+						JSON_Data.Value<NV,V> value,
+						Function<JSON_Data.Value<NV,V>,JsonValueType> cast,
+						String debugOutputPrefixStr, String jsonValueTypeLabel
+				) throws ParseException {
+					if (value==null) throw new ParseException("%s==NULL", debugOutputPrefixStr);
+					JsonValueType jsonValue = cast.apply(value);
+					if (jsonValue      ==null) throw new ParseException("%s isn't a %s", debugOutputPrefixStr, jsonValueTypeLabel);
+					if (jsonValue.value==null) throw new ParseException("%s.value==NULL", debugOutputPrefixStr);
+					return jsonValue.value;
+				}
+
+				static class GameStateInfoBlock {
+
+					final int blockIndex;
+					final String label;
+					final long version;
+					final JSON_Data.Value<NV, V> dataValue;
+
+					public GameStateInfoBlock(int blockIndex, String label, long version, JSON_Data.Value<NV, V> dataValue) {
+						this.blockIndex = blockIndex;
+						this.label = label;
+						this.version = version;
+						this.dataValue = dataValue;
+					}
+
+					public static GameStateInfoBlock parse(int blockIndex, JSON_Data.Value<NV, V> value) throws ParseException {
+						String blockStr = "GameStateInfo.Block["+blockIndex+"]";
+						JSON_Data.ArrayValue<NV, V> arrayValue = value.castToArrayValue();
+						if (arrayValue==null) throw new ParseException("%s isn't a JSON_Array", blockStr);
+						JSON_Array<NV, V> array = arrayValue.value;
+						if (array==null    ) throw new ParseException("%s.value==NULL", blockStr);
+						if (array.size()!=2) throw new ParseException("%s.value.length(==%d) != 2", blockStr, array.size());
+						JSON_Data.Value<NV, V>     labelValue = array.get(0);
+						JSON_Data.Value<NV, V> blockdataValue = array.get(1);
+						String                label = getValue(    labelValue,JSON_Data.Value::castToStringValue,blockStr+".value[0:label]"    ,"StringValue");
+						JSON_Object<NV,V> blockdata = getValue(blockdataValue,JSON_Data.Value::castToObjectValue,blockStr+".value[1:blockdata]","ObjectValue");
+						if (blockdata.size()>2)  throw new ParseException("%s.value[1:blockdata].object.length(==%d) > 2: Too much values", blockStr, blockdata.size());
+						if (blockdata.isEmpty()) throw new ParseException("%s.value[1:blockdata].object is empty: Too few values", blockStr);
+						JSON_Data.Value<NV, V> versionValue = blockdata.getValue("version");
+						JSON_Data.Value<NV, V>    dataValue = blockdata.getValue("data");
+						Long version = getValue(versionValue,JSON_Data.Value::castToIntegerValue,blockStr+".value[1:blockdata].object.version","IntegerValue");
+						if (dataValue==null && blockdata.size()>1) throw new ParseException("%s.value[1:blockdata].object.data==NULL, but there are other values", blockStr);
+						return new GameStateInfoBlock(blockIndex,label,version,dataValue);
+					}
+					
+				}
+			}
 		}
 
 		static class AppManifest {
@@ -422,7 +599,7 @@ class TreeNodes {
 					
 					VDFParser.Data vdfData = null;
 					try { vdfData = VDFParser.parse(this.file,StandardCharsets.UTF_8); }
-					catch (ParseException e) {}
+					catch (VDFParser.ParseException e) {}
 					
 					vdfTree = vdfData!=null ? vdfData.createVDFTreeNode() : null;
 					
@@ -732,6 +909,13 @@ class TreeNodes {
 				}
 				if (player.configFolder!=null) {
 					children.add(new FileSystem.FolderNode(this, "Config Folder", player.configFolder));
+				}
+				if (player.achievementProgress!=null) {
+					// TODO: TreeNode for AchievementProgress
+					// children.add(new FileSystem.FolderNode(this, "Config Folder", player.configFolder));
+				}
+				if (!player.gameStateInfos.isEmpty()) {
+					// TODO: TreeNode for GameStateInfos
 				}
 				
 				return children;
@@ -1125,8 +1309,8 @@ class TreeNodes {
 			static void sortFiles(File[] files) {
 				//Comparator<String> fileNameAsNumber = Comparator.comparing(FolderNode::parseNumber, Comparator.nullsLast(Comparator.naturalOrder()));
 				//Comparator<String> fileNameComparator = fileNameAsNumber.thenComparing(String::toLowerCase);
-				Comparator<SplittedFilename> splitted = Comparator.comparing((SplittedFilename sfn)->parseNumber(sfn.name), Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
-				Comparator<String> fileNameComparator = Comparator.comparing(SplittedFilename::create, splitted);
+				Comparator<FileNameNExt> splitted = Comparator.comparing((FileNameNExt sfn)->parseNumber(sfn.name), Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
+				Comparator<String> fileNameComparator = Comparator.comparing(FileNameNExt::create, splitted);
 				Comparator<File> fileComparator = Comparator.comparing(File::isFile).thenComparing(File::getName, fileNameComparator);
 				Arrays.sort(files,fileComparator);
 				
@@ -1140,29 +1324,6 @@ class TreeNodes {
 //					if (n1==null && n2==null) return name1.compareToIgnoreCase(name2);
 //					return n1!=null ? -1 : +1;
 //				});
-			}
-			
-			private static class SplittedFilename implements Comparable<SplittedFilename>{
-				final String name;
-				final String extension;
-				private SplittedFilename(String name, String extension) {
-					this.name = name;
-					this.extension = extension;
-				}
-				static SplittedFilename create(String filename) {
-					int pos = filename.lastIndexOf('.');
-					if (pos<0) return new SplittedFilename(filename, null);
-					return new SplittedFilename(filename.substring(0, pos), filename.substring(pos+1));
-				}
-				@Override
-				public int compareTo(SplittedFilename other) {
-					int comparedNames = this.name.compareToIgnoreCase(other.name);
-					if (comparedNames!=0) return comparedNames;
-					if (this.extension==null && other.extension==null) return 0;
-					if (this .extension==null) return -1;
-					if (other.extension==null) return +1;
-					return this.extension.compareToIgnoreCase(other.extension);
-				}
 			}
 			
 			static Vector<? extends FileSystemNode> createNodes(TreeNode parent, File[] files, Function<File, String> getNodeTitle, Function<File, Icon> getNodeIcon) {
@@ -1343,7 +1504,7 @@ class TreeNodes {
 		static class JSON_File extends TextFile implements ParsedTextContentSource {
 			
 			private static class NV extends JSON_Data.NamedValueExtra.Dummy{}
-			private static class V extends JSON_Data.ValueExtra.Dummy{}
+			private static class V  extends JSON_Data.ValueExtra.Dummy{}
 			
 			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
 			private JSON_Parser.Result<NV,V> parseResult;
@@ -1417,7 +1578,7 @@ class TreeNodes {
 				JSON_Data.Value<NV,V> getSubNodeValue(Object... path) {
 					try {
 						return JSON_Data.getSubNode(value, path);
-					} catch (PathIsNotSolvableException e) {
+					} catch (JSON_Data.PathIsNotSolvableException e) {
 						return null;
 					}
 				}
@@ -1435,7 +1596,7 @@ class TreeNodes {
 
 				@Override public String getName    () { return name; }
 				@Override public String getValueStr() { return value.toString(); }
-				private Type getValueType() { return value==null ? null : value.type; }
+				private JSON_Data.Value.Type getValueType() { return value==null ? null : value.type; }
 				@Override public boolean hasName () { return name !=null; }
 				@Override public boolean hasValue() { return value!=null; }
 
@@ -1524,7 +1685,7 @@ class TreeNodes {
 					String text = getContentAsText();
 					try {
 						vdfData = VDFParser.parse(text);
-					} catch (ParseException e) {
+					} catch (VDFParser.ParseException e) {
 						System.err.printf("ParseException: %s%n", e.getMessage());
 						//e.printStackTrace();
 						return BaseTreeNode.DummyTextNode.createSingleTextLineTree_("Parse Error: %s", e.getMessage());
