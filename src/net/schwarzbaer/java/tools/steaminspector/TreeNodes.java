@@ -437,7 +437,7 @@ class TreeNodes {
 			this(parent, title, rawData, file, null);
 		}
 		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData, File file, Icon icon) {
-			super(parent, title, false, true, icon);
+			super(parent, title, false, true, icon!=null ? icon : TreeIconsIS.getCachedIcon(TreeIcons.JSONFile));
 			this.file = file;
 			this.rawData = rawData;
 			this.rawValue = null;
@@ -452,7 +452,7 @@ class TreeNodes {
 			this(parent, title, rawValue, file, null);
 		}
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, File file, Icon icon) {
-			super(parent, title, false, true, icon);
+			super(parent, title, false, true, icon!=null ? icon : TreeIconsIS.getCachedIcon(TreeIcons.JSONFile));
 			this.file = file;
 			this.rawData = null;
 			this.rawValue = rawValue;
@@ -569,37 +569,40 @@ class TreeNodes {
 		static class Player {
 			
 			final long playerID;
+			final File folder;
+			final File configFolder;
+			final File gameStateFolder;
 			final HashMap<Integer, File> steamCloudFolders;
 			final ScreenShots screenShots;
-			final File configFolder;
 			final VDFTreeNode localconfig;
 			final HashMap<Integer,GameStateInfo> gameStateInfos;
 			final AchievementProgress achievementProgress;
 
-			Player(long playerID, File playerFolder) {
+			Player(long playerID, File folder) {
 				this.playerID = playerID;
-				File[] folders = playerFolder.listFiles(file->file.isDirectory() && parseNumber(file.getName())!=null);
+				this.folder = folder;
 				
+				File[] gameNumberFolders = folder.listFiles(file->file.isDirectory() && parseNumber(file.getName())!=null);
 				steamCloudFolders = new HashMap<Integer,File>();
-				for (File folder:folders) {
-					String name = folder.getName();
+				for (File subFolder:gameNumberFolders) {
+					String name = subFolder.getName();
 					if (!name.equals("7") && !name.equals("760")) {
 						Integer gameID = parseNumber(name);
-						steamCloudFolders.put(gameID, folder);
+						steamCloudFolders.put(gameID, subFolder);
 					}
 				}
-				File folder;
+				File subFolder;
 				
 				// Folders
-				folder = new File(playerFolder,"760");
-				if (folder.isDirectory()) {
-					screenShots = new ScreenShots(folder);
+				subFolder = new File(folder,"760");
+				if (subFolder.isDirectory()) {
+					screenShots = new ScreenShots(subFolder);
 				} else
 					screenShots = null;
 				
-				folder = new File(playerFolder,"config");
-				if (folder.isDirectory()) {
-					configFolder = folder;
+				subFolder = new File(folder,"config");
+				if (subFolder.isDirectory()) {
+					configFolder = subFolder;
 				} else
 					configFolder = null;
 				
@@ -625,6 +628,7 @@ class TreeNodes {
 				if (configFolder!=null) {
 					File gameStateFolder = new File(configFolder,"librarycache");
 					if (gameStateFolder.isDirectory()) {
+						this.gameStateFolder = gameStateFolder;
 						File[] files = gameStateFolder.listFiles(file->file.isFile());
 						for (File file:files) {
 							FileNameNExt fileNameNExt = FileNameNExt.create(file.getName());
@@ -663,8 +667,10 @@ class TreeNodes {
 								}
 							}
 						}
-					}
-				}
+					} else
+						this.gameStateFolder = null;
+				} else
+					this.gameStateFolder = null;
 				achievementProgress = achievementProgress_;
 				
 			}
@@ -855,22 +861,39 @@ class TreeNodes {
 		static class Game implements Comparable<Game>{
 			
 			private final int appID;
+			private final String title;
 			private final AppManifest appManifest;
 			private final HashMap<String, File> imageFiles;
 			private final HashMap<Long, File> steamCloudFolders;
 			private final HashMap<Long, Vector<ScreenShot>> screenShots;
-			private final String title;
+			private final HashMap<Long, GameStateInfo>  gameStateInfos;
 			
-			Game(int appID, AppManifest appManifest, HashMap<String, File> imageFiles, HashMap<Long, File> steamCloudFolders, HashMap<Long, Vector<ScreenShot>> screenShots) {
+			Game(int appID, AppManifest appManifest, HashMap<String, File> imageFiles, HashMap<Long, Player> players) {
 				this.appID = appID;
 				this.appManifest = appManifest;
 				this.imageFiles = imageFiles;
-				this.steamCloudFolders = steamCloudFolders;
-				this.screenShots = screenShots;
-				
 				title = appManifest==null ? null : appManifest.getGameTitle();
+				
+				steamCloudFolders = new HashMap<>();
+				screenShots = new HashMap<>();
+				gameStateInfos = new HashMap<>();
+				players.forEach((playerID,player)->{
+					
+					File steamCloudFolder = player.steamCloudFolders.get(appID);
+					if (steamCloudFolder!=null)
+						steamCloudFolders.put(playerID, steamCloudFolder);
+					
+					if (player.screenShots!=null) {
+						Vector<ScreenShot> screenShots_ = player.screenShots.list.get(appID);
+						if (screenShots_!=null && !screenShots_.isEmpty())
+							screenShots.put(playerID, screenShots_);
+					}
+					GameStateInfo gameStateInfo = player.gameStateInfos.get(appID);
+					if (gameStateInfo!=null)
+						gameStateInfos.put(playerID, gameStateInfo);
+				});
 			}
-			
+
 			boolean hasATitle() {
 				return title!=null;
 			}
@@ -1013,11 +1036,13 @@ class TreeNodes {
 			
 			players.clear();;
 			folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.USERDATA);
-			File[] files = folder.listFiles(file->file.isDirectory() && parseLongNumber(file.getName())!=null);
-			for (File playerFolder:files) {
-				Long playerID = parseLongNumber(playerFolder.getName());
-				if (playerID==null) throw new IllegalStateException();
-				players.put(playerID, new Player(playerID,playerFolder));
+			if (folder!=null) {
+				File[] files = folder.listFiles(file->file.isDirectory() && parseLongNumber(file.getName())!=null);
+				for (File playerFolder:files) {
+					Long playerID = parseLongNumber(playerFolder.getName());
+					if (playerID==null) throw new IllegalStateException();
+					players.put(playerID, new Player(playerID,playerFolder));
+				}
 			}
 			
 			// collect all AppIDs
@@ -1035,25 +1060,8 @@ class TreeNodes {
 			games.clear();
 			for (Integer appID:idSet) {
 				HashMap<String, File> imageFiles = gameImages==null ? null : gameImages.getImageFileMap(appID);
-				
 				AppManifest appManifest = appManifests.get(appID);
-				
-				HashMap<Long,File> steamCloudFolders = new HashMap<>();
-				HashMap<Long,Vector<ScreenShot>> screenShots = new HashMap<>();
-				players.forEach((playerID,player)->{
-					
-					File steamCloudFolder = player.steamCloudFolders.get(appID);
-					if (steamCloudFolder!=null)
-						steamCloudFolders.put(playerID, steamCloudFolder);
-					
-					if (player.screenShots!=null) {
-						Vector<ScreenShot> screenShots_ = player.screenShots.list.get(appID);
-						if (screenShots_!=null && !screenShots_.isEmpty())
-							screenShots.put(playerID, screenShots_);
-					}
-				});
-				
-				games.put(appID, new Game(appID, appManifest, imageFiles, steamCloudFolders, screenShots));
+				games.put(appID, new Game(appID, appManifest, imageFiles, players));
 			}
 			
 		}
@@ -1099,7 +1107,48 @@ class TreeNodes {
 			}
 		}
 		
-		static class PlayerNode extends BaseTreeNode<TreeNode,TreeNode> {
+		static class GameNode extends BaseTreeNode<TreeNode,TreeNode> {
+		
+			private final Game game;
+		
+			protected GameNode(TreeNode parent, Game game) {
+				super(parent, game.getTitle(), true, false, game.getIcon());
+				this.game = game;
+			}
+		
+			@Override
+			protected Vector<? extends TreeNode> createChildren() {
+				Vector<TreeNode> children = new Vector<>();
+				
+				if (game.appManifest!=null)
+					children.add(new FileSystem.AppManifestNode(this, game.appManifest.file));
+				
+				if (game.imageFiles!=null && !game.imageFiles.isEmpty())
+					children.add(new FileSystem.FolderNode(this, "Images", game.imageFiles.values(), TreeIcons.ImageFile));
+				
+				if (game.steamCloudFolders!=null && !game.steamCloudFolders.isEmpty()) {
+					HashMap<File,String> folderLabels = new HashMap<>();
+					game.steamCloudFolders.forEach((playerID,folder)->folderLabels.put(folder, String.format("by %s", getPlayerName(playerID))));
+					
+					Stream<Entry<Long, File>> sorted = game.steamCloudFolders.entrySet().stream().sorted(Comparator.comparing(Map.Entry<Long,File>::getKey));
+					File[] files = sorted.map(Map.Entry<Long,File>::getValue).toArray(File[]::new);
+					//Collection<File> files = game.gameDataFolders.values();
+					
+					children.add(new FileSystem.FolderNode(this, "SteamCloud Shared Data", files, true, folderLabels::get, TreeIcons.Folder));
+				}
+				if (game.screenShots!=null && !game.screenShots.isEmpty()) {
+					children.add(new ScreenShotsNode<>(this,game.screenShots,id->String.format("by %s", getPlayerName(id)),Comparator.<Long>naturalOrder()));
+				}
+				if (!game.gameStateInfos.isEmpty()) {
+					Comparator<Map.Entry<Long, GameStateInfo>> sortOrder = Comparator.comparing(Map.Entry<Long,GameStateInfo>::getKey);
+					children.add(GroupingNode.create(this, "Game Status Infos", game.gameStateInfos, sortOrder, GameStateInfoNode::new));
+				}
+				
+				return children;
+			}
+		}
+
+		static class PlayerNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode {
 
 			//private long playerID;
 			private Player player;
@@ -1111,21 +1160,20 @@ class TreeNodes {
 			}
 
 			@Override
+			public LabeledFile getFile() {
+				return new LabeledFile(player.folder);
+			}
+
+			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				
+				GroupingNode<?> groupingNode;
 				if (player.steamCloudFolders!=null && !player.steamCloudFolders.isEmpty()) {
-					HashMap<File,String> folderLabels = new HashMap<>();
-					player.steamCloudFolders.forEach((gameID,folder)->folderLabels.put(folder, getGameTitle(gameID)));
-					
-					HashMap<File,Icon> folderIcons = new HashMap<>();
-					player.steamCloudFolders.forEach((gameID,folder)->folderIcons.put(folder, getGameIcon(gameID, TreeIcons.Folder)));
-					
-					Comparator<Map.Entry<Integer, File>> entryOrder = Comparator.comparing(Map.Entry<Integer, File>::getKey,gameIdOrder);
-					Stream<Map.Entry<Integer, File>> sortedEntries = player.steamCloudFolders.entrySet().stream().sorted(entryOrder);
-					File[] gameDataFolders = sortedEntries.map(entry->entry.getValue()).toArray(File[]::new);
-					
-					children.add(new FileSystem.FolderNode(this, "SteamCloud Shared Data", gameDataFolders, true, folderLabels::get, folderIcons::get, TreeIcons.Folder));
+					Comparator<Map.Entry<Integer, File>> sortOrder = Comparator.comparing(Map.Entry<Integer, File>::getKey,gameIdOrder);
+					GroupingNode.NodeCreator2<Integer, File> createFolderNode = (parent, gameID, file) -> new FileSystem.FolderNode(parent, getGameTitle(gameID), file, getGameIcon(gameID, TreeIcons.Folder));
+					children.add(groupingNode = GroupingNode.create(this, "SteamCloud Shared Data", player.steamCloudFolders, sortOrder, createFolderNode));
+					groupingNode.setFileSource(player.folder, null);
 				}
 				if (player.screenShots!=null && !player.screenShots.list.isEmpty()) {
 					children.add(new ScreenShotsNode<Integer>(this,player.screenShots.list,id->getGameTitle(id),id->getGameIcon(id,TreeIcons.ImageFile),gameIdOrder));
@@ -1137,22 +1185,32 @@ class TreeNodes {
 					children.add(new AchievementProgressNode(this, player.achievementProgress));
 				}
 				if (!player.gameStateInfos.isEmpty()) {
-					Comparator<Map.Entry<Integer, GameStateInfo>> sortOrder =
-							Comparator.comparing(Map.Entry<Integer,GameStateInfo>::getKey,gameIdOrder);
-					children.add(GroupingNode.create(this, "GameStateInfos", player.gameStateInfos, sortOrder, GameStateInfoNode::new));
+					Comparator<Map.Entry<Integer, GameStateInfo>> sortOrder = Comparator.comparing(Map.Entry<Integer,GameStateInfo>::getKey,gameIdOrder);
+					children.add(groupingNode = GroupingNode.create(this, "Game Status Infos", player.gameStateInfos, sortOrder, GameStateInfoNode::new));
+					groupingNode.setFileSource(player.gameStateFolder, null);
 				}
 				
 				return children;
 			}
 		}
 		
-		static class AchievementProgressNode extends BaseTreeNode<TreeNode,TreeNode> {
+		static class AchievementProgressNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode {
 			
 			final AchievementProgress data;
 
 			AchievementProgressNode(TreeNode parent, AchievementProgress data) {
 				super(parent,"Achievement Progress",true,false);
 				this.data = data;
+			}
+
+			@Override
+			public LabeledFile getFile() {
+				return new LabeledFile(data.file);
+			}
+
+			@Override
+			public ExternalViewerInfo getExternalViewerInfo() {
+				return ExternalViewerInfo.TextEditor;
 			}
 
 			@Override
@@ -1164,13 +1222,27 @@ class TreeNodes {
 			}
 		}
 		
-		static class GameStateInfoNode extends BaseTreeNode<TreeNode,TreeNode> {
+		static class GameStateInfoNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode {
 			
 			final GameStateInfo data;
 
+			GameStateInfoNode(TreeNode parent, Long playerID, GameStateInfo gameStateInfo) {
+				super(parent, "by "+getPlayerName(playerID), true, false);
+				this.data = gameStateInfo;
+			}
 			GameStateInfoNode(TreeNode parent, Integer gameID, GameStateInfo gameStateInfo) {
 				super(parent, getGameTitle(gameID), true, false, getGameIcon(gameID, TreeIcons.Folder));
 				this.data = gameStateInfo;
+			}
+
+			@Override
+			public LabeledFile getFile() {
+				return new LabeledFile(data.file);
+			}
+
+			@Override
+			public ExternalViewerInfo getExternalViewerInfo() {
+				return ExternalViewerInfo.TextEditor;
 			}
 
 			@Override
@@ -1217,43 +1289,6 @@ class TreeNodes {
 					if (block.dataValue!=null)
 						children.add(new RawJsonDataNode<>(this, "data", block.dataValue));
 				}
-				return children;
-			}
-		}
-
-		static class GameNode extends BaseTreeNode<TreeNode,TreeNode> {
-		
-			private final Game game;
-		
-			protected GameNode(TreeNode parent, Game game) {
-				super(parent, game.getTitle(), true, false, game.getIcon());
-				this.game = game;
-			}
-		
-			@Override
-			protected Vector<? extends TreeNode> createChildren() {
-				Vector<TreeNode> children = new Vector<>();
-				
-				if (game.appManifest!=null)
-					children.add(new FileSystem.AppManifestNode(this, game.appManifest.file));
-				
-				if (game.imageFiles!=null && !game.imageFiles.isEmpty())
-					children.add(new FileSystem.FolderNode(this, "Images", game.imageFiles.values(), TreeIcons.ImageFile));
-				
-				if (game.steamCloudFolders!=null && !game.steamCloudFolders.isEmpty()) {
-					HashMap<File,String> folderLabels = new HashMap<>();
-					game.steamCloudFolders.forEach((playerID,folder)->folderLabels.put(folder, String.format("by %s", getPlayerName(playerID))));
-					
-					Stream<Entry<Long, File>> sorted = game.steamCloudFolders.entrySet().stream().sorted(Comparator.comparing(Map.Entry<Long,File>::getKey));
-					File[] files = sorted.map(Map.Entry<Long,File>::getValue).toArray(File[]::new);
-					//Collection<File> files = game.gameDataFolders.values();
-					
-					children.add(new FileSystem.FolderNode(this, "SteamCloud Shared Data", files, true, folderLabels::get, TreeIcons.Folder));
-				}
-				if (game.screenShots!=null && !game.screenShots.isEmpty()) {
-					children.add(new ScreenShotsNode<>(this,game.screenShots,id->String.format("by %s", getPlayerName(id)),Comparator.<Long>naturalOrder()));
-				}
-					
 				return children;
 			}
 		}

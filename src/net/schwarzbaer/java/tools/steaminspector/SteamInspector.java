@@ -869,7 +869,10 @@ class SteamInspector {
 				if (viewer==null) return;
 				
 				try {
-					Runtime.getRuntime().exec(new String[] { viewer.getAbsolutePath(), clickedFile.file.getAbsolutePath() });
+					String viewerPath = viewer.getAbsolutePath();
+					String filePath = clickedFile.file.getAbsolutePath();
+					System.out.printf("Execute in Shell: \"%s\" \"%s\"%n", viewerPath, filePath);
+					Runtime.getRuntime().exec(new String[] { viewerPath, filePath });
 				} catch (IOException e1) {
 					System.err.println("Exception occured while opening selected file in an external viewer:");
 					System.err.println("    selected file: "+clickedFile.file.getAbsolutePath());
@@ -897,7 +900,8 @@ class SteamInspector {
 			clickedExternalViewerInfo = clickedNode instanceof ExternViewableNode ? ((ExternViewableNode) clickedNode).getExternalViewerInfo() : null;
 			
 			miCopyPath .setEnabled(clickedFile!=null);
-			miExtViewer.setEnabled(clickedFile!=null && clickedExternalViewerInfo!=null);
+			miExtViewer.setEnabled(clickedFile!=null && clickedFile.file.isFile() && clickedExternalViewerInfo!=null);
+			miCopyPath.setText(String.format("Copy %sPath to Clipboard", clickedFile==null ? "" : clickedFile.file.isFile() ? "File " : clickedFile.file.isDirectory() ? "Folder " : ""));
 		}
 		
 	}
