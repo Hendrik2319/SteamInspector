@@ -41,17 +41,20 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AppSettings.ValueKey;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BytesContentSource;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextContentSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteFileSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerInfo;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedTextContentSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedTextFileSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.AppManifest;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Game;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.GameImages;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.AchievementProgress;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameStateInfo;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameStateInfo.GameStateInfoBlock;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FolderNode;
@@ -338,6 +341,12 @@ class TreeNodes {
 		private File file;
 		private ExternalViewerInfo externalViewerInfo;
 		
+		static <I,V> GroupingNode<Map.Entry<I,V>> create(TreeNode parent, String title, HashMap<I,V> values, Comparator<V> sortOrder, NodeCreator1<V> createChildNode) {
+			return create(parent, title, values, sortOrder, createChildNode, null);
+		}
+		static <I,V> GroupingNode<Map.Entry<I,V>> create(TreeNode parent, String title, HashMap<I,V> values, Comparator<V> sortOrder, NodeCreator1<V> createChildNode, Icon icon) {
+			return new GroupingNode<Map.Entry<I,V>>(parent, title, values.entrySet(), Comparator.comparing(Map.Entry<I, V>::getValue,sortOrder), (p,e)->createChildNode.create(p,e.getValue()), icon);
+		}
 		static <I,V> GroupingNode<Map.Entry<I,V>> create(TreeNode parent, String title, HashMap<I,V> values, Comparator<Map.Entry<I,V>> sortOrder, NodeCreator2<I,V> createChildNode) {
 			return create(parent, title, values, sortOrder, createChildNode, null);
 		}
@@ -392,6 +401,26 @@ class TreeNodes {
 		}
 	}
 
+	static class TextContentNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource {
+		
+		final String content;
+
+		TextContentNode(TreeNode parent, String title, String content) {
+			this(parent, title, content, (Icon)null);
+		}
+		TextContentNode(TreeNode parent, String title, String content, TreeIcons icon) {
+			super(parent, title, false, true, icon);
+			this.content = content;
+		}
+		TextContentNode(TreeNode parent, String title, String content, Icon icon) {
+			super(parent, title, false, true, icon);
+			this.content = content;
+		}
+		@Override ContentType getContentType() { return ContentType.PlainText; }
+		@Override public String getContentAsText() { return content; }
+		@Override protected Vector<? extends TreeNode> createChildren() { return new Vector<>(); }
+	}
+
 	static class RawJsonDataNode<NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
 	
 		private final File file;
@@ -403,6 +432,9 @@ class TreeNodes {
 		}
 		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData, Icon icon) {
 			this(parent, title, rawData, null, icon);
+		}
+		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData, File file) {
+			this(parent, title, rawData, file, null);
 		}
 		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData, File file, Icon icon) {
 			super(parent, title, false, true, icon);
@@ -416,22 +448,25 @@ class TreeNodes {
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, Icon icon) {
 			this(parent, title, rawValue, null, icon);
 		}
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, File file) {
+			this(parent, title, rawValue, file, null);
+		}
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, File file, Icon icon) {
 			super(parent, title, false, true, icon);
 			this.file = file;
 			this.rawData = null;
 			this.rawValue = rawValue;
 		}
-		@Override protected Vector<? extends TreeNode> createChildren() { return null; }
 		
-		@Override ContentType getContentType() {
-			return ContentType.DataTree;
-		}
+		@Override protected Vector<? extends TreeNode> createChildren() { return null; }
+		@Override ContentType getContentType() { return ContentType.DataTree; }
+		
 		@Override public TreeRoot getContentAsTree() {
 			if (rawData !=null) return FileSystem.JSON_File.JSON_TreeNode.create(rawData , false);
 			if (rawValue!=null) return FileSystem.JSON_File.JSON_TreeNode.create(rawValue, false);
 			return SimpleTextNode.createSingleTextLineTree("RawJsonDataNode(<null>)");
 		}
+		
 		@Override
 		public LabeledFile getFile() {
 			return file==null ? null : new LabeledFile(file);
@@ -451,6 +486,46 @@ class TreeNodes {
 
 	static class Data {
 		
+		private static class NV extends JSON_Data.NamedValueExtra.Dummy{}
+		private static class V  extends JSON_Data.ValueExtra.Dummy{}
+		
+		static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getJsonValue(
+				JSON_Object<NV,V> object,
+				String subValueName,
+				Function<JSON_Data.Value<NV,V>,JsonValueType> cast,
+				String debugOutputPrefixStr, String jsonValueTypeLabel
+		) throws ParseException {
+			if (object==null) throw new ParseException("%s==NULL", debugOutputPrefixStr);
+			JSON_Data.Value<NV, V> value = object.getValue(subValueName);
+			return getJsonValue(value, cast, debugOutputPrefixStr+"."+subValueName, jsonValueTypeLabel);
+		}
+
+		static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getJsonValue(
+				JSON_Data.Value<NV,V> value,
+				Function<JSON_Data.Value<NV,V>,JsonValueType> cast,
+				String debugOutputPrefixStr, String jsonValueTypeLabel
+		) throws ParseException {
+			if (value==null) throw new ParseException("%s==NULL", debugOutputPrefixStr);
+			JsonValueType jsonValue = cast.apply(value);
+			if (jsonValue      ==null) throw new ParseException("%s isn't a %s", debugOutputPrefixStr, jsonValueTypeLabel);
+			if (jsonValue.value==null) throw new ParseException("%s.value==NULL", debugOutputPrefixStr);
+			return jsonValue.value;
+		}
+
+		static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getJsonValue(
+				JSON_Data.Value<NV,V> value,
+				Function<JSON_Data.Value<NV,V>,JsonValueType> cast
+		) {
+			if (value==null) return null;
+			JsonValueType jsonValue = cast.apply(value);
+			if (jsonValue==null) return null;
+			return jsonValue.value;
+		}
+
+		static void showParseException(ParseException e, File file) {
+			System.err.printf("(TreeNodes.Data) ParseException: %s%n   in File \"%s\"%n", e.getMessage(), file.getAbsolutePath());
+		}
+
 		static class ScreenShot {
 			final File image;
 			final File thumbnail;
@@ -493,9 +568,6 @@ class TreeNodes {
 		}
 		static class Player {
 			
-			private static class NV extends JSON_Data.NamedValueExtra.Dummy{}
-			private static class V  extends JSON_Data.ValueExtra.Dummy{}
-
 			final long playerID;
 			final HashMap<Integer, File> steamCloudFolders;
 			final ScreenShots screenShots;
@@ -581,7 +653,7 @@ class TreeNodes {
 											info = GameStateInfo.parse(file,result.array);
 										} catch (ParseException e) {
 											//e.printStackTrace();
-											System.err.printf("(GameStateInfo) ParseException: %s%n   in File \"%s\"%n", e.getMessage(), file.getAbsolutePath());
+											showParseException(e, file);
 										}
 										if (info!=null)
 											gameStateInfos.put(gameID, info);
@@ -628,18 +700,26 @@ class TreeNodes {
 				final File file;
 				final JSON_Parser.Result<NV, V> rawData;
 				final Vector<GameStateInfoBlock> blocks;
+				final String fullDesc;
+				final String shortDesc;
 
 				public GameStateInfo(File file, JSON_Parser.Result<NV, V> rawData) {
 					this.file = file;
 					this.rawData = rawData;
-					this.blocks = null;
+					this.blocks    = null;
+					this.fullDesc  = null;
+					this.shortDesc = null;
 				}
 
 				public GameStateInfo(File file, Vector<GameStateInfoBlock> blocks) {
 					this.file = file;
 					this.rawData = null;
 					this.blocks = blocks;
+					String preFullDesc  = null;
+					String preShortDesc = null;
 					for (GameStateInfoBlock block:this.blocks) {
+						String blockStr = "GameStateInfo.Block["+block.blockIndex+"]";
+						String dataValueStr = blockStr+".dataValue";
 						switch (block.label) {
 						case "achievements":
 							// TODO: parse GameStateInfo.Block["achievements"] 
@@ -650,10 +730,20 @@ class TreeNodes {
 							break;
 							
 						case "descriptions":
-							// TODO: parse GameStateInfo.Block["descriptions"] 
+							JSON_Object<NV, V> object = null;
+							try { object = getJsonValue(block.dataValue, JSON_Data.Value::castToObjectValue, dataValueStr, "ObjectValue"); }
+							catch (ParseException e) { showParseException(e, file); }
+							if (object!=null) {
+								try { preFullDesc  = getJsonValue(object,"strFullDescription",JSON_Data.Value::castToStringValue, dataValueStr, "StringValue"); }
+								catch (ParseException e) { showParseException(e, file); }
+								try { preShortDesc = getJsonValue(object,"strSnippet"        ,JSON_Data.Value::castToStringValue, dataValueStr, "StringValue"); }
+								catch (ParseException e) { showParseException(e, file); }
+							}
 							break;
 						}
 					}
+					this.fullDesc  = preFullDesc;
+					this.shortDesc = preShortDesc;
 				}
 
 				public static GameStateInfo parse(File file, JSON_Array<NV,V> array) throws ParseException {
@@ -668,18 +758,6 @@ class TreeNodes {
 					return new GameStateInfo(file,blocks);
 				}
 				
-				static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getValue(
-						JSON_Data.Value<NV,V> value,
-						Function<JSON_Data.Value<NV,V>,JsonValueType> cast,
-						String debugOutputPrefixStr, String jsonValueTypeLabel
-				) throws ParseException {
-					if (value==null) throw new ParseException("%s==NULL", debugOutputPrefixStr);
-					JsonValueType jsonValue = cast.apply(value);
-					if (jsonValue      ==null) throw new ParseException("%s isn't a %s", debugOutputPrefixStr, jsonValueTypeLabel);
-					if (jsonValue.value==null) throw new ParseException("%s.value==NULL", debugOutputPrefixStr);
-					return jsonValue.value;
-				}
-
 				static class GameStateInfoBlock {
 
 					final int blockIndex;
@@ -713,13 +791,13 @@ class TreeNodes {
 						if (array.size()!=2) throw new ParseException("%s.value.length(==%d) != 2", blockStr, array.size());
 						JSON_Data.Value<NV, V>     labelValue = array.get(0);
 						JSON_Data.Value<NV, V> blockdataValue = array.get(1);
-						String                label = getValue(    labelValue,JSON_Data.Value::castToStringValue,blockStr+".value[0:label]"    ,"StringValue");
-						JSON_Object<NV,V> blockdata = getValue(blockdataValue,JSON_Data.Value::castToObjectValue,blockStr+".value[1:blockdata]","ObjectValue");
+						String                label = getJsonValue(    labelValue,JSON_Data.Value::castToStringValue,blockStr+".value[0:label]"    ,"StringValue");
+						JSON_Object<NV,V> blockdata = getJsonValue(blockdataValue,JSON_Data.Value::castToObjectValue,blockStr+".value[1:blockdata]","ObjectValue");
 						if (blockdata.size()>2)  throw new ParseException("%s.value[1:blockdata].object.length(==%d) > 2: Too much values", blockStr, blockdata.size());
 						if (blockdata.isEmpty()) throw new ParseException("%s.value[1:blockdata].object is empty: Too few values", blockStr);
 						JSON_Data.Value<NV, V> versionValue = blockdata.getValue("version");
 						JSON_Data.Value<NV, V>    dataValue = blockdata.getValue("data");
-						Long version = getValue(versionValue,JSON_Data.Value::castToIntegerValue,blockStr+".value[1:blockdata].object.version","IntegerValue");
+						Long version = getJsonValue(versionValue,JSON_Data.Value::castToIntegerValue,blockStr+".value[1:blockdata].object.version","IntegerValue");
 						if (dataValue==null && blockdata.size()>1) throw new ParseException("%s.value[1:blockdata].object.data==NULL, but there are other values", blockStr);
 						return new GameStateInfoBlock(blockIndex,label,version,dataValue);
 					}
@@ -914,7 +992,7 @@ class TreeNodes {
 		
 		private static final HashMap<Integer,Game> games = new HashMap<>();
 		private static final HashMap<Long,Player> players = new HashMap<>();
-		private static Comparator<Integer> gameIdOrder = Comparator.<Integer,Integer>comparing(id->hasGameATitle(id)?0:1).thenComparing(Comparator.naturalOrder());
+		private static Comparator<Integer> gameIdOrder = Comparator.<Integer,Boolean>comparing(id->!hasGameATitle(id)).thenComparing(Comparator.naturalOrder());
 	
 		static void loadData() {
 			File folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
@@ -1015,37 +1093,19 @@ class TreeNodes {
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
-				children.add(new GamesRoot(this));
-				children.add(new PlayersRoot(this));
+				children.add(GroupingNode.create(this, "Games"  , games  , Comparator.<Game>naturalOrder()                      , GameNode  ::new));
+				children.add(GroupingNode.create(this, "Players", players, Comparator.comparing(Map.Entry<Long, Player>::getKey), PlayerNode::new));
 				return children;
 			}
 		}
 		
-		static class PlayersRoot extends BaseTreeNode<Root,PlayerNode> {
-			PlayersRoot(Root parent) {
-				super(parent, "Players", true, false);
-			}
-	
-			@Override
-			protected Vector<? extends PlayerNode> createChildren() {
-				Vector<PlayerNode> children = new Vector<>();
-				
-				//players.forEach((playerID,player)->children.add(new PlayerNode(this, playerID, player)));
-				Comparator<Map.Entry<Long, Player>> entryOrder = Comparator.comparing(Map.Entry<Long, Player>::getKey);
-				Stream<Map.Entry<Long, Player>> sortedEntries = players.entrySet().stream().sorted(entryOrder);
-				sortedEntries.forEachOrdered(entry->children.add(new PlayerNode(this, entry.getKey(), entry.getValue())));
-				
-				return children;
-			}
-		}
-		
-		static class PlayerNode extends BaseTreeNode<PlayersRoot,TreeNode> {
+		static class PlayerNode extends BaseTreeNode<TreeNode,TreeNode> {
 
 			//private long playerID;
 			private Player player;
 
-			public PlayerNode(PlayersRoot playersRoot, long playerID, Player player) {
-				super(playersRoot, player.getName()+"  ["+playerID+"]", true, false);
+			public PlayerNode(TreeNode parent, Long playerID, Player player) {
+				super(parent, player.getName()+"  ["+playerID+"]", true, false);
 				//this.playerID = playerID;
 				this.player = player;
 			}
@@ -1074,50 +1134,80 @@ class TreeNodes {
 					children.add(new FileSystem.FolderNode(this, "Config Folder", player.configFolder));
 				}
 				if (player.achievementProgress!=null) {
-					if (player.achievementProgress.rawData!=null) {
-						children.add(new RawJsonDataNode<>(this, "AchievementProgress [RawData]",player.achievementProgress.rawData, player.achievementProgress.file, null));
-					} else {
-						// TODO: TreeNode for AchievementProgress
-					}
+					children.add(new AchievementProgressNode(this, player.achievementProgress));
 				}
 				if (!player.gameStateInfos.isEmpty()) {
-					Comparator<Map.Entry<Integer, Data.Player.GameStateInfo>> sortOrder =
-							Comparator.comparing(Map.Entry<Integer,Data.Player.GameStateInfo>::getKey,gameIdOrder);
-					children.add(GroupingNode.create(this, "GameStateInfos", player.gameStateInfos, sortOrder, this::createGameStateInfoNode));
+					Comparator<Map.Entry<Integer, GameStateInfo>> sortOrder =
+							Comparator.comparing(Map.Entry<Integer,GameStateInfo>::getKey,gameIdOrder);
+					children.add(GroupingNode.create(this, "GameStateInfos", player.gameStateInfos, sortOrder, GameStateInfoNode::new));
 				}
 				
 				return children;
 			}
+		}
+		
+		static class AchievementProgressNode extends BaseTreeNode<TreeNode,TreeNode> {
 			
-			TreeNode createGameStateInfoNode(TreeNode parent, Integer gameID, Data.Player.GameStateInfo gameStateInfo) {
-				Icon gameIcon = getGameIcon(gameID, TreeIcons.Folder);
-				String gameTitle = getGameTitle(gameID);
-				if (gameStateInfo.rawData!=null)
-					return new RawJsonDataNode<>(this, gameTitle, gameStateInfo.rawData, gameStateInfo.file, gameIcon);
-				if (gameStateInfo.blocks!=null) {
-					GroupingNode<GameStateInfoBlock> groupingNode = GroupingNode.create(this, gameTitle, gameStateInfo.blocks, null, GameStateInfoBlockNode::new, gameIcon);
-					groupingNode.setFileSource(gameStateInfo.file,ExternalViewerInfo.TextEditor);
-					return groupingNode;
+			final AchievementProgress data;
+
+			AchievementProgressNode(TreeNode parent, AchievementProgress data) {
+				super(parent,"Achievement Progress",true,false);
+				this.data = data;
+			}
+
+			@Override
+			protected Vector<? extends TreeNode> createChildren() {
+				Vector<TreeNode> children = new Vector<>();
+				if (data.rawData!=null)
+					children.add( new RawJsonDataNode<>(this, "Raw JSON Data", data.rawData, data.file) );
+				return children;
+			}
+		}
+		
+		static class GameStateInfoNode extends BaseTreeNode<TreeNode,TreeNode> {
+			
+			final GameStateInfo data;
+
+			GameStateInfoNode(TreeNode parent, Integer gameID, GameStateInfo gameStateInfo) {
+				super(parent, getGameTitle(gameID), true, false, getGameIcon(gameID, TreeIcons.Folder));
+				this.data = gameStateInfo;
+			}
+
+			@Override
+			protected Vector<? extends TreeNode> createChildren() {
+				Vector<TreeNode> children = new Vector<>();
+				GroupingNode<GameStateInfoBlock> groupingNode;
+				if (data.fullDesc!=null) {
+					children.add(new TextContentNode(this, "Full Game Description", data.fullDesc, TreeIcons.TextFile));
 				}
-				return new SimpleTextNode(this,gameIcon,"[No Data] "+gameTitle);
+				if (data.shortDesc!=null) {
+					children.add(new TextContentNode(this, "Short Game Description", data.shortDesc, TreeIcons.TextFile));
+				}
+				if (data.blocks!=null) {
+					children.add(groupingNode = GroupingNode.create(this, "Raw Blocks", data.blocks, null, GameStateInfoBlockNode::new));
+					groupingNode.setFileSource(data.file,ExternalViewerInfo.TextEditor);
+				}
+				if (data.rawData!=null)
+					children.add( new RawJsonDataNode<>(this, "Raw JSON Data", data.rawData, data.file) );
+				return children;
 			}
 		}
 		
 		static class GameStateInfoBlockNode extends BaseTreeNode<TreeNode,TreeNode> {
 			
-			private Data.Player.GameStateInfo.GameStateInfoBlock block;
-
-			GameStateInfoBlockNode(TreeNode parent, Data.Player.GameStateInfo.GameStateInfoBlock block) {
+			private GameStateInfoBlock block;
+		
+			GameStateInfoBlockNode(TreeNode parent, GameStateInfoBlock block) {
 				super(parent, getTitle(block), true, false);
 				this.block = block;
 			}
-
-			private static String getTitle(Data.Player.GameStateInfo.GameStateInfoBlock block) {
+		
+			private static String getTitle(GameStateInfoBlock block) {
 				if (block==null) return "Block ???";
 				if (block.rawData!=null) return "Block "+block.blockIndex+" (RawData)";
 				return "["+block.blockIndex+"] "+block.label;
 			}
-
+		
 			@Override protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				if (block.rawData!=null)
@@ -1126,36 +1216,20 @@ class TreeNodes {
 					children.add(new SimpleTextNode(this, "version: %d", block.version));
 					if (block.dataValue!=null)
 						children.add(new RawJsonDataNode<>(this, "data", block.dataValue));
-					// TODO: [GameStateInfoBlock] children for other block values
 				}
 				return children;
 			}
 		}
-		
-		static class GamesRoot extends BaseTreeNode<Root,GameNode> {
-			GamesRoot(Root parent) {
-				super(parent, "Games", true, false);
-			}
-	
-			@Override
-			protected Vector<? extends GameNode> createChildren() {
-				Vector<GameNode> children = new Vector<>();
-				Vector<Game> gamesVec = new Vector<>(games.values());
-				gamesVec.sort(null);
-				for (Game game:gamesVec) children.add(new GameNode(this, game));
-				return children;
-			}
-		}
-		
-		static class GameNode extends BaseTreeNode<GamesRoot,TreeNode> {
-	
-			private final Game game;
 
-			protected GameNode(GamesRoot parent, Game game) {
+		static class GameNode extends BaseTreeNode<TreeNode,TreeNode> {
+		
+			private final Game game;
+		
+			protected GameNode(TreeNode parent, Game game) {
 				super(parent, game.getTitle(), true, false, game.getIcon());
 				this.game = game;
 			}
-	
+		
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
@@ -1183,7 +1257,7 @@ class TreeNodes {
 				return children;
 			}
 		}
-		
+
 		static class ScreenShotsNode<IDType> extends BaseTreeNode<TreeNode,FileSystem.FolderNode> {
 
 			private final HashMap<IDType, Vector<ScreenShot>> screenShots;
@@ -1575,7 +1649,7 @@ class TreeNodes {
 			}
 		}
 
-		static class FileNode extends FileSystemNode implements BytesContentSource, ExternViewableNode {
+		static class FileNode extends FileSystemNode implements ByteFileSource, ExternViewableNode {
 		
 			protected byte[] byteContent;
 			private final ExternalViewerInfo externalViewerInfo;
@@ -1674,7 +1748,7 @@ class TreeNodes {
 			}
 		}
 
-		static class TextFile extends FileNode implements ExtendedTextContentSource {
+		static class TextFile extends FileNode implements ExtendedTextFileSource {
 			
 			protected final Charset charset;
 			protected String textContent;
@@ -1705,7 +1779,7 @@ class TreeNodes {
 			}
 		}
 		
-		static class JSON_File extends TextFile implements ParsedTextContentSource {
+		static class JSON_File extends TextFile implements ParsedTextFileSource {
 			
 			private static class NV_ extends JSON_Data.NamedValueExtra.Dummy{}
 			private static class V_  extends JSON_Data.ValueExtra.Dummy{}
@@ -1866,7 +1940,7 @@ class TreeNodes {
 			}
 		}
 
-		static class VDF_File extends TextFile implements ParsedTextContentSource {
+		static class VDF_File extends TextFile implements ParsedTextFileSource {
 			
 			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
 			private VDFParser.Data vdfData;

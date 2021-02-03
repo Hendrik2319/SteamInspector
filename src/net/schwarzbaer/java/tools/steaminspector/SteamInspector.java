@@ -110,21 +110,21 @@ class SteamInspector {
 	private JTree tree = null;
 	private TreeType selectedTreeType = null;
 	private JPanel fileContentPanel = null;
-	private final ExtendedOutput hexTableOutput;
-	private final ExtendedOutput plainTextOutput;
-	private final ExtendedOutput extendedTextOutput;
-	private final ExtendedOutput parsedTextOutput;
-	private final DataTreeOutput treeOutput;
+	private final CombinedOutput hexTableOutput;
+	private final CombinedOutput plainTextOutput;
+	private final CombinedOutput extendedTextOutput;
+	private final CombinedOutput parsedTextOutput;
+	private final CombinedOutput treeOutput;
 	private final ImageOutput imageOutput;
 	private final OutputDummy outputDummy;
 	private FileContentOutput lastFileContentOutput;
 	
 	SteamInspector() {
-		hexTableOutput     = new ExtendedOutput(BaseTreeNode.ContentType.Bytes);
-		plainTextOutput    = new ExtendedOutput(BaseTreeNode.ContentType.PlainText);
-		extendedTextOutput = new ExtendedOutput(BaseTreeNode.ContentType.ExtendedText);
-		parsedTextOutput   = new ExtendedOutput(BaseTreeNode.ContentType.ParsedText);
-		treeOutput  = new DataTreeOutput();
+		hexTableOutput     = new CombinedOutput(BaseTreeNode.ContentType.Bytes);
+		plainTextOutput    = new CombinedOutput(BaseTreeNode.ContentType.PlainText);
+		extendedTextOutput = new CombinedOutput(BaseTreeNode.ContentType.ExtendedText);
+		parsedTextOutput   = new CombinedOutput(BaseTreeNode.ContentType.ParsedText);
+		treeOutput         = new CombinedOutput(BaseTreeNode.ContentType.DataTree);
 		imageOutput = new ImageOutput();
 		outputDummy = new OutputDummy();
 		lastFileContentOutput = outputDummy;
@@ -269,9 +269,9 @@ class SteamInspector {
 				switch (contentType) {
 				
 				case Bytes:
-					if (baseTreeNode instanceof BytesContentSource) {
-						BytesContentSource source = (BytesContentSource) baseTreeNode;
-						if (!source.isLarge() || userAllowsLargeFile(source)) {
+					if (baseTreeNode instanceof ByteContentSource) {
+						ByteContentSource source = (ByteContentSource) baseTreeNode;
+						if (allowLargeFile(baseTreeNode)) {
 							hexTableOutput.setSource(source);
 							changeFileContentOutput(hexTableOutput);
 							hideOutput = false;
@@ -283,7 +283,7 @@ class SteamInspector {
 				case PlainText:
 					if (baseTreeNode instanceof TextContentSource) {
 						TextContentSource source = (TextContentSource) baseTreeNode;
-						if (!source.isLarge() || userAllowsLargeFile(source)) {
+						if (allowLargeFile(baseTreeNode)) {
 							plainTextOutput.setSource(source);
 							changeFileContentOutput(plainTextOutput);
 							hideOutput = false;
@@ -295,7 +295,7 @@ class SteamInspector {
 				case ExtendedText:
 					if (baseTreeNode instanceof ExtendedTextContentSource) {
 						ExtendedTextContentSource source = (ExtendedTextContentSource) baseTreeNode;
-						if (!source.isLarge() || userAllowsLargeFile(source)) {
+						if (allowLargeFile(baseTreeNode)) {
 							extendedTextOutput.setSource(source);
 							changeFileContentOutput(extendedTextOutput);
 							hideOutput = false;
@@ -307,7 +307,7 @@ class SteamInspector {
 				case ParsedText:
 					if (baseTreeNode instanceof ParsedTextContentSource) {
 						ParsedTextContentSource source = (ParsedTextContentSource) baseTreeNode;
-						if (!source.isLarge() || userAllowsLargeFile(source)) {
+						if (allowLargeFile(baseTreeNode)) {
 							parsedTextOutput.setSource(source);
 							changeFileContentOutput(parsedTextOutput);
 							hideOutput = false;
@@ -319,7 +319,7 @@ class SteamInspector {
 				case DataTree:
 					if (baseTreeNode instanceof TreeContentSource) {
 						TreeContentSource source = (TreeContentSource) baseTreeNode;
-						treeOutput.setRoot(source.getContentAsTree());
+						treeOutput.setSource(source);
 						changeFileContentOutput(treeOutput);
 						hideOutput = false;
 					} else
@@ -340,6 +340,15 @@ class SteamInspector {
 		}
 		if (hideOutput)
 			changeFileContentOutput(outputDummy);
+	}
+
+	private boolean allowLargeFile(BaseTreeNode<?, ?> baseTreeNode) {
+		boolean allow = true;
+		if (baseTreeNode instanceof FileBasedSource) {
+			FileBasedSource fileBasedSource = (FileBasedSource) baseTreeNode;
+			allow = !fileBasedSource.isLarge() || userAllowsLargeFile(fileBasedSource);
+		}
+		return allow;
 	}
 
 	private boolean userAllowsLargeFile(FileBasedSource source) {
@@ -1301,7 +1310,7 @@ class SteamInspector {
 		}
 	}
 
-	static class ExtendedOutput extends MultiOutput {
+	static class CombinedOutput extends MultiOutput {
 		
 		private final ContentType type;
 		private final Component mainComp;
@@ -1311,22 +1320,29 @@ class SteamInspector {
 		private final TextOutput plainText;
 		private final DataTreeOutput dataTree;
 		
-		ExtendedOutput(BaseTreeNode.ContentType type) {
+		CombinedOutput(BaseTreeNode.ContentType type) {
 			this.type = type;
 			
 			switch (type) {
 			case Bytes:
 				hexView    = new HexTableOutput();
 				plainText  = null;
-				dataTree = null;
+				dataTree   = null;
 				mainComp   = hexView.getMainComponent();
 				break;
 			
 			case PlainText:
 				hexView    = null;
 				plainText  = new TextOutput();
-				dataTree = null;
+				dataTree   = null;
 				mainComp   = plainText.getMainComponent();
+				break;
+			
+			case DataTree:
+				hexView    = null;
+				plainText  = null;
+				dataTree   = new DataTreeOutput();
+				mainComp   = dataTree.getMainComponent();
 				break;
 			
 			case ExtendedText:
@@ -1357,13 +1373,18 @@ class SteamInspector {
 			return mainComp;
 		}
 
-		void setSource(BytesContentSource source) {
+		void setSource(ByteContentSource source) {
 			if (type!=ContentType.Bytes || hexView==null || plainText!=null || dataTree!=null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 		}
 
 		void setSource(TextContentSource source) {
 			if (type!=ContentType.PlainText || hexView!=null || plainText==null || dataTree!=null) throw new IllegalStateException();
+			setOutput(source, ContentLoadWorker::new);
+		}
+
+		void setSource(TreeContentSource source) {
+			if (type!=ContentType.DataTree || hexView!=null || plainText!=null || dataTree==null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 		}
 		
@@ -1396,17 +1417,18 @@ class SteamInspector {
 		
 		private class ContentLoadWorker extends SwingWorker<List<PostponedTask>,PostponedTask> {
 			
-			private final BytesContentSource bytesSource;
+			private final ByteContentSource bytesSource;
 			private final TextContentSource   textSource;
 			private final TreeContentSource   treeSource;
 			private boolean isObsolete;
 		
-			ContentLoadWorker(       BytesContentSource source) { this(source,  null,  null); }
+			ContentLoadWorker(        ByteContentSource source) { this(source,  null,  null); }
 			ContentLoadWorker(        TextContentSource source) { this(  null,source,  null); }
+			ContentLoadWorker(        TreeContentSource source) { this(  null,  null,source); }
 			ContentLoadWorker(ExtendedTextContentSource source) { this(source,source,  null); }
 			ContentLoadWorker(  ParsedTextContentSource source) { this(source,source,source); }
 			
-			private ContentLoadWorker(BytesContentSource bytesSource, TextContentSource textSource, TreeContentSource treeSource) {
+			private ContentLoadWorker(ByteContentSource bytesSource, TextContentSource textSource, TreeContentSource treeSource) {
 				this.bytesSource = bytesSource;
 				this.textSource = textSource;
 				this.treeSource = treeSource;
@@ -1513,24 +1535,26 @@ class SteamInspector {
 		long getFileSize();
 	}
 	
-	interface BytesContentSource extends FileBasedSource {
+	interface ByteContentSource {
 		byte[] getContentAsBytes();
 	}
-	
+	interface TextContentSource {
+		String getContentAsText();
+	}
+	interface TreeContentSource {
+		TreeRoot getContentAsTree();
+	}
 	interface ImageContentSource {
 		BufferedImage getContentAsImage();
 	}
 	
-	interface TextContentSource extends FileBasedSource {
-		String getContentAsText();
-	}
-	
-	interface TreeContentSource {
-		TreeRoot getContentAsTree();
-	}
-	
-	interface ExtendedTextContentSource extends BytesContentSource, TextContentSource {}
+	interface ExtendedTextContentSource extends ByteContentSource, TextContentSource {}
 	interface ParsedTextContentSource extends ExtendedTextContentSource, TreeContentSource {}
+	
+	interface ByteFileSource extends ByteContentSource, FileBasedSource {}
+	interface TextFileSource extends TextContentSource, FileBasedSource {}
+	interface ExtendedTextFileSource extends ExtendedTextContentSource, FileBasedSource {}
+	interface ParsedTextFileSource extends ParsedTextContentSource, FileBasedSource {}
 	
 	interface TreeContextMenuHandler {
 		void showContextMenu(JTree invoker, int x, int y, Object clickedTreeNode);
