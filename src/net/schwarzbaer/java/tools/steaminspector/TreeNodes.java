@@ -330,6 +330,118 @@ class TreeNodes {
 		}
 	}
 
+	static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode {
+		
+		private final Collection<ValueType> values;
+		private final Comparator<ValueType> sortOrder;
+		private final NodeCreator1<ValueType> createChildNode;
+		private File file;
+		private ExternalViewerInfo externalViewerInfo;
+		
+		static <I,V> GroupingNode<Map.Entry<I,V>> create(TreeNode parent, String title, HashMap<I,V> values, Comparator<Map.Entry<I,V>> sortOrder, NodeCreator2<I,V> createChildNode) {
+			return create(parent, title, values, sortOrder, createChildNode, null);
+		}
+		static <I,V> GroupingNode<Map.Entry<I,V>> create(TreeNode parent, String title, HashMap<I,V> values, Comparator<Map.Entry<I,V>> sortOrder, NodeCreator2<I,V> createChildNode, Icon icon) {
+			return new GroupingNode<Map.Entry<I,V>>(parent, title, values.entrySet(), sortOrder, (p,e)->createChildNode.create(p,e.getKey(),e.getValue()), icon);
+		}
+		static <V> GroupingNode<V> create(TreeNode parent, String title, Collection<V> values, Comparator<V> sortOrder, NodeCreator1<V> createChildNode) {
+			return new GroupingNode<>(parent, title, values, sortOrder, createChildNode, null);
+		}
+		static <V> GroupingNode<V> create(TreeNode parent, String title, Collection<V> values, Comparator<V> sortOrder, NodeCreator1<V> createChildNode, Icon icon) {
+			return new GroupingNode<>(parent, title, values, sortOrder, createChildNode, icon);
+		}
+		GroupingNode(TreeNode parent, String title, Collection<ValueType> values, Comparator<ValueType> sortOrder, NodeCreator1<ValueType> createChildNode, Icon icon) {
+			super(parent, title, true, false, icon);
+			this.values = values;
+			this.sortOrder = sortOrder;
+			this.createChildNode = createChildNode;
+			file = null;
+			externalViewerInfo = null;
+		}
+	
+		public void setFileSource(File file, ExternalViewerInfo externalViewerInfo) {
+			this.file = file;
+			this.externalViewerInfo = externalViewerInfo;
+		}
+		
+		@Override
+		protected Vector<? extends TreeNode> createChildren() {
+			Vector<ValueType> vector = new Vector<>(values);
+			if (sortOrder!=null) vector.sort(sortOrder);
+			Vector<TreeNode> children = new Vector<>();
+			vector.forEach(value->{
+				TreeNode treeNode = createChildNode.create(this,value);
+				if (treeNode!=null) children.add(treeNode);
+			});
+			return children;
+		}
+		
+		@Override public LabeledFile getFile() {
+			return file==null ? null : new LabeledFile(file);
+		}
+		@Override public ExternalViewerInfo getExternalViewerInfo() {
+			return externalViewerInfo;
+		}
+	
+		interface NodeCreator1<ValueType> {
+			TreeNode create(TreeNode parent, ValueType value);
+		}
+		
+		interface NodeCreator2<IDType, ValueType> {
+			TreeNode create(TreeNode parent, IDType id, ValueType value);
+		}
+	}
+
+	static class RawJsonDataNode<NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
+	
+		private final File file;
+		private final JSON_Parser.Result<NV,V> rawData;
+		private final JSON_Data.Value <NV,V> rawValue;
+	
+		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData) {
+			this(parent, title, rawData, null, null);
+		}
+		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData, Icon icon) {
+			this(parent, title, rawData, null, icon);
+		}
+		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData, File file, Icon icon) {
+			super(parent, title, false, true, icon);
+			this.file = file;
+			this.rawData = rawData;
+			this.rawValue = null;
+		}
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue) {
+			this(parent, title, rawValue, null, null);
+		}
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, Icon icon) {
+			this(parent, title, rawValue, null, icon);
+		}
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, File file, Icon icon) {
+			super(parent, title, false, true, icon);
+			this.file = file;
+			this.rawData = null;
+			this.rawValue = rawValue;
+		}
+		@Override protected Vector<? extends TreeNode> createChildren() { return null; }
+		
+		@Override ContentType getContentType() {
+			return ContentType.DataTree;
+		}
+		@Override public TreeRoot getContentAsTree() {
+			if (rawData !=null) return FileSystem.JSON_File.JSON_TreeNode.create(rawData , false);
+			if (rawValue!=null) return FileSystem.JSON_File.JSON_TreeNode.create(rawValue, false);
+			return SimpleTextNode.createSingleTextLineTree("RawJsonDataNode(<null>)");
+		}
+		@Override
+		public LabeledFile getFile() {
+			return file==null ? null : new LabeledFile(file);
+		}
+		@Override
+		public ExternalViewerInfo getExternalViewerInfo() {
+			return file==null ? null : ExternalViewerInfo.TextEditor;
+		}
+	}
+
 	static class ParseException extends Exception {
 		private static final long serialVersionUID = -7150324499542307039L;
 		ParseException(String format, Object...args) {
@@ -662,13 +774,14 @@ class TreeNodes {
 			}
 		}
 		
-		static class Game {
+		static class Game implements Comparable<Game>{
 			
 			private final int appID;
 			private final AppManifest appManifest;
 			private final HashMap<String, File> imageFiles;
 			private final HashMap<Long, File> steamCloudFolders;
 			private final HashMap<Long, Vector<ScreenShot>> screenShots;
+			private final String title;
 			
 			Game(int appID, AppManifest appManifest, HashMap<String, File> imageFiles, HashMap<Long, File> steamCloudFolders, HashMap<Long, Vector<ScreenShot>> screenShots) {
 				this.appID = appID;
@@ -676,11 +789,16 @@ class TreeNodes {
 				this.imageFiles = imageFiles;
 				this.steamCloudFolders = steamCloudFolders;
 				this.screenShots = screenShots;
+				
+				title = appManifest==null ? null : appManifest.getGameTitle();
 			}
 			
+			boolean hasATitle() {
+				return title!=null;
+			}
+
 			String getTitle() {
-				if (appManifest!=null)
-					return appManifest.getGameTitle()+" ["+appID+"]";
+				if (title!=null) return title+" ["+appID+"]";
 				return "Game "+appID;
 			}
 
@@ -695,6 +813,14 @@ class TreeNodes {
 					}
 				}
 				return null;
+			}
+
+			@Override
+			public int compareTo(Game other) {
+				if (other==null) return -1;
+				if (this.appManifest!=null && other.appManifest==null) return -1;
+				if (this.appManifest==null && other.appManifest!=null) return +1;
+				return this.appID-other.appID;
 			}
 		}
 	
@@ -788,7 +914,7 @@ class TreeNodes {
 		
 		private static final HashMap<Integer,Game> games = new HashMap<>();
 		private static final HashMap<Long,Player> players = new HashMap<>();
-		private static Comparator<Game> gameComparator;
+		private static Comparator<Integer> gameIdOrder = Comparator.<Integer,Integer>comparing(id->hasGameATitle(id)?0:1).thenComparing(Comparator.naturalOrder());
 	
 		static void loadData() {
 			File folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
@@ -852,9 +978,6 @@ class TreeNodes {
 				games.put(appID, new Game(appID, appManifest, imageFiles, steamCloudFolders, screenShots));
 			}
 			
-			gameComparator = Comparator.comparing(g -> g.appManifest!=null ? 0 : 1);
-			gameComparator = gameComparator.thenComparing(g -> g.appID);
-			gameComparator = Comparator.nullsLast(gameComparator);
 		}
 
 		private static String getPlayerName(Long playerID) {
@@ -876,6 +999,13 @@ class TreeNodes {
 			Data.Game game = games.get(gameID);
 			if (game==null) return "Game "+gameID;
 			return game.getTitle();
+		}
+
+		private static boolean hasGameATitle(Integer gameID) {
+			if (gameID==null) return false;
+			Data.Game game = games.get(gameID);
+			if (game==null) return false;
+			return game.hasATitle();
 		}
 
 		static class Root extends BaseTreeNode<TreeNode,TreeNode> {
@@ -924,8 +1054,6 @@ class TreeNodes {
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				
-				Comparator<Integer> idOrder = Comparator.<Integer,Game>comparing(id->games.get(id),gameComparator);
-				
 				if (player.steamCloudFolders!=null && !player.steamCloudFolders.isEmpty()) {
 					HashMap<File,String> folderLabels = new HashMap<>();
 					player.steamCloudFolders.forEach((gameID,folder)->folderLabels.put(folder, getGameTitle(gameID)));
@@ -933,14 +1061,14 @@ class TreeNodes {
 					HashMap<File,Icon> folderIcons = new HashMap<>();
 					player.steamCloudFolders.forEach((gameID,folder)->folderIcons.put(folder, getGameIcon(gameID, TreeIcons.Folder)));
 					
-					Comparator<Map.Entry<Integer, File>> entryOrder = Comparator.comparing(Map.Entry<Integer, File>::getKey,idOrder);
+					Comparator<Map.Entry<Integer, File>> entryOrder = Comparator.comparing(Map.Entry<Integer, File>::getKey,gameIdOrder);
 					Stream<Map.Entry<Integer, File>> sortedEntries = player.steamCloudFolders.entrySet().stream().sorted(entryOrder);
 					File[] gameDataFolders = sortedEntries.map(entry->entry.getValue()).toArray(File[]::new);
 					
 					children.add(new FileSystem.FolderNode(this, "SteamCloud Shared Data", gameDataFolders, true, folderLabels::get, folderIcons::get, TreeIcons.Folder));
 				}
 				if (player.screenShots!=null && !player.screenShots.list.isEmpty()) {
-					children.add(new ScreenShotsNode<Integer>(this,player.screenShots.list,id->getGameTitle(id),id->getGameIcon(id,TreeIcons.ImageFile),idOrder));
+					children.add(new ScreenShotsNode<Integer>(this,player.screenShots.list,id->getGameTitle(id),id->getGameIcon(id,TreeIcons.ImageFile),gameIdOrder));
 				}
 				if (player.configFolder!=null) {
 					children.add(new FileSystem.FolderNode(this, "Config Folder", player.configFolder));
@@ -954,8 +1082,7 @@ class TreeNodes {
 				}
 				if (!player.gameStateInfos.isEmpty()) {
 					Comparator<Map.Entry<Integer, Data.Player.GameStateInfo>> sortOrder =
-							Comparator.<Map.Entry<Integer,Data.Player.GameStateInfo>,Game>comparing(entry->games.get(entry.getKey()),gameComparator)
-							.thenComparing(entry->entry.getKey());
+							Comparator.comparing(Map.Entry<Integer,Data.Player.GameStateInfo>::getKey,gameIdOrder);
 					children.add(GroupingNode.create(this, "GameStateInfos", player.gameStateInfos, sortOrder, this::createGameStateInfoNode));
 				}
 				
@@ -1005,118 +1132,6 @@ class TreeNodes {
 			}
 		}
 		
-		static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode {
-			
-			private final Collection<ValueType> values;
-			private final Comparator<ValueType> sortOrder;
-			private final NodeCreator1<ValueType> createChildNode;
-			private File file;
-			private ExternalViewerInfo externalViewerInfo;
-			
-			static <I,V> GroupingNode<Map.Entry<I,V>> create(TreeNode parent, String title, HashMap<I,V> values, Comparator<Map.Entry<I,V>> sortOrder, NodeCreator2<I,V> createChildNode) {
-				return create(parent, title, values, sortOrder, createChildNode, null);
-			}
-			static <I,V> GroupingNode<Map.Entry<I,V>> create(TreeNode parent, String title, HashMap<I,V> values, Comparator<Map.Entry<I,V>> sortOrder, NodeCreator2<I,V> createChildNode, Icon icon) {
-				return new GroupingNode<Map.Entry<I,V>>(parent, title, values.entrySet(), sortOrder, (p,e)->createChildNode.create(p,e.getKey(),e.getValue()), icon);
-			}
-			static <V> GroupingNode<V> create(TreeNode parent, String title, Collection<V> values, Comparator<V> sortOrder, NodeCreator1<V> createChildNode) {
-				return new GroupingNode<>(parent, title, values, sortOrder, createChildNode, null);
-			}
-			static <V> GroupingNode<V> create(TreeNode parent, String title, Collection<V> values, Comparator<V> sortOrder, NodeCreator1<V> createChildNode, Icon icon) {
-				return new GroupingNode<>(parent, title, values, sortOrder, createChildNode, icon);
-			}
-			GroupingNode(TreeNode parent, String title, Collection<ValueType> values, Comparator<ValueType> sortOrder, NodeCreator1<ValueType> createChildNode, Icon icon) {
-				super(parent, title, true, false, icon);
-				this.values = values;
-				this.sortOrder = sortOrder;
-				this.createChildNode = createChildNode;
-				file = null;
-				externalViewerInfo = null;
-			}
-
-			public void setFileSource(File file, ExternalViewerInfo externalViewerInfo) {
-				this.file = file;
-				this.externalViewerInfo = externalViewerInfo;
-			}
-			
-			@Override
-			protected Vector<? extends TreeNode> createChildren() {
-				Vector<ValueType> vector = new Vector<>(values);
-				if (sortOrder!=null) vector.sort(sortOrder);
-				Vector<TreeNode> children = new Vector<>();
-				vector.forEach(value->{
-					TreeNode treeNode = createChildNode.create(this,value);
-					if (treeNode!=null) children.add(treeNode);
-				});
-				return children;
-			}
-			
-			@Override public LabeledFile getFile() {
-				return file==null ? null : new LabeledFile(file);
-			}
-			@Override public ExternalViewerInfo getExternalViewerInfo() {
-				return externalViewerInfo;
-			}
-
-			interface NodeCreator1<ValueType> {
-				TreeNode create(TreeNode parent, ValueType value);
-			}
-			
-			interface NodeCreator2<IDType, ValueType> {
-				TreeNode create(TreeNode parent, IDType id, ValueType value);
-			}
-		}
-		
-		static class RawJsonDataNode<NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
-
-			private final File file;
-			private final JSON_Parser.Result<NV,V> rawData;
-			private final JSON_Data.Value <NV,V> rawValue;
-
-			RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData) {
-				this(parent, title, rawData, null, null);
-			}
-			RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData, Icon icon) {
-				this(parent, title, rawData, null, icon);
-			}
-			RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData, File file, Icon icon) {
-				super(parent, title, false, true, icon);
-				this.file = file;
-				this.rawData = rawData;
-				this.rawValue = null;
-			}
-			RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue) {
-				this(parent, title, rawValue, null, null);
-			}
-			RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, Icon icon) {
-				this(parent, title, rawValue, null, icon);
-			}
-			RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, File file, Icon icon) {
-				super(parent, title, false, true, icon);
-				this.file = file;
-				this.rawData = null;
-				this.rawValue = rawValue;
-			}
-			@Override protected Vector<? extends TreeNode> createChildren() { return null; }
-			
-			@Override ContentType getContentType() {
-				return ContentType.DataTree;
-			}
-			@Override public TreeRoot getContentAsTree() {
-				if (rawData !=null) return FileSystem.JSON_File.JSON_TreeNode.create(rawData , false);
-				if (rawValue!=null) return FileSystem.JSON_File.JSON_TreeNode.create(rawValue, false);
-				return SimpleTextNode.createSingleTextLineTree("RawJsonDataNode(<null>)");
-			}
-			@Override
-			public LabeledFile getFile() {
-				return file==null ? null : new LabeledFile(file);
-			}
-			@Override
-			public ExternalViewerInfo getExternalViewerInfo() {
-				return file==null ? null : ExternalViewerInfo.TextEditor;
-			}
-		}
-
 		static class GamesRoot extends BaseTreeNode<Root,GameNode> {
 			GamesRoot(Root parent) {
 				super(parent, "Games", true, false);
@@ -1126,7 +1141,7 @@ class TreeNodes {
 			protected Vector<? extends GameNode> createChildren() {
 				Vector<GameNode> children = new Vector<>();
 				Vector<Game> gamesVec = new Vector<>(games.values());
-				gamesVec.sort(gameComparator);
+				gamesVec.sort(null);
 				for (Game game:gamesVec) children.add(new GameNode(this, game));
 				return children;
 			}
