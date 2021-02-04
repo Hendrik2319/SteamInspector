@@ -208,6 +208,18 @@ class TreeNodes {
 		return image;
 	}
 
+	private static BufferedImage readImageFromURL(String url, String itemLabel) {
+		if (url==null) return createImageOfMessage("No URL.",200,25,Color.RED);
+		try {
+			return readImageFromURL(new URL(url));
+		} catch (MalformedURLException e) {
+			System.err.printf("MalformedURLException while reading %s:%n    URL: \"%s\"%n    Exception: %s%n", itemLabel, url, e.getMessage());
+		} catch (IOException e) {
+			System.err.printf("IOException while reading %s:%n    URL: \"%s\"%n    Exception: %s%n", itemLabel, url, e.getMessage());
+		}
+		return createImageOfMessage(String.format("Can't read %s.",itemLabel),200,25,Color.RED);
+	}
+
 	private static BufferedImage readImageFromURL(URL url) throws IOException {
 		URLConnection conn = url.openConnection();
 		conn.setRequestProperty("User-Agent", "KlaUS");
@@ -443,17 +455,7 @@ class TreeNodes {
 		@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
 
 		@Override ContentType getContentType() { return ContentType.Image; }
-		@Override public BufferedImage getContentAsImage() {
-			if (url==null) return null;
-			try {
-				return readImageFromURL(new URL(url));
-			} catch (MalformedURLException e) {
-				System.err.printf("MalformedURLException while reading image:%n    URL: \"%s\"%n    Exception: %s%n", url, e.getMessage());
-			} catch (IOException e) {
-				System.err.printf("IOException while reading image:%n    URL: \"%s\"%n    Exception: %s%n", url, e.getMessage());
-			}
-			return createImageOfMessage("Can't read image.",200,25,Color.RED);
-		}
+		@Override public BufferedImage getContentAsImage() { return readImageFromURL(url,"image"); }
 	}
 	
 	static class PrimitiveValueNode extends SimpleTextNode {
@@ -1004,7 +1006,7 @@ class TreeNodes {
 							.add("rgCards"         , JSON_Data.Value.Type.Array);
 				
 					final JSON_Data.Value<NV, V> rawData;
-					final Vector<SteamCard> steamCards;
+					final Vector<TradingCard> steamCards;
 
 					final String name;
 					final Boolean hasBadgeData;
@@ -1049,8 +1051,8 @@ class TreeNodes {
 								JSON_Object<NV,V> object1 = null;
 								try { object1 = getJsonValue(array.get(i), JSON_Data.Value::castToObjectValue, dataValueStr+".rgCards["+i+"]", "ObjectValue"); }
 								catch (ParseException e) { showParseException(e, file); }
-								if (object1!=null) steamCards.add(new SteamCard(object1, dataValueStr+".rgCards["+i+"]", file));
-								else               steamCards.add(new SteamCard(array.get(i)));
+								if (object1!=null) steamCards.add(new TradingCard(object1, dataValueStr+".rgCards["+i+"]", file));
+								else               steamCards.add(new TradingCard(array.get(i)));
 							}
 						} else
 							steamCards = null;
@@ -1061,7 +1063,7 @@ class TreeNodes {
 								DevHelper.unknownValues.add("GameStateInfo.Badge."+nvalue.name+" = "+nvalue.value.type+"...");
 					}
 
-					static class SteamCard {
+					static class TradingCard {
 						
 						private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = DevHelper.createKnownJsonValues()
 								.add("strName"      , JSON_Data.Value.Type.String)
@@ -1079,7 +1081,7 @@ class TreeNodes {
 						final String imageURL;
 						final String marketHash;
 						
-						public SteamCard(JSON_Data.Value<NV, V> rawData) {
+						public TradingCard(JSON_Data.Value<NV, V> rawData) {
 							this.rawData = rawData;
 							name  = null;
 							title = null;
@@ -1089,7 +1091,7 @@ class TreeNodes {
 							marketHash = null;
 						}
 
-						public SteamCard(JSON_Object<NV, V> object, String debugOutputPrefixStr, File file) {
+						public TradingCard(JSON_Object<NV, V> object, String debugOutputPrefixStr, File file) {
 							rawData = null;
 							
 							name       = getJsonValue(object, "strName"      , JSON_Data.Value::castToStringValue);
@@ -1555,7 +1557,7 @@ class TreeNodes {
 					children.add(new FileSystem.FolderNode(this, "Images", game.imageFiles.values(), TreeIcons.ImageFile));
 				}
 				if (game.screenShots!=null && !game.screenShots.isEmpty()) {
-					children.add(GroupingNode.create(this, "ScreenShots", game.screenShots, createPlayerIdKeyOrder(), PlayersNGames::createGameScreenShotsNode));
+					children.add(GroupingNode.create(this, "ScreenShots", game.screenShots, createPlayerIdKeyOrder(), PlayersNGames::createGameScreenShotsNode, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile)));
 					//children.add(new ScreenShotsNode<>(this,game.screenShots,id->String.format("by %s", getPlayerName(id)),Comparator.<Long>naturalOrder()));
 				}
 				if (game.steamCloudFolders!=null && !game.steamCloudFolders.isEmpty()) {
@@ -1600,7 +1602,7 @@ class TreeNodes {
 					groupingNode.setFileSource(player.folder, null);
 				}
 				if (player.screenShots!=null && !player.screenShots.isEmpty()) {
-					children.add(groupingNode = GroupingNode.create(this, "ScreenShots", player.screenShots, createGameIdKeyOrder(), PlayersNGames::createGameScreenShotsNode));
+					children.add(groupingNode = GroupingNode.create(this, "ScreenShots", player.screenShots, createGameIdKeyOrder(), PlayersNGames::createGameScreenShotsNode, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile)));
 					groupingNode.setFileSource(player.screenShots.folder, null);
 					//children.add(new ScreenShotsNode<Integer>(this,player.screenShots,id->getGameTitle(id),id->getGameIcon(id,TreeIcons.ImageFile),gameIdOrder));
 				}
@@ -1774,9 +1776,12 @@ class TreeNodes {
 				
 				private static String getTitle(GameStateInfo.Badge badge) {
 					if (badge==null) return "(NULL) Badge";
-					if (badge.name==null) return "(Nameless) Badge";
-					String str = String.format("Badge \"%s\"", badge.name);
-					if (badge.currentLevel!=null) str += String.format(" (%d)", badge.currentLevel);
+					String str = "Badge";
+					if (badge.name!=null) str += String.format("\"%s\"", badge.name);
+					String str1 = "";
+					if (badge.currentLevel!=null) str1 += (str1.isEmpty()?"":", ") + String.format("Level: %d", badge.currentLevel) + (badge.maxLevel!=null?"/"+badge.maxLevel:"");
+					if (badge.currentXP   !=null) str1 += (str1.isEmpty()?"":", ") + String.format("XP: %d", badge.currentXP);
+					if (!str1.isEmpty()) str += String.format(" (%s)", str1);
 					return str;
 				}
 
@@ -1784,76 +1789,64 @@ class TreeNodes {
 				@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
 
 				@Override ContentType getContentType() { return ContentType.Image; }
-				@Override public BufferedImage getContentAsImage() {
-					if (badge.iconURL==null) return null;
-					try {
-						return readImageFromURL(new URL(badge.iconURL));
-					} catch (MalformedURLException e) {
-						System.err.printf("MalformedURLException while reading badge icon:%n    URL: \"%s\"%n    Exception: %s%n", badge.iconURL, e.getMessage());
-					} catch (IOException e) {
-						System.err.printf("IOException while reading badge icon:%n    URL: \"%s\"%n    Exception: %s%n", badge.iconURL, e.getMessage());
-					}
-					return createImageOfMessage("Can't read image.",200,25,Color.RED);
-				}
+				@Override public BufferedImage getContentAsImage() { return readImageFromURL(badge.iconURL,"badge icon"); }
 
 				@Override protected Vector<? extends TreeNode> createChildren() {
 					Vector<TreeNode> children = new Vector<>();
-					if (badge.rawData      !=null) children.add(new RawJsonDataNode<> (this, "raw data"       , badge.rawData      ));
-					if (badge.name         !=null) children.add(new PrimitiveValueNode(this, "name"           , badge.name         ));
+					
+					if (badge.nextLevelName!=null || badge.nextLevelXP  !=null) {
+						String str = "";
+						if (badge.nextLevelName!=null) str += (str.isEmpty()?"":", ") + String.format("\"%s\"", badge.nextLevelName);
+						if (badge.nextLevelXP  !=null) str += (str.isEmpty()?"":", ") + String.format("XP: %d", badge.nextLevelXP  );
+						children.add(new SimpleTextNode(this, "Next Level: %s", str));
+					}
+					
+					//if (badge.name         !=null) children.add(new PrimitiveValueNode(this, "name"           , badge.name         ));
 					if (badge.hasBadgeData !=null) children.add(new PrimitiveValueNode(this, "has badge data" , badge.hasBadgeData ));
-					if (badge.maxLevel     !=null) children.add(new PrimitiveValueNode(this, "max level"      , badge.maxLevel     ));
-					if (badge.currentLevel !=null) children.add(new PrimitiveValueNode(this, "current level"  , badge.currentLevel ));
-					if (badge.currentXP    !=null) children.add(new PrimitiveValueNode(this, "current XP"     , badge.currentXP    ));
-					if (badge.nextLevelName!=null) children.add(new PrimitiveValueNode(this, "next level name", badge.nextLevelName));
-					if (badge.nextLevelXP  !=null) children.add(new PrimitiveValueNode(this, "next level XP"  , badge.nextLevelXP  ));
+					//if (badge.maxLevel     !=null) children.add(new PrimitiveValueNode(this, "max level"      , badge.maxLevel     ));
+					//if (badge.currentLevel !=null) children.add(new PrimitiveValueNode(this, "current level"  , badge.currentLevel ));
+					//if (badge.currentXP    !=null) children.add(new PrimitiveValueNode(this, "current XP"     , badge.currentXP    ));
+					//if (badge.nextLevelName!=null) children.add(new PrimitiveValueNode(this, "next level name", badge.nextLevelName));
+					//if (badge.nextLevelXP  !=null) children.add(new PrimitiveValueNode(this, "next level XP"  , badge.nextLevelXP  ));
 					if (badge.iconURL      !=null) children.add(new ImageUrlNode      (this, "icon URL"       , badge.iconURL      ));
-					if (badge.steamCards   !=null) children.add(GroupingNode.create(this, "Steam Cards", badge.steamCards, null, SteamCardNode::new));
+					if (badge.rawData      !=null) children.add(new RawJsonDataNode<> (this, "raw data"       , badge.rawData      ));
+					if (badge.steamCards   !=null) children.add(GroupingNode.create   (this, "Trading Cards"    , badge.steamCards, null, TradingCardNode::new));
 					return children;
 				}
 			}
 
-			static class SteamCardNode extends BaseTreeNode<TreeNode,TreeNode> implements ImageContentSource, ExternViewableNode, URLBasedNode {
+			static class TradingCardNode extends BaseTreeNode<TreeNode,TreeNode> implements ImageContentSource, ExternViewableNode, URLBasedNode {
 				
-				private final GameStateInfo.Badge.SteamCard steamCard;
+				private final GameStateInfo.Badge.TradingCard tradingCard;
 				
-				SteamCardNode(TreeNode parent, GameStateInfo.Badge.SteamCard steamCard) {
-					super(parent, getTitle(steamCard), true, false);
-					this.steamCard = steamCard;
+				TradingCardNode(TreeNode parent, GameStateInfo.Badge.TradingCard tradingCard) {
+					super(parent, getTitle(tradingCard), true, false);
+					this.tradingCard = tradingCard;
 				}
 				
-				private static String getTitle(GameStateInfo.Badge.SteamCard steamCard) {
-					if (steamCard==null) return "(NULL) Steam Card";
-					if (steamCard.name==null) return "(Nameless) Steam Card";
-					String str = String.format("Steam Card \"%s\"", steamCard.name);
-					if (steamCard.owned!=null && steamCard.owned!=0) str += String.format(" (%d)", steamCard.owned);
+				private static String getTitle(GameStateInfo.Badge.TradingCard tradingCard) {
+					if (tradingCard==null) return "(NULL) Trading Card";
+					if (tradingCard.name==null) return "(Nameless) Trading Card";
+					String str = String.format("Trading Card \"%s\"", tradingCard.name);
+					if (tradingCard.owned!=null && tradingCard.owned!=0) str += String.format(" (%d)", tradingCard.owned);
 					return str;
 				}
 
-				@Override public String getURL() { return steamCard.imageURL; }
+				@Override public String getURL() { return tradingCard.imageURL; }
 				@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
 
 				@Override ContentType getContentType() { return ContentType.Image; }
-				@Override public BufferedImage getContentAsImage() {
-					if (steamCard.imageURL==null) return null;
-					try {
-						return readImageFromURL(new URL(steamCard.imageURL));
-					} catch (MalformedURLException e) {
-						System.err.printf("MalformedURLException while reading steam card image:%n    URL: \"%s\"%n    Exception: %s%n", steamCard.imageURL, e.getMessage());
-					} catch (IOException e) {
-						System.err.printf("IOException while reading steam card image:%n    URL: \"%s\"%n    Exception: %s%n", steamCard.imageURL, e.getMessage());
-					}
-					return createImageOfMessage("Can't read image.",200,25,Color.RED);
-				}
+				@Override public BufferedImage getContentAsImage() { return readImageFromURL(tradingCard.imageURL,"trading card image"); }
 			
 				@Override protected Vector<? extends TreeNode> createChildren() {
 					Vector<TreeNode> children = new Vector<>();
-					if (steamCard.rawData   !=null) children.add(new RawJsonDataNode<> (this, "raw data"   , steamCard.rawData   ));
-					if (steamCard.name      !=null) children.add(new PrimitiveValueNode(this, "name"       , steamCard.name      ));
-					if (steamCard.title     !=null) children.add(new PrimitiveValueNode(this, "title"      , steamCard.title     ));
-					if (steamCard.owned     !=null) children.add(new PrimitiveValueNode(this, "owned"      , steamCard.owned     ));
-					if (steamCard.artworkURL!=null) children.add(new ImageUrlNode      (this, "artwork URL", steamCard.artworkURL));
-					if (steamCard.imageURL  !=null) children.add(new ImageUrlNode      (this, "image URL"  , steamCard.imageURL  ));
-					if (steamCard.marketHash!=null) children.add(new PrimitiveValueNode(this, "market hash", steamCard.marketHash));
+					if (tradingCard.rawData   !=null) children.add(new RawJsonDataNode<> (this, "raw data"   , tradingCard.rawData   ));
+					if (tradingCard.name      !=null) children.add(new PrimitiveValueNode(this, "name"       , tradingCard.name      ));
+					if (tradingCard.title     !=null) children.add(new PrimitiveValueNode(this, "title"      , tradingCard.title     ));
+					if (tradingCard.owned     !=null) children.add(new PrimitiveValueNode(this, "owned"      , tradingCard.owned     ));
+					if (tradingCard.artworkURL!=null) children.add(new ImageUrlNode      (this, "artwork URL", tradingCard.artworkURL));
+					if (tradingCard.imageURL  !=null) children.add(new ImageUrlNode      (this, "image URL"  , tradingCard.imageURL  ));
+					if (tradingCard.marketHash!=null) children.add(new PrimitiveValueNode(this, "market hash", tradingCard.marketHash));
 					return children;
 				}
 			}
