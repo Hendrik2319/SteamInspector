@@ -16,7 +16,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Vector;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
@@ -59,7 +58,7 @@ import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.FriendLis
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameStateInfo;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameStateInfo.GameStateInfoBlock;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShot;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FolderNode;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShotLists;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.ImageFile;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;
 import net.schwarzbaer.system.ClipboardTools;
@@ -547,46 +546,62 @@ class TreeNodes {
 			System.err.print(str);
 		}
 
-		static class ScreenShot {
+		static class ScreenShot implements Comparable<ScreenShot> {
 			final File image;
 			final File thumbnail;
 			ScreenShot(File image, File thumbnail) {
 				this.image = image;
 				this.thumbnail = thumbnail;
+				if (image==null || !image.isFile())
+					throw new IllegalArgumentException();
+			}
+			@Override public int compareTo(ScreenShot other) {
+				if (other==null) return -1;
+				return this.image.getAbsolutePath().compareTo(other.image.getAbsolutePath());
 			}
 		}
 		
-		static class ScreenShots {
-
-			final HashMap<Integer,Vector<ScreenShot>> list;
+		static class ScreenShotLists extends HashMap<Integer,ScreenShotLists.ScreenShotList>{
+			private static final long serialVersionUID = -428703055699412094L;
+			
 			final File folder;
 
-			ScreenShots(File folder) { // TODO: Vector<ScreenShot> -> GameScreenShots | store folder in GameScreenShots 
-				this.folder = folder;
-				list = new HashMap<>();
+			ScreenShotLists(File folder) { 
 				File subFolder = new File(folder,"remote");
 				if (subFolder.isDirectory()) {
+					this.folder = subFolder;
 					File[] folders = subFolder.listFiles(file->file.isDirectory() && parseNumber(file.getName())!=null);
 					for (File gameFolder:folders) {
 						Integer gameID = parseNumber(gameFolder.getName());
-						Vector<ScreenShot> screenShots = new Vector<>();
-						list.put(gameID, screenShots);
-						
 						File imagesFolder = new File(gameFolder,"screenshots");
 						if (imagesFolder.isDirectory()) {
 							File thumbnailsFolder = new File(imagesFolder,"thumbnails");
-							File[] imageFiles = imagesFolder.listFiles(TreeNodes::isImageFile);
-							for (File image:imageFiles) {
-								File thumbnail = null;
-								if (thumbnailsFolder.isDirectory())
-									thumbnail = new File(thumbnailsFolder,image.getName());
-								screenShots.add(new ScreenShot(image,thumbnail));
-							}
+							if (!thumbnailsFolder.isDirectory()) thumbnailsFolder = null;
+							put(gameID, new ScreenShotList(imagesFolder,thumbnailsFolder));
 						}
+					}
+				} else
+					this.folder = null;
+			}
+			
+			static class ScreenShotList extends Vector<ScreenShot> {
+				private static final long serialVersionUID = 8285684141839919150L;
+				
+				final File imagesFolder;
+				final File thumbnailsFolder;
+				
+				public ScreenShotList(File imagesFolder, File thumbnailsFolder) {
+					this.imagesFolder = imagesFolder;
+					this.thumbnailsFolder = thumbnailsFolder;
+					File[] imageFiles = imagesFolder.listFiles(TreeNodes::isImageFile);
+					for (File image:imageFiles) {
+						File thumbnail = null;
+						if (thumbnailsFolder!=null)
+							thumbnail = new File(thumbnailsFolder,image.getName());
+						add(new ScreenShot(image,thumbnail));
 					}
 				}
 			}
-			
 		}
 		static class Player {
 			
@@ -596,7 +611,7 @@ class TreeNodes {
 			final File gameStateFolder;
 			final File localconfigFile;
 			final HashMap<Integer, File> steamCloudFolders;
-			final ScreenShots screenShots;
+			final ScreenShotLists screenShots;
 			final VDFTreeNode localconfig;
 			final HashMap<Integer,GameStateInfo> gameStateInfos;
 			final AchievementProgress achievementProgress;
@@ -619,7 +634,7 @@ class TreeNodes {
 				
 				// Folders
 				subFolder = new File(folder,"760");
-				screenShots = !subFolder.isDirectory() ? null : new ScreenShots(subFolder);
+				screenShots = !subFolder.isDirectory() ? null : new ScreenShotLists(subFolder);
 				
 				subFolder = new File(folder,"config");
 				if (subFolder.isDirectory()) {
@@ -817,13 +832,12 @@ class TreeNodes {
 					for (GameStateInfoBlock block:this.blocks) {
 						String blockStr = "GameStateInfo.Block["+block.blockIndex+"]";
 						String dataValueStr = blockStr+".dataValue";
+						// TODO: parse GameStateInfo.Block["achievements"|"badge"] 
 						switch (block.label) {
 						case "achievements":
-							// TODO: parse GameStateInfo.Block["achievements"] 
 							break;
 							
 						case "badge":
-							// TODO: parse GameStateInfo.Block["badge"] 
 							break;
 							
 						case "descriptions":
@@ -956,7 +970,7 @@ class TreeNodes {
 			private final AppManifest appManifest;
 			private final HashMap<String, File> imageFiles;
 			private final HashMap<Long, File> steamCloudFolders;
-			private final HashMap<Long, Vector<ScreenShot>> screenShots;
+			private final HashMap<Long, ScreenShotLists.ScreenShotList> screenShots;
 			private final HashMap<Long, GameStateInfo>  gameStateInfos;
 			
 			Game(int appID, AppManifest appManifest, HashMap<String, File> imageFiles, HashMap<Long, Player> players) {
@@ -975,9 +989,9 @@ class TreeNodes {
 						steamCloudFolders.put(playerID, steamCloudFolder);
 					
 					if (player.screenShots!=null) {
-						Vector<ScreenShot> screenShots_ = player.screenShots.list.get(appID);
-						if (screenShots_!=null && !screenShots_.isEmpty())
-							screenShots.put(playerID, screenShots_);
+						ScreenShotLists.ScreenShotList screenShots = player.screenShots.get(appID);
+						if (screenShots!=null && !screenShots.isEmpty())
+							this.screenShots.put(playerID, screenShots);
 					}
 					GameStateInfo gameStateInfo = player.gameStateInfos.get(appID);
 					if (gameStateInfo!=null)
@@ -1108,6 +1122,14 @@ class TreeNodes {
 		private static final HashMap<Long,Player> players = new HashMap<>();
 		private static Comparator<Integer> gameIdOrder = Comparator.<Integer,Boolean>comparing(id->!hasGameATitle(id)).thenComparing(Comparator.naturalOrder());
 	
+		private static <ValueType> Comparator<Map.Entry<Long,ValueType>> createPlayerIdOrder() {
+			return Comparator.comparing(Map.Entry<Long,ValueType>::getKey);
+		}
+		
+		private static <ValueType> Comparator<Map.Entry<Integer,ValueType>> createGameIdOrder() {
+			return Comparator.comparing(Map.Entry<Integer,ValueType>::getKey,gameIdOrder);
+		}
+
 		static void loadData() {
 			File folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
 			GameImages gameImages = null;
@@ -1144,7 +1166,7 @@ class TreeNodes {
 			players.forEach((playerID,player)->{
 				idSet.addAll(player.steamCloudFolders.keySet());
 				if (player.screenShots!=null)
-					idSet.addAll(player.screenShots.list.keySet());
+					idSet.addAll(player.screenShots.keySet());
 			});
 			
 			
@@ -1166,23 +1188,35 @@ class TreeNodes {
 
 		private static Icon getGameIcon(Integer gameID, TreeIcons defaultIcon) {
 			if (gameID==null) return TreeIconsIS.getCachedIcon(defaultIcon);
-			Data.Game game = games.get(gameID);
+			Game game = games.get(gameID);
 			if (game==null) return TreeIconsIS.getCachedIcon(defaultIcon);
 			return game.getIcon();
 		}
 
 		private static String getGameTitle(Integer gameID) {
 			if (gameID==null) return "Game ???";
-			Data.Game game = games.get(gameID);
+			Game game = games.get(gameID);
 			if (game==null) return "Game "+gameID;
 			return game.getTitle();
 		}
 
 		private static boolean hasGameATitle(Integer gameID) {
 			if (gameID==null) return false;
-			Data.Game game = games.get(gameID);
+			Game game = games.get(gameID);
 			if (game==null) return false;
 			return game.hasATitle();
+		}
+		
+		private static TreeNode createGameScreenShotsNode(TreeNode parent, Long id, ScreenShotLists.ScreenShotList screenShots) {
+			return createGameScreenShotsNode(parent, "by "+getPlayerName(id), screenShots, null);
+		}
+		private static TreeNode createGameScreenShotsNode(TreeNode parent, Integer gameID, ScreenShotLists.ScreenShotList screenShots) {
+			return createGameScreenShotsNode(parent, getGameTitle(gameID), screenShots, getGameIcon(gameID,TreeIcons.ImageFile));
+		}
+		private static TreeNode createGameScreenShotsNode(TreeNode parent, String title, ScreenShotLists.ScreenShotList screenShots, Icon icon) {
+			GroupingNode<ScreenShot> groupingNode = GroupingNode.create(parent, title, screenShots, Comparator.naturalOrder(), ScreenShotNode::new, icon);
+			groupingNode.setFileSource(screenShots.imagesFolder, null);
+			return groupingNode;
 		}
 
 		static class Root extends BaseTreeNode<TreeNode,TreeNode> {
@@ -1211,32 +1245,56 @@ class TreeNodes {
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				
-				if (game.appManifest!=null)
+				if (game.appManifest!=null) {
 					children.add(new FileSystem.AppManifestNode(this, game.appManifest.file));
-				
-				if (game.imageFiles!=null && !game.imageFiles.isEmpty())
-					children.add(new FileSystem.FolderNode(this, "Images", game.imageFiles.values(), TreeIcons.ImageFile));
-				
-				if (game.steamCloudFolders!=null && !game.steamCloudFolders.isEmpty()) {
-					HashMap<File,String> folderLabels = new HashMap<>();
-					game.steamCloudFolders.forEach((playerID,folder)->folderLabels.put(folder, String.format("by %s", getPlayerName(playerID))));
-					
-					Stream<Entry<Long, File>> sorted = game.steamCloudFolders.entrySet().stream().sorted(Comparator.comparing(Map.Entry<Long,File>::getKey));
-					File[] files = sorted.map(Map.Entry<Long,File>::getValue).toArray(File[]::new);
-					//Collection<File> files = game.gameDataFolders.values();
-					
-					children.add(new FileSystem.FolderNode(this, "SteamCloud Shared Data", files, true, folderLabels::get, TreeIcons.Folder));
-				}
-				if (game.screenShots!=null && !game.screenShots.isEmpty()) {
-					children.add(new ScreenShotsNode<>(this,game.screenShots,id->String.format("by %s", getPlayerName(id)),Comparator.<Long>naturalOrder()));
 				}
 				if (!game.gameStateInfos.isEmpty()) {
 					Comparator<Map.Entry<Long, GameStateInfo>> sortOrder = Comparator.comparing(Map.Entry<Long,GameStateInfo>::getKey);
 					children.add(GroupingNode.create(this, "Game Status Infos", game.gameStateInfos, sortOrder, GameStateInfoNode::new));
 				}
+				if (game.imageFiles!=null && !game.imageFiles.isEmpty()) {
+					children.add(new FileSystem.FolderNode(this, "Images", game.imageFiles.values(), TreeIcons.ImageFile));
+				}
+				if (game.screenShots!=null && !game.screenShots.isEmpty()) {
+					children.add(GroupingNode.create(this, "ScreenShots", game.screenShots, createPlayerIdOrder(), PlayersNGames::createGameScreenShotsNode));
+					//children.add(new ScreenShotsNode<>(this,game.screenShots,id->String.format("by %s", getPlayerName(id)),Comparator.<Long>naturalOrder()));
+				}
+				if (game.steamCloudFolders!=null && !game.steamCloudFolders.isEmpty()) {
+					HashMap<File,String> folderLabels = new HashMap<>();
+					game.steamCloudFolders.forEach((playerID,folder)->folderLabels.put(folder, String.format("by %s", getPlayerName(playerID))));
+					
+					Stream<Map.Entry<Long, File>> sorted = game.steamCloudFolders.entrySet().stream().sorted(createPlayerIdOrder());
+					File[] files = sorted.map(Map.Entry<Long,File>::getValue).toArray(File[]::new);
+					//Collection<File> files = game.gameDataFolders.values();
+					
+					children.add(new FileSystem.FolderNode(this, "SteamCloud Shared Data", files, true, folderLabels::get, TreeIcons.Folder));
+				}
 				
 				return children;
 			}
+		}
+
+		static class ScreenShotNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, ImageContentSource {
+			
+			private final ScreenShot screenShot;
+			ScreenShotNode(TreeNode parent, ScreenShot screenShot) {
+				super(parent, screenShot.image.getName(), false, true, TreeIcons.ImageFile);
+				this.screenShot = screenShot;
+			}
+
+			@Override ContentType getContentType() { return ContentType.Image; }
+			@Override public BufferedImage getContentAsImage() {
+				try {
+					return ImageIO.read(screenShot.image);
+				} catch (IOException e) {
+					System.out.printf("IOException while reading image \"%s\": %s%n", screenShot.image.getAbsolutePath(), e.getMessage());
+					return null;
+				}
+			}
+
+			@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.ImageViewer; }
+			@Override public LabeledFile getFile() { return new LabeledFile(screenShot.image); }
+			@Override protected Vector<? extends TreeNode> createChildren() { return null; }
 		}
 
 		static class PlayerNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode {
@@ -1266,8 +1324,10 @@ class TreeNodes {
 					children.add(groupingNode = GroupingNode.create(this, "SteamCloud Shared Data", player.steamCloudFolders, sortOrder, createFolderNode));
 					groupingNode.setFileSource(player.folder, null);
 				}
-				if (player.screenShots!=null && !player.screenShots.list.isEmpty()) {
-					children.add(new ScreenShotsNode<Integer>(this,player.screenShots.list,id->getGameTitle(id),id->getGameIcon(id,TreeIcons.ImageFile),gameIdOrder));
+				if (player.screenShots!=null && !player.screenShots.isEmpty()) {
+					children.add(groupingNode = GroupingNode.create(this, "ScreenShots", player.screenShots, createGameIdOrder(), PlayersNGames::createGameScreenShotsNode));
+					groupingNode.setFileSource(player.screenShots.folder, null);
+					//children.add(new ScreenShotsNode<Integer>(this,player.screenShots,id->getGameTitle(id),id->getGameIcon(id,TreeIcons.ImageFile),gameIdOrder));
 				}
 				if (player.configFolder!=null) {
 					children.add(new FileSystem.FolderNode(this, "Config Folder", player.configFolder));
@@ -1410,43 +1470,44 @@ class TreeNodes {
 					children.add(new TextContentNode(this, "Short Game Description", data.shortDesc, TreeIcons.TextFile));
 				}
 				if (data.blocks!=null) {
-					children.add(groupingNode = GroupingNode.create(this, "Raw Blocks", data.blocks, null, GameStateInfoBlockNode::new));
+					children.add(groupingNode = GroupingNode.create(this, "Raw Blocks", data.blocks, null, BlockNode::new));
 					groupingNode.setFileSource(data.file,ExternalViewerInfo.TextEditor);
 				}
 				if (data.rawData!=null)
 					children.add( new RawJsonDataNode<>(this, "Raw JSON Data", data.rawData, data.file) );
 				return children;
 			}
-		}
-		
-		static class GameStateInfoBlockNode extends BaseTreeNode<TreeNode,TreeNode> {
-			
-			private GameStateInfoBlock block;
-		
-			GameStateInfoBlockNode(TreeNode parent, GameStateInfoBlock block) {
-				super(parent, getTitle(block), true, false);
-				this.block = block;
-			}
-		
-			private static String getTitle(GameStateInfoBlock block) {
-				if (block==null) return "Block ???";
-				if (block.rawData!=null) return "Block "+block.blockIndex+" (RawData)";
-				return "["+block.blockIndex+"] "+block.label;
-			}
-		
-			@Override protected Vector<? extends TreeNode> createChildren() {
-				Vector<TreeNode> children = new Vector<>();
-				if (block.rawData!=null)
-					children.add(new RawJsonDataNode<>(this, "raw data", block.rawData));
-				else {
-					children.add(new SimpleTextNode(this, "version: %d", block.version));
-					if (block.dataValue!=null)
-						children.add(new RawJsonDataNode<>(this, "data", block.dataValue));
-				}
-				return children;
-			}
-		}
 
+			static class BlockNode extends BaseTreeNode<TreeNode,TreeNode> {
+				
+				private GameStateInfoBlock block;
+			
+				BlockNode(TreeNode parent, GameStateInfoBlock block) {
+					super(parent, getTitle(block), true, false);
+					this.block = block;
+				}
+			
+				private static String getTitle(GameStateInfoBlock block) {
+					if (block==null) return "Block ???";
+					if (block.rawData!=null) return "Block "+block.blockIndex+" (RawData)";
+					return "["+block.blockIndex+"] "+block.label;
+				}
+			
+				@Override protected Vector<? extends TreeNode> createChildren() {
+					Vector<TreeNode> children = new Vector<>();
+					if (block.rawData!=null)
+						children.add(new RawJsonDataNode<>(this, "raw data", block.rawData));
+					else {
+						children.add(new SimpleTextNode(this, "version: %d", block.version));
+						if (block.dataValue!=null)
+							children.add(new RawJsonDataNode<>(this, "data", block.dataValue));
+					}
+					return children;
+				}
+			}
+		}
+		
+		/*
 		static class ScreenShotsNode<IDType> extends BaseTreeNode<TreeNode,FileSystem.FolderNode> {
 
 			private final HashMap<IDType, Vector<ScreenShot>> screenShots;
@@ -1500,6 +1561,7 @@ class TreeNodes {
 				return folderNode;
 			}
 		}
+		*/
 		
 	}
 	
