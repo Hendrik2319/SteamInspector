@@ -54,6 +54,8 @@ import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Game;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.GameImages;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.AchievementProgress;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.FriendList;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.FriendList.Friend;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameStateInfo;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameStateInfo.GameStateInfoBlock;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShot;
@@ -421,6 +423,19 @@ class TreeNodes {
 		@Override protected Vector<? extends TreeNode> createChildren() { return new Vector<>(); }
 	}
 
+	static class RawVDFDataNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource {
+		
+		private final VDFTreeNode rawData;
+
+		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData) {
+			super(parent, title, false, true);
+			this.rawData = rawData;
+		}
+		@Override ContentType getContentType() { return ContentType.DataTree; }
+		@Override public TreeRoot getContentAsTree() { return new TreeRoot(rawData, true, true); }
+		@Override protected Vector<? extends TreeNode> createChildren() { return null; }
+	}
+
 	static class RawJsonDataNode<NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
 	
 		private final File file;
@@ -522,8 +537,14 @@ class TreeNodes {
 			return jsonValue.value;
 		}
 
-		static void showParseException(ParseException e, File file) {
-			System.err.printf("(TreeNodes.Data) ParseException: %s%n   in File \"%s\"%n", e.getMessage(), file.getAbsolutePath());
+		static void showParseException(Throwable e, File file) {
+			showException("(TreeNodes.Data) ParseException", e, file);
+		}
+
+		static void showException(String prefix, Throwable e, File file) {
+			String str = String.format("%s: %s%n", prefix, e.getMessage());
+			if (file!=null) str += String.format("   in File \"%s\"%n", file.getAbsolutePath());
+			System.err.print(str);
 		}
 
 		static class ScreenShot {
@@ -577,6 +598,7 @@ class TreeNodes {
 			final VDFTreeNode localconfig;
 			final HashMap<Integer,GameStateInfo> gameStateInfos;
 			final AchievementProgress achievementProgress;
+			final FriendList friends;
 
 			Player(long playerID, File folder) {
 				this.playerID = playerID;
@@ -606,22 +628,29 @@ class TreeNodes {
 				} else
 					configFolder = null;
 				
+				File localconfigFile = null;
+				if (configFolder!=null)
+					localconfigFile = new File(configFolder,"localconfig.vdf");
+				
 				// localconfig
 				VDFParser.Data localconfigData = null;
-				if (configFolder!=null) {
-					File localconfigFile = new File(configFolder,"localconfig.vdf");
-					if (localconfigFile.isFile()) {
-						try { localconfigData = VDFParser.parse(localconfigFile,StandardCharsets.UTF_8); }
-						catch (VDFParser.ParseException e) {}
-					}
+				if (localconfigFile!=null && localconfigFile.isFile()) {
+					try { localconfigData = VDFParser.parse(localconfigFile,StandardCharsets.UTF_8); }
+					catch (VDFParser.ParseException e) { showParseException(e, localconfigFile); }
 				}
 				localconfig = localconfigData!=null ? localconfigData.createVDFTreeNode() : null;
 				
+				FriendList preFriends = null;
 				if (localconfig!=null) {
-					// TODO: parse friends
-					// Root[0].UserLocalConfigStore[2].friends[1].###########
-					// localconfig.getSubNode("UserLocalConfigStore","friends").foreEachArray(...)
+					VDFTreeNode friendsNode = localconfig.getSubNode("UserLocalConfigStore","friends");
+					if (friendsNode!=null) {
+						try { preFriends = FriendList.parse(friendsNode); }
+						catch (ParseException e) { showParseException(e, localconfigFile); }
+						if (preFriends==null)
+							preFriends = new FriendList(friendsNode);
+					}
 				}
+				friends = preFriends;
 				
 				gameStateInfos = new HashMap<>();
 				AchievementProgress achievementProgress_ = null;
@@ -653,16 +682,10 @@ class TreeNodes {
 									}
 									if (result!=null) {
 										GameStateInfo info = null;
-										try {
-											info = GameStateInfo.parse(file,result.array);
-										} catch (ParseException e) {
-											//e.printStackTrace();
-											showParseException(e, file);
-										}
-										if (info!=null)
-											gameStateInfos.put(gameID, info);
-										else
-											gameStateInfos.put(gameID, new GameStateInfo(file,result));
+										try { info = GameStateInfo.parse(file,result.array); }
+										catch (ParseException e) { showParseException(e, file); }
+										if (info==null) info = new GameStateInfo(file,result); // raw data -> GameStateInfo
+										gameStateInfos.put(gameID, info);
 									}
 								}
 							}
@@ -682,6 +705,33 @@ class TreeNodes {
 						return nameNode.value;
 				}
 				return "Player "+playerID;
+			}
+			
+			static class FriendList {
+				
+				final VDFTreeNode rawData;
+				final Vector<Friend> friends;
+				
+				FriendList() {
+					rawData = null;
+					friends = new Vector<>();
+				}
+				
+				FriendList(VDFTreeNode rawData) {
+					this.rawData = rawData;
+					friends = null;
+				}
+
+				public static FriendList parse(VDFTreeNode friendsNode) throws ParseException {
+					
+					// TODO Auto-generated method stub
+					return null;
+				}
+
+				static class Friend {
+					
+					
+				}
 			}
 			
 			static class AchievementProgress {
@@ -1184,6 +1234,9 @@ class TreeNodes {
 				if (player.achievementProgress!=null) {
 					children.add(new AchievementProgressNode(this, player.achievementProgress));
 				}
+				if (player.friends!=null) {
+					children.add(new FriendListNode(this, player.friends));
+				}
 				if (!player.gameStateInfos.isEmpty()) {
 					Comparator<Map.Entry<Integer, GameStateInfo>> sortOrder = Comparator.comparing(Map.Entry<Integer,GameStateInfo>::getKey,gameIdOrder);
 					children.add(groupingNode = GroupingNode.create(this, "Game Status Infos", player.gameStateInfos, sortOrder, GameStateInfoNode::new));
@@ -1194,9 +1247,48 @@ class TreeNodes {
 			}
 		}
 		
+		static class FriendListNode extends BaseTreeNode<TreeNode,TreeNode> {
+
+			private final FriendList data;
+
+			public FriendListNode(TreeNode parent, FriendList friends) {
+				super(parent,"Friends",true,false);
+				this.data = friends;
+			}
+
+			@Override
+			protected Vector<? extends TreeNode> createChildren() {
+				Vector<TreeNode> children = new Vector<>();
+				if (data.rawData!=null)
+					children.add( new RawVDFDataNode(this, "Raw VDF Data", data.rawData) );
+				if (data.friends!=null)
+					for (Friend friend:data.friends)
+						children.add( new FriendNode(this, friend) );
+				return children;
+			}
+			
+			static class FriendNode extends BaseTreeNode<TreeNode,TreeNode> {
+				
+				@SuppressWarnings("unused")
+				private final Friend friend;
+				
+				FriendNode(TreeNode parent, Friend friend) {
+					super(parent,"Friend",true,false);
+					this.friend = friend;
+				}
+
+				@Override
+				protected Vector<? extends TreeNode> createChildren() {
+					Vector<TreeNode> children = new Vector<>();
+					// TODO: create TreeNodes for values of Friend
+					return children;
+				}
+			}
+		}
+		
 		static class AchievementProgressNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode {
 			
-			final AchievementProgress data;
+			private final AchievementProgress data;
 
 			AchievementProgressNode(TreeNode parent, AchievementProgress data) {
 				super(parent,"Achievement Progress",true,false);
@@ -1224,7 +1316,7 @@ class TreeNodes {
 		
 		static class GameStateInfoNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode {
 			
-			final GameStateInfo data;
+			private final GameStateInfo data;
 
 			GameStateInfoNode(TreeNode parent, Long playerID, GameStateInfo gameStateInfo) {
 				super(parent, "by "+getPlayerName(playerID), true, false);

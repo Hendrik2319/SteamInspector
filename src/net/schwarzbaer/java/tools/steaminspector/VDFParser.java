@@ -310,24 +310,30 @@ class VDFParser {
 	
 	static class VDFTreeNode extends SteamInspector.BaseTreeNode<VDFTreeNode,VDFTreeNode> implements DataTreeNode {
 		
+		enum Type { Root, String, Array }
+		
 		private final Vector<ValuePair> valuePairArray;
 		final String name;
 		final String value;
+		final Type type;
 
 		VDFTreeNode(Vector<ValuePair> valuePairArray) { // Root
 			super(null,"VDF Tree Root",true,valuePairArray==null || valuePairArray.isEmpty());
+			this.type = Type.Root;
 			this.valuePairArray = valuePairArray;
 			this.name = null;
 			this.value = null;
 		}
 		VDFTreeNode(VDFTreeNode parent, String name, String value) { // String Value
 			super(parent, String.format("%s : \"%s\"", name, value), false, true);
+			this.type = Type.String;
 			this.valuePairArray = null;
 			this.name = name;
 			this.value = value;
 		}
 		VDFTreeNode(VDFTreeNode parent, String name, Vector<ValuePair> valuePairArray) { // Array Value
 			super(parent, name, true,valuePairArray==null || valuePairArray.isEmpty());
+			this.type = Type.Array;
 			this.valuePairArray = valuePairArray;
 			this.name = name;
 			this.value = null;
