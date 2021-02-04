@@ -77,8 +77,7 @@ import net.schwarzbaer.gui.ImageView;
 import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode.ContentType;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.ExternViewableNode;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileBasedNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerInfo.AddressType;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.LabeledFile;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.system.ClipboardTools;
@@ -132,7 +131,7 @@ class SteamInspector {
 
 	public static class AppSettings extends Settings<AppSettings.ValueGroup,AppSettings.ValueKey> {
 		public enum ValueKey {
-			WindowX, WindowY, WindowWidth, WindowHeight, TextEditor, ImageViewer, SteamClientFolder, SteamLibraryFolders, SelectedTreeType,
+			WindowX, WindowY, WindowWidth, WindowHeight, TextEditor, ImageViewer, Browser, SteamClientFolder, SteamLibraryFolders, SelectedTreeType,
 		}
 
 		public enum ValueGroup implements Settings.GroupKeys<ValueKey> {
@@ -255,6 +254,7 @@ class SteamInspector {
 		JMenu settingsMenu = menuBar.add(new JMenu("Settings"));
 		settingsMenu.add(createMenuItem("Set Path to "+ExternalViewerInfo.TextEditor .viewerName+" ...", true, e->ExternalViewerInfo.TextEditor .chooseExecutable(mainWindow)));
 		settingsMenu.add(createMenuItem("Set Path to "+ExternalViewerInfo.ImageViewer.viewerName+" ...", true, e->ExternalViewerInfo.ImageViewer.chooseExecutable(mainWindow)));
+		settingsMenu.add(createMenuItem("Set Path to "+ExternalViewerInfo.Browser    .viewerName+" ...", true, e->ExternalViewerInfo.Browser    .chooseExecutable(mainWindow)));
 		settingsMenu.addSeparator();
 		settingsMenu.add(createMenuItem("Set All Paths ...", true, e->new FolderSettingsDialog(mainWindow, "Define Paths").showDialog()));
 		return menuBar;
@@ -798,16 +798,22 @@ class SteamInspector {
 		
 	}
 	
-	static class ExternalViewerInfo {
-		static final ExternalViewerInfo TextEditor  = new ExternalViewerInfo( "Text Editor", SteamInspector.AppSettings.ValueKey.TextEditor );
-		static final ExternalViewerInfo ImageViewer = new ExternalViewerInfo( "Image Viewer", SteamInspector.AppSettings.ValueKey.ImageViewer );
+	enum ExternalViewerInfo {
+		TextEditor  ( "Text Editor" , SteamInspector.AppSettings.ValueKey.TextEditor , AddressType.File),
+		ImageViewer ( "Image Viewer", SteamInspector.AppSettings.ValueKey.ImageViewer, AddressType.File),
+		Browser     ( "Browser"     , SteamInspector.AppSettings.ValueKey.Browser    , AddressType.URL ),
+		;
 		
-		private final String viewerName;
-		private final AppSettings.ValueKey viewerKey;
+		enum AddressType { File, URL }
 		
-		ExternalViewerInfo(String viewerName, AppSettings.ValueKey viewerKey) {
+		final String viewerName;
+		final AppSettings.ValueKey viewerKey;
+		final AddressType addressType;
+		
+		ExternalViewerInfo(String viewerName, AppSettings.ValueKey viewerKey, AddressType addressType) {
 			this.viewerName = viewerName;
 			this.viewerKey = viewerKey;
+			this.addressType = addressType;
 			if (this.viewerName==null) throw new IllegalArgumentException();
 			if (this.viewerKey ==null) throw new IllegalArgumentException();
 		}
@@ -853,31 +859,41 @@ class SteamInspector {
 		private static final long serialVersionUID = -3729823093931172004L;
 
 		private final JMenuItem miCopyPath;
+		private final JMenuItem miCopyURL;
 		private final JMenuItem miExtViewer;
 		
 		private Object clickedNode = null;
 		private LabeledFile clickedFile = null;
+		private String clickedURL = null;
 		private ExternalViewerInfo clickedExternalViewerInfo = null;
+
 		
 		MainTreeContextMenue(JTree tree) {
 			
 			add(miCopyPath = createMenuItem("Copy Path to Clipboard", true, e->{
 				ClipboardTools.copyToClipBoard(clickedFile.file.getAbsolutePath());
 			}));
+			add(miCopyURL = createMenuItem("Copy URL to Clipboard", true, e->{
+				ClipboardTools.copyToClipBoard(clickedURL);
+			}));
 			add(miExtViewer = createMenuItem("Open in External Viewer", true, e->{
 				File viewer = clickedExternalViewerInfo.getExecutable(tree);
 				if (viewer==null) return;
 				
+				String viewerPath = viewer.getAbsolutePath();
+				String filePath = null;
+				switch (clickedExternalViewerInfo.addressType) {
+				case File: filePath = clickedFile.file.getAbsolutePath(); break;
+				case URL : filePath = clickedURL; break;
+				}
 				try {
-					String viewerPath = viewer.getAbsolutePath();
-					String filePath = clickedFile.file.getAbsolutePath();
 					System.out.printf("Execute in Shell: \"%s\" \"%s\"%n", viewerPath, filePath);
 					Runtime.getRuntime().exec(new String[] { viewerPath, filePath });
-				} catch (IOException e1) {
+				} catch (IOException ex) {
 					System.err.println("Exception occured while opening selected file in an external viewer:");
-					System.err.println("    selected file: "+clickedFile.file.getAbsolutePath());
-					System.err.println("    external viewer: "+viewer.getAbsolutePath());
-					e1.printStackTrace();
+					System.err.printf ("    selected %s: %s%n", clickedExternalViewerInfo.addressType, filePath);
+					System.err.printf ("    external viewer: %s%n", viewerPath);
+					ex.printStackTrace();
 				}
 			}));
 			
@@ -896,12 +912,19 @@ class SteamInspector {
 		}
 
 		protected void prepareMenueItems() {
-			clickedFile               = clickedNode instanceof FileBasedNode      ? ((FileBasedNode     ) clickedNode).getFile()               : null;
-			clickedExternalViewerInfo = clickedNode instanceof ExternViewableNode ? ((ExternViewableNode) clickedNode).getExternalViewerInfo() : null;
+			clickedURL                = clickedNode instanceof TreeNodes.URLBasedNode       ? ((TreeNodes.URLBasedNode      ) clickedNode).getURL()                : null;
+			clickedFile               = clickedNode instanceof TreeNodes.FileBasedNode      ? ((TreeNodes.FileBasedNode     ) clickedNode).getFile()               : null;
+			clickedExternalViewerInfo = clickedNode instanceof TreeNodes.ExternViewableNode ? ((TreeNodes.ExternViewableNode) clickedNode).getExternalViewerInfo() : null;
 			
 			miCopyPath .setEnabled(clickedFile!=null);
-			miExtViewer.setEnabled(clickedFile!=null && clickedFile.file.isFile() && clickedExternalViewerInfo!=null);
-			miCopyPath.setText(String.format("Copy %sPath to Clipboard", clickedFile==null ? "" : clickedFile.file.isFile() ? "File " : clickedFile.file.isDirectory() ? "Folder " : ""));
+			miCopyURL  .setEnabled(clickedURL!=null);
+			miExtViewer.setEnabled(
+				clickedExternalViewerInfo!=null && 
+				(  ( clickedExternalViewerInfo.addressType==AddressType.File && clickedFile!=null && clickedFile.file.isFile() )
+				|| ( clickedExternalViewerInfo.addressType==AddressType.URL  && clickedURL !=null ) )
+			);
+			miCopyPath .setText(String.format("Copy %sPath to Clipboard", clickedFile==null ? "" : clickedFile.file.isFile() ? "File " : clickedFile.file.isDirectory() ? "Folder " : ""));
+			miExtViewer.setText(String.format("Open in %s" , clickedExternalViewerInfo==null ? "External Viewer" : clickedExternalViewerInfo.viewerName));
 		}
 		
 	}
@@ -1287,7 +1310,7 @@ class SteamInspector {
 			showMessageFromThread("ParsedTreeOutput.setRoot finished");
 		}
 		@Override void showLoadingMsg() {
-			setRoot(BaseTreeNode.SimpleTextNode.createSingleTextLineTree("load content ..."));
+			setRoot(TreeNodes.SimpleTextNode.createSingleTextLineTree("load content ..."));
 		}
 	}
 	
@@ -1706,17 +1729,6 @@ class SteamInspector {
 //			if (!allowsChildren) throw new IllegalStateException(String.format("TreeNode.%s from \"not allows children\" TreeNode", methodeLabel));
 			if (!allowsChildren) children=new Vector<>();
 			if (children==null) children=createChildren();
-		}
-		
-		static class SimpleTextNode extends BaseTreeNode<TreeNode,SimpleTextNode> {
-
-			SimpleTextNode(TreeNode parent, String format, Object...args) { this(parent, null, format, args); }
-			SimpleTextNode(TreeNode parent, Icon icon, String format, Object...args) { super(parent, String.format(Locale.ENGLISH, format, args), false, true, icon); }
-			@Override protected Vector<? extends SimpleTextNode> createChildren() { return new Vector<>(); }
-			
-			static TreeRoot createSingleTextLineTree(String format, Object...args) {
-				return new TreeRoot( new SimpleTextNode(null, format, args), true, true );
-			}
 		}
 	}
 }

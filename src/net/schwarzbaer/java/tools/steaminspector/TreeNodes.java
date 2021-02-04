@@ -6,6 +6,9 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
+import java.io.PrintStream;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -36,6 +39,7 @@ import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Array;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AppSettings.ValueKey;
@@ -56,7 +60,6 @@ import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.Achieveme
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.FriendList;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.FriendList.Friend;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameStateInfo;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameStateInfo.GameStateInfoBlock;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShotLists;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.ImageFile;
@@ -139,7 +142,7 @@ class TreeNodes {
 		JsonTreeIconsIS = IconSource.createCachedIcons(16, 16, "/images/JsonTreeIcons.png", JsonTreeIcons.values());
 	}
 	
-	static boolean fileNameEndsWith(File file, String... suffixes) {
+	private static boolean fileNameEndsWith(File file, String... suffixes) {
 		String name = file.getName().toLowerCase();
 		for (String suffix:suffixes)
 			if (name.endsWith(suffix))
@@ -147,11 +150,11 @@ class TreeNodes {
 		return false;
 	}
 
-	static boolean isImageFile(File file) {
+	private static boolean isImageFile(File file) {
 		return file.isFile() && fileNameEndsWith(file,".jpg",".jpeg",".png",".bmp",".ico",".tga");
 	}
 	
-	static String getSizeStr(File file) {
+	private static String getSizeStr(File file) {
 		long length = file==null ? 0 : file.length();
 		return getSizeStr(length);
 	}
@@ -164,7 +167,7 @@ class TreeNodes {
 		return "["+length+"]";
 	}
 	
-	static File[] getFilesAndFolders(File folder) {
+	private static File[] getFilesAndFolders(File folder) {
 		File[] files = folder.listFiles((FileFilter) file -> {
 			String name = file.getName();
 			if (file.isDirectory())
@@ -174,7 +177,7 @@ class TreeNodes {
 		return files;
 	}
 	
-	static Integer parseNumber(String name) {
+	private static Integer parseNumber(String name) {
 		try {
 			int n = Integer.parseInt(name);
 			if (name.equals(Integer.toString(n))) return n;
@@ -183,7 +186,7 @@ class TreeNodes {
 		return null;
 	}
 	
-	static Long parseLongNumber(String name) {
+	private static Long parseLongNumber(String name) {
 		try {
 			long n = Long.parseLong(name);
 			if (name.equals(Long.toString(n))) return n;
@@ -192,7 +195,19 @@ class TreeNodes {
 		return null;
 	}
 
-	static class HashMatrix<KeyType1,KeyType2,ValueType> {
+	private static BufferedImage createImageOfMessage(String message, int width, int height, Color textColor) {
+		BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+		JTextArea label = new JTextArea(message);
+		label.setBorder(BorderFactory.createDashedBorder(Color.BLACK));
+		label.setLineWrap(true);
+		label.setWrapStyleWord(true);
+		label.setSize(width, height);
+		label.setForeground(textColor);
+		label.paint(image.getGraphics());
+		return image;
+	}
+
+	private static class HashMatrix<KeyType1,KeyType2,ValueType> {
 		
 		private final HashMap<KeyType1,HashMap<KeyType2,ValueType>> matrix;
 		private final HashSet<KeyType1> keySet1;
@@ -241,7 +256,7 @@ class TreeNodes {
 		}
 	}
 	
-	static class FileNameNExt implements Comparable<FileNameNExt>{
+	private static class FileNameNExt implements Comparable<FileNameNExt>{
 		final String name;
 		final String extension;
 		private FileNameNExt(String name, String extension) {
@@ -262,6 +277,10 @@ class TreeNodes {
 			if (other.extension==null) return +1;
 			return this.extension.compareToIgnoreCase(other.extension);
 		}
+	}
+
+	interface URLBasedNode {
+		String getURL();
 	}
 
 	interface FileBasedNode {
@@ -290,7 +309,7 @@ class TreeNodes {
 		
 	}
 
-	static class DataTreeNodeContextMenu extends AbstractTreeContextMenu {
+	private static class DataTreeNodeContextMenu extends AbstractTreeContextMenu {
 		private static final long serialVersionUID = 7620430144231207201L;
 		
 		private final JMenuItem miName;
@@ -334,7 +353,7 @@ class TreeNodes {
 		}
 	}
 
-	static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode {
+	private static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode {
 		
 		private final Collection<ValueType> values;
 		private final Comparator<ValueType> sortOrder;
@@ -401,11 +420,56 @@ class TreeNodes {
 			TreeNode create(TreeNode parent, IDType id, ValueType value);
 		}
 	}
+	
+	static class ImageUrlNode extends SimpleTextNode implements ImageContentSource, ExternViewableNode, URLBasedNode {
+		
+		private final String url;
+		
+		ImageUrlNode(TreeNode parent, String label, String  url) {
+			super(parent, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile), "%s: "+"\"%s\"", label, url);
+			this.url = url;
+		}
 
-	static class TextContentNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource {
+		@Override public String getURL() { return url; }
+		@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
+
+		@Override ContentType getContentType() { return ContentType.Image; }
+		@Override public BufferedImage getContentAsImage() {
+			if (url==null) return null;
+			try {
+				return ImageIO.read(new URL(url));
+			} catch (MalformedURLException e) {
+				System.err.printf("MalformedURLException while reading image: URL=\"%s\" Exception: %s%n", url, e.getMessage());
+			} catch (IOException e) {
+				System.err.printf("IOException while reading image: URL=\"%s\" Exception: %s%n", url, e.getMessage());
+			}
+			return createImageOfMessage("Can't read image.",200,25,Color.RED);
+		}
+	}
+	
+	static class PrimitiveValueNode extends SimpleTextNode {
+		PrimitiveValueNode(TreeNode parent, String label, boolean value) { super(parent, "%s: "+  "%s"  , label, value); }
+		PrimitiveValueNode(TreeNode parent, String label, int     value) { super(parent, "%s: "+  "%d"  , label, value); }
+		PrimitiveValueNode(TreeNode parent, String label, long    value) { super(parent, "%s: "+  "%d"  , label, value); }
+		PrimitiveValueNode(TreeNode parent, String label, String  value) { super(parent, "%s: "+"\"%s\"", label, value); }
+	}
+	
+	static class SimpleTextNode extends BaseTreeNode<TreeNode,SimpleTextNode> {
+
+		SimpleTextNode(TreeNode parent, String format, Object...args) { this(parent, null, format, args); }
+		SimpleTextNode(TreeNode parent, Icon icon, String format, Object...args) { super(parent, String.format(Locale.ENGLISH, format, args), false, true, icon); }
+		@Override protected Vector<? extends SimpleTextNode> createChildren() { return new Vector<>(); }
+		
+		static TreeRoot createSingleTextLineTree(String format, Object...args) {
+			return new TreeRoot( new SimpleTextNode(null, format, args), true, true );
+		}
+	}
+
+	private static class TextContentNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource {
 		
 		final String content;
 
+		@SuppressWarnings("unused")
 		TextContentNode(TreeNode parent, String title, String content) {
 			this(parent, title, content, (Icon)null);
 		}
@@ -422,7 +486,7 @@ class TreeNodes {
 		@Override protected Vector<? extends TreeNode> createChildren() { return new Vector<>(); }
 	}
 
-	static class RawVDFDataNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource {
+	private static class RawVDFDataNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource {
 		
 		private final VDFTreeNode rawData;
 
@@ -435,15 +499,17 @@ class TreeNodes {
 		@Override protected Vector<? extends TreeNode> createChildren() { return null; }
 	}
 
-	static class RawJsonDataNode<NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
+	private static class RawJsonDataNode<NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
 	
 		private final File file;
 		private final JSON_Parser.Result<NV,V> rawData;
 		private final JSON_Data.Value <NV,V> rawValue;
 	
+		@SuppressWarnings("unused")
 		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData) {
 			this(parent, title, rawData, null, null);
 		}
+		@SuppressWarnings("unused")
 		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData, Icon icon) {
 			this(parent, title, rawData, null, icon);
 		}
@@ -459,9 +525,11 @@ class TreeNodes {
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue) {
 			this(parent, title, rawValue, null, null);
 		}
+		@SuppressWarnings("unused")
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, Icon icon) {
 			this(parent, title, rawValue, null, icon);
 		}
+		@SuppressWarnings("unused")
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, File file) {
 			this(parent, title, rawValue, file, null);
 		}
@@ -491,14 +559,85 @@ class TreeNodes {
 		}
 	}
 
-	static class ParseException extends Exception {
+	private static class ParseException extends Exception {
 		private static final long serialVersionUID = -7150324499542307039L;
 		ParseException(String format, Object...args) {
 			super(String.format(Locale.ENGLISH, format, args));
 		}
 	}
 
-	static class Data {
+	private static class DevHelper {
+		
+		static class KnownJsonValues extends HashMap<String,JSON_Data.Value.Type> {
+			private static final long serialVersionUID = 7036252837135555435L;
+			
+			KnownJsonValues add(String name, JSON_Data.Value.Type type) {
+				put(name,type);
+				return this;
+			}
+			boolean contains(String name, JSON_Data.Value.Type type) {
+				return type==get(name);
+			}
+		}
+		
+		static KnownJsonValues createKnownJsonValues() {
+			return new KnownJsonValues();
+		}
+		
+		static final HashSet<String> unknownValues = new HashSet<>();
+		
+		static void clearUnknownValues() {
+			unknownValues.clear();
+		}
+		static void showUnknownLabels(PrintStream out) {
+			if (unknownValues.isEmpty()) return;
+			Vector<String> vec = new Vector<>(unknownValues);
+			out.printf("Unknown Labels: [%d]%n", vec.size());
+			vec.sort(null);
+			for (String str:vec)
+				out.printf("   \"%s\"%n", str);
+		}
+		
+		@SuppressWarnings("unused")
+		static Vector<String> strList(String...strings) {
+			return new Vector<>(Arrays.asList(strings));
+		}
+		
+		@SuppressWarnings("unused")
+		static void scanJsonStructure_OAO( JSON_Data.Value<Data.NV, Data.V> baseValue, String baseValueLabel, String subArrayName, Vector<String> knownValueNames, Vector<String> knownSubArrayValueNames, String errorPrefix, File file) {
+			JSON_Object<Data.NV, Data.V> object = null;
+			try { object = Data.getJsonValue(baseValue, JSON_Data.Value::castToObjectValue, errorPrefix, "ObjectValue"); }
+			catch (ParseException e) { Data.showParseException(e, file); }
+			if (object!=null) {
+				for (JSON_Data.NamedValue<Data.NV, Data.V> nvalue:object) {
+					String valueStr = nvalue.value.type+"...";
+					if (!knownValueNames.contains(nvalue.name)) valueStr = nvalue.value.toString();
+					DevHelper.unknownValues.add(baseValueLabel+"."+nvalue.name+" = "+valueStr);
+					if (subArrayName.equals(nvalue.name)) {
+						JSON_Array<Data.NV, Data.V> array = null;
+						try { array = Data.getJsonValue(nvalue.value, JSON_Data.Value::castToArrayValue, errorPrefix+"."+subArrayName, "ArrayValue"); }
+						catch (ParseException e) { Data.showParseException(e, file); }
+						if (array!=null) {
+							for (int i=0; i<array.size(); i++) {
+								JSON_Object<Data.NV, Data.V> object1 = null;
+								try { object1 = Data.getJsonValue(array.get(i), JSON_Data.Value::castToObjectValue, errorPrefix+"."+subArrayName+"["+i+"]", "ObjectValue"); }
+								catch (ParseException e) { Data.showParseException(e, file); }
+								if (object1!=null) {
+									for (JSON_Data.NamedValue<Data.NV, Data.V> nvalue1:object1) {
+										valueStr = nvalue1.value.type+"...";
+										if (!knownSubArrayValueNames.contains(nvalue1.name)) valueStr = nvalue1.value.toString();
+										DevHelper.unknownValues.add(baseValueLabel+"."+"rgCards."+nvalue1.name+" = "+valueStr);
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	protected static class Data {
 		
 		private static class NV extends JSON_Data.NamedValueExtra.Dummy{}
 		private static class V  extends JSON_Data.ValueExtra.Dummy{}
@@ -512,6 +651,16 @@ class TreeNodes {
 			if (object==null) throw new ParseException("%s==NULL", debugOutputPrefixStr);
 			JSON_Data.Value<NV, V> value = object.getValue(subValueName);
 			return getJsonValue(value, cast, debugOutputPrefixStr+"."+subValueName, jsonValueTypeLabel);
+		}
+		
+		static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getJsonValue(
+				JSON_Object<NV,V> object,
+				String subValueName,
+				Function<JSON_Data.Value<NV,V>,JsonValueType> cast
+		) {
+			if (object==null) return null;
+			JSON_Data.Value<NV, V> value = object.getValue(subValueName);
+			return getJsonValue(value, cast);
 		}
 
 		static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getJsonValue(
@@ -546,63 +695,6 @@ class TreeNodes {
 			System.err.print(str);
 		}
 
-		static class ScreenShot implements Comparable<ScreenShot> {
-			final File image;
-			final File thumbnail;
-			ScreenShot(File image, File thumbnail) {
-				this.image = image;
-				this.thumbnail = thumbnail;
-				if (image==null || !image.isFile())
-					throw new IllegalArgumentException();
-			}
-			@Override public int compareTo(ScreenShot other) {
-				if (other==null) return -1;
-				return this.image.getAbsolutePath().compareTo(other.image.getAbsolutePath());
-			}
-		}
-		
-		static class ScreenShotLists extends HashMap<Integer,ScreenShotLists.ScreenShotList>{
-			private static final long serialVersionUID = -428703055699412094L;
-			
-			final File folder;
-
-			ScreenShotLists(File folder) { 
-				File subFolder = new File(folder,"remote");
-				if (subFolder.isDirectory()) {
-					this.folder = subFolder;
-					File[] folders = subFolder.listFiles(file->file.isDirectory() && parseNumber(file.getName())!=null);
-					for (File gameFolder:folders) {
-						Integer gameID = parseNumber(gameFolder.getName());
-						File imagesFolder = new File(gameFolder,"screenshots");
-						if (imagesFolder.isDirectory()) {
-							File thumbnailsFolder = new File(imagesFolder,"thumbnails");
-							if (!thumbnailsFolder.isDirectory()) thumbnailsFolder = null;
-							put(gameID, new ScreenShotList(imagesFolder,thumbnailsFolder));
-						}
-					}
-				} else
-					this.folder = null;
-			}
-			
-			static class ScreenShotList extends Vector<ScreenShot> {
-				private static final long serialVersionUID = 8285684141839919150L;
-				
-				final File imagesFolder;
-				final File thumbnailsFolder;
-				
-				public ScreenShotList(File imagesFolder, File thumbnailsFolder) {
-					this.imagesFolder = imagesFolder;
-					this.thumbnailsFolder = thumbnailsFolder;
-					File[] imageFiles = imagesFolder.listFiles(TreeNodes::isImageFile);
-					for (File image:imageFiles) {
-						File thumbnail = null;
-						if (thumbnailsFolder!=null)
-							thumbnail = new File(thumbnailsFolder,image.getName());
-						add(new ScreenShot(image,thumbnail));
-					}
-				}
-			}
-		}
 		static class Player {
 			
 			final long playerID;
@@ -811,9 +903,10 @@ class TreeNodes {
 
 				final File file;
 				final JSON_Parser.Result<NV, V> rawData;
-				final Vector<GameStateInfoBlock> blocks;
+				final Vector<Block> blocks;
 				final String fullDesc;
 				final String shortDesc;
+				final Badge badge;
 
 				public GameStateInfo(File file, JSON_Parser.Result<NV, V> rawData) {
 					this.file = file;
@@ -821,27 +914,44 @@ class TreeNodes {
 					this.blocks    = null;
 					this.fullDesc  = null;
 					this.shortDesc = null;
+					this.badge     = null;
 				}
 
-				public GameStateInfo(File file, Vector<GameStateInfoBlock> blocks) {
+				public GameStateInfo(File file, Vector<Block> blocks) {
 					this.file = file;
 					this.rawData = null;
 					this.blocks = blocks;
+					
 					String preFullDesc  = null;
 					String preShortDesc = null;
-					for (GameStateInfoBlock block:this.blocks) {
+					Badge preBadge = null;
+					for (Block block:this.blocks) {
 						String blockStr = "GameStateInfo.Block["+block.blockIndex+"]";
 						String dataValueStr = blockStr+".dataValue";
+						JSON_Object<NV, V> object;
 						// TODO: parse GameStateInfo.Block["achievements"|"badge"] 
 						switch (block.label) {
 						case "achievements":
 							break;
 							
 						case "badge":
+							//DevHelper.scanJsonStructure_OAO(
+							//	block.dataValue, "GameStateInfo.Block[\"badge\"]", "rgCards",
+							//	DevHelper.strList("strIconURL","strName","strNextLevelName"),
+							//	DevHelper.strList("strTitle","strName","strMarketHash","strImgURL","strArtworkURL"),
+							//	dataValueStr, file
+							//);
+							object = null;
+							try { object = getJsonValue(block.dataValue, JSON_Data.Value::castToObjectValue, dataValueStr, "ObjectValue"); }
+							catch (ParseException e) { showParseException(e, file); }
+							if (object!=null) {
+								preBadge = new GameStateInfo.Badge(object, dataValueStr, file);
+							} else
+								preBadge = new GameStateInfo.Badge(block.dataValue);
 							break;
 							
 						case "descriptions":
-							JSON_Object<NV, V> object = null;
+							object = null;
 							try { object = getJsonValue(block.dataValue, JSON_Data.Value::castToObjectValue, dataValueStr, "ObjectValue"); }
 							catch (ParseException e) { showParseException(e, file); }
 							if (object!=null) {
@@ -855,21 +965,140 @@ class TreeNodes {
 					}
 					this.fullDesc  = preFullDesc;
 					this.shortDesc = preShortDesc;
+					this.badge = preBadge;
 				}
 
 				public static GameStateInfo parse(File file, JSON_Array<NV,V> array) throws ParseException {
 					if (array==null) throw new ParseException("GameStateInfo isn't a JSON_Array");
-					Vector<GameStateInfoBlock> blocks = new Vector<>();
+					Vector<Block> blocks = new Vector<>();
 					for (int i=0; i<array.size(); i++) {
 						JSON_Data.Value<NV,V> value = array.get(i);
-						GameStateInfoBlock block = GameStateInfoBlock.parse(i,value);
+						Block block = Block.parse(i,value);
 						if (block!=null) blocks.add(block);
-						else blocks.add(new GameStateInfoBlock(i,value));
+						else blocks.add(new Block(i,value));
 					}
 					return new GameStateInfo(file,blocks);
 				}
 				
-				static class GameStateInfoBlock {
+				static class Badge {
+					
+					private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = DevHelper.createKnownJsonValues()
+							.add("strName"         , JSON_Data.Value.Type.String)
+							.add("bHasBadgeData"   , JSON_Data.Value.Type.Bool)
+							.add("bMaxed"          , JSON_Data.Value.Type.Null)
+							.add("nMaxLevel"       , JSON_Data.Value.Type.Integer)
+							.add("nLevel"          , JSON_Data.Value.Type.Integer)
+							.add("nXP"             , JSON_Data.Value.Type.Integer)
+							.add("strNextLevelName", JSON_Data.Value.Type.String)
+							.add("nNextLevelXP"    , JSON_Data.Value.Type.Integer)
+							.add("strIconURL"      , JSON_Data.Value.Type.String)
+							.add("rgCards"         , JSON_Data.Value.Type.Array);
+				
+					final JSON_Data.Value<NV, V> rawData;
+					final Vector<SteamCard> steamCards;
+
+					final String name;
+					final Boolean hasBadgeData;
+					final Long    maxLevel;
+					final Long    currentLevel;
+					final Long    currentXP;
+					final String  nextLevelName;
+					final Long    nextLevelXP;
+					final String  iconURL;
+
+					Badge(JSON_Data.Value<NV, V> rawData) {
+						this.rawData = rawData;
+						steamCards = null;
+						name          = null;
+						hasBadgeData  = null;
+						maxLevel      = null;
+						currentLevel  = null;
+						currentXP     = null;
+						nextLevelName = null;
+						nextLevelXP   = null;
+						iconURL       = null;
+					}
+
+					Badge(JSON_Object<NV, V> object, String dataValueStr, File file) {
+						rawData = null;
+						
+						name          = getJsonValue(object, "strName"         , JSON_Data.Value::castToStringValue);
+						hasBadgeData  = getJsonValue(object, "bHasBadgeData"   , JSON_Data.Value::castToBoolValue);
+						maxLevel      = getJsonValue(object, "nMaxLevel"       , JSON_Data.Value::castToIntegerValue);
+						currentLevel  = getJsonValue(object, "nLevel"          , JSON_Data.Value::castToIntegerValue);
+						currentXP     = getJsonValue(object, "nXP"             , JSON_Data.Value::castToIntegerValue);
+						nextLevelName = getJsonValue(object, "strNextLevelName", JSON_Data.Value::castToStringValue);
+						nextLevelXP   = getJsonValue(object, "nNextLevelXP"    , JSON_Data.Value::castToIntegerValue);
+						iconURL       = getJsonValue(object, "strIconURL"      , JSON_Data.Value::castToStringValue);
+						
+						JSON_Array<NV,V> array = null;
+						try { array = getJsonValue(object, "rgCards", JSON_Data.Value::castToArrayValue, dataValueStr, "ArrayValue"); }
+						catch (ParseException e) { showParseException(e, file); }
+						if (array!=null) {
+							steamCards = new Vector<>();
+							for (int i=0; i<array.size(); i++) {
+								JSON_Object<NV,V> object1 = null;
+								try { object1 = getJsonValue(array.get(i), JSON_Data.Value::castToObjectValue, dataValueStr+".rgCards["+i+"]", "ObjectValue"); }
+								catch (ParseException e) { showParseException(e, file); }
+								if (object1!=null) steamCards.add(new SteamCard(object1, dataValueStr+".rgCards["+i+"]", file));
+								else               steamCards.add(new SteamCard(array.get(i)));
+							}
+						} else
+							steamCards = null;
+						
+						// unexpected values
+						for (JSON_Data.NamedValue<NV,V> nvalue:object)
+							if (!KNOWN_JSON_VALUES.contains(nvalue.name, nvalue.value.type))
+								DevHelper.unknownValues.add("GameStateInfo.Badge."+nvalue.name+" = "+nvalue.value.type+"...");
+					}
+
+					static class SteamCard {
+						
+						private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = DevHelper.createKnownJsonValues()
+								.add("strName"      , JSON_Data.Value.Type.String)
+								.add("strTitle"     , JSON_Data.Value.Type.String)
+								.add("nOwned"       , JSON_Data.Value.Type.Integer)
+								.add("strArtworkURL", JSON_Data.Value.Type.String)
+								.add("strImgURL"    , JSON_Data.Value.Type.String)
+								.add("strMarketHash", JSON_Data.Value.Type.String);
+
+						final Value<NV, V> rawData;
+						final String name;
+						final String title;
+						final Long   owned;
+						final String artworkURL;
+						final String imageURL;
+						final String marketHash;
+						
+						public SteamCard(JSON_Data.Value<NV, V> rawData) {
+							this.rawData = rawData;
+							name  = null;
+							title = null;
+							owned = null;
+							artworkURL = null;
+							imageURL   = null;
+							marketHash = null;
+						}
+
+						public SteamCard(JSON_Object<NV, V> object, String debugOutputPrefixStr, File file) {
+							rawData = null;
+							
+							name       = getJsonValue(object, "strName"      , JSON_Data.Value::castToStringValue);
+							title      = getJsonValue(object, "strTitle"     , JSON_Data.Value::castToStringValue);
+							owned      = getJsonValue(object, "nOwned"       , JSON_Data.Value::castToIntegerValue);
+							artworkURL = getJsonValue(object, "strArtworkURL", JSON_Data.Value::castToStringValue);
+							imageURL   = getJsonValue(object, "strImgURL"    , JSON_Data.Value::castToStringValue);
+							marketHash = getJsonValue(object, "strMarketHash", JSON_Data.Value::castToStringValue);
+							
+							// unexpected values
+							for (JSON_Data.NamedValue<NV,V> nvalue:object)
+								if (!KNOWN_JSON_VALUES.contains(nvalue.name, nvalue.value.type))
+									DevHelper.unknownValues.add("GameStateInfo.Badge.SteamCard."+nvalue.name+" = "+nvalue.value.type+"...");
+						}
+					}
+				}
+
+				static class Block {
 
 					final int blockIndex;
 					final String label;
@@ -877,7 +1106,7 @@ class TreeNodes {
 					final JSON_Data.Value<NV, V> dataValue;
 					final JSON_Data.Value<NV, V> rawData;
 
-					public GameStateInfoBlock(int blockIndex, String label, long version, JSON_Data.Value<NV, V> dataValue) {
+					public Block(int blockIndex, String label, long version, JSON_Data.Value<NV, V> dataValue) {
 						this.blockIndex = blockIndex;
 						this.label = label;
 						this.version = version;
@@ -885,7 +1114,7 @@ class TreeNodes {
 						this.rawData = null;
 					}
 
-					public GameStateInfoBlock(int blockIndex, JSON_Data.Value<NV, V> rawData) {
+					public Block(int blockIndex, JSON_Data.Value<NV, V> rawData) {
 						this.blockIndex = blockIndex;
 						this.label = null;
 						this.version = -1;
@@ -893,7 +1122,7 @@ class TreeNodes {
 						this.rawData = rawData;
 					}
 
-					public static GameStateInfoBlock parse(int blockIndex, JSON_Data.Value<NV, V> value) throws ParseException {
+					public static Block parse(int blockIndex, JSON_Data.Value<NV, V> value) throws ParseException {
 						String blockStr = "GameStateInfo.Block["+blockIndex+"]";
 						JSON_Data.ArrayValue<NV, V> arrayValue = value.castToArrayValue();
 						if (arrayValue==null) throw new ParseException("%s isn't a JSON_Array", blockStr);
@@ -910,7 +1139,7 @@ class TreeNodes {
 						JSON_Data.Value<NV, V>    dataValue = blockdata.getValue("data");
 						Long version = getJsonValue(versionValue,JSON_Data.Value::castToIntegerValue,blockStr+".value[1:blockdata].object.version","IntegerValue");
 						if (dataValue==null && blockdata.size()>1) throw new ParseException("%s.value[1:blockdata].object.data==NULL, but there are other values", blockStr);
-						return new GameStateInfoBlock(blockIndex,label,version,dataValue);
+						return new Block(blockIndex,label,version,dataValue);
 					}
 					
 				}
@@ -1115,22 +1344,72 @@ class TreeNodes {
 				
 			}
 		}
+		static class ScreenShotLists extends HashMap<Integer,ScreenShotLists.ScreenShotList>{
+			private static final long serialVersionUID = -428703055699412094L;
+			
+			final File folder;
+		
+			ScreenShotLists(File folder) { 
+				File subFolder = new File(folder,"remote");
+				if (subFolder.isDirectory()) {
+					this.folder = subFolder;
+					File[] folders = subFolder.listFiles(file->file.isDirectory() && parseNumber(file.getName())!=null);
+					for (File gameFolder:folders) {
+						Integer gameID = parseNumber(gameFolder.getName());
+						File imagesFolder = new File(gameFolder,"screenshots");
+						if (imagesFolder.isDirectory()) {
+							File thumbnailsFolder = new File(imagesFolder,"thumbnails");
+							if (!thumbnailsFolder.isDirectory()) thumbnailsFolder = null;
+							put(gameID, new ScreenShotList(imagesFolder,thumbnailsFolder));
+						}
+					}
+				} else
+					this.folder = null;
+			}
+			
+			static class ScreenShotList extends Vector<ScreenShot> {
+				private static final long serialVersionUID = 8285684141839919150L;
+				
+				final File imagesFolder;
+				final File thumbnailsFolder;
+				
+				public ScreenShotList(File imagesFolder, File thumbnailsFolder) {
+					this.imagesFolder = imagesFolder;
+					this.thumbnailsFolder = thumbnailsFolder;
+					File[] imageFiles = imagesFolder.listFiles(TreeNodes::isImageFile);
+					for (File image:imageFiles) {
+						File thumbnail = null;
+						if (thumbnailsFolder!=null)
+							thumbnail = new File(thumbnailsFolder,image.getName());
+						add(new ScreenShot(image,thumbnail));
+					}
+				}
+			}
+		}
+		static class ScreenShot implements Comparable<ScreenShot> {
+			final File image;
+			final File thumbnail;
+			ScreenShot(File image, File thumbnail) {
+				this.image = image;
+				this.thumbnail = thumbnail;
+				if (image==null || !image.isFile())
+					throw new IllegalArgumentException();
+			}
+			@Override public int compareTo(ScreenShot other) {
+				if (other==null) return -1;
+				return this.image.getAbsolutePath().compareTo(other.image.getAbsolutePath());
+			}
+		}
 	}
+	
 	static class PlayersNGames {
 		
 		private static final HashMap<Integer,Game> games = new HashMap<>();
 		private static final HashMap<Long,Player> players = new HashMap<>();
-		private static Comparator<Integer> gameIdOrder = Comparator.<Integer,Boolean>comparing(id->!hasGameATitle(id)).thenComparing(Comparator.naturalOrder());
-	
-		private static <ValueType> Comparator<Map.Entry<Long,ValueType>> createPlayerIdOrder() {
-			return Comparator.comparing(Map.Entry<Long,ValueType>::getKey);
-		}
-		
-		private static <ValueType> Comparator<Map.Entry<Integer,ValueType>> createGameIdOrder() {
-			return Comparator.comparing(Map.Entry<Integer,ValueType>::getKey,gameIdOrder);
-		}
 
 		static void loadData() {
+			DevHelper.clearUnknownValues();
+			
 			File folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
 			GameImages gameImages = null;
 			if (folder!=null && folder.isDirectory())
@@ -1177,6 +1456,7 @@ class TreeNodes {
 				games.put(appID, new Game(appID, appManifest, imageFiles, players));
 			}
 			
+			DevHelper.showUnknownLabels(System.err);
 		}
 
 		private static String getPlayerName(Long playerID) {
@@ -1207,6 +1487,16 @@ class TreeNodes {
 			return game.hasATitle();
 		}
 		
+		private static Comparator<Integer> createGameIdOrder() {
+			return Comparator.<Integer,Boolean>comparing(id->!hasGameATitle(id)).thenComparing(Comparator.naturalOrder());
+		}
+		private static <ValueType> Comparator<Map.Entry<Integer,ValueType>> createGameIdKeyOrder() {
+			return Comparator.comparing(Map.Entry<Integer,ValueType>::getKey, createGameIdOrder());
+		}
+		private static <ValueType> Comparator<Map.Entry<Long,ValueType>> createPlayerIdKeyOrder() {
+			return Comparator.comparing(Map.Entry<Long,ValueType>::getKey);
+		}
+
 		private static TreeNode createGameScreenShotsNode(TreeNode parent, Long id, ScreenShotLists.ScreenShotList screenShots) {
 			return createGameScreenShotsNode(parent, "by "+getPlayerName(id), screenShots, null);
 		}
@@ -1256,14 +1546,14 @@ class TreeNodes {
 					children.add(new FileSystem.FolderNode(this, "Images", game.imageFiles.values(), TreeIcons.ImageFile));
 				}
 				if (game.screenShots!=null && !game.screenShots.isEmpty()) {
-					children.add(GroupingNode.create(this, "ScreenShots", game.screenShots, createPlayerIdOrder(), PlayersNGames::createGameScreenShotsNode));
+					children.add(GroupingNode.create(this, "ScreenShots", game.screenShots, createPlayerIdKeyOrder(), PlayersNGames::createGameScreenShotsNode));
 					//children.add(new ScreenShotsNode<>(this,game.screenShots,id->String.format("by %s", getPlayerName(id)),Comparator.<Long>naturalOrder()));
 				}
 				if (game.steamCloudFolders!=null && !game.steamCloudFolders.isEmpty()) {
 					HashMap<File,String> folderLabels = new HashMap<>();
 					game.steamCloudFolders.forEach((playerID,folder)->folderLabels.put(folder, String.format("by %s", getPlayerName(playerID))));
 					
-					Stream<Map.Entry<Long, File>> sorted = game.steamCloudFolders.entrySet().stream().sorted(createPlayerIdOrder());
+					Stream<Map.Entry<Long, File>> sorted = game.steamCloudFolders.entrySet().stream().sorted(createPlayerIdKeyOrder());
 					File[] files = sorted.map(Map.Entry<Long,File>::getValue).toArray(File[]::new);
 					//Collection<File> files = game.gameDataFolders.values();
 					
@@ -1272,29 +1562,6 @@ class TreeNodes {
 				
 				return children;
 			}
-		}
-
-		static class ScreenShotNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, ImageContentSource {
-			
-			private final ScreenShot screenShot;
-			ScreenShotNode(TreeNode parent, ScreenShot screenShot) {
-				super(parent, screenShot.image.getName(), false, true, TreeIcons.ImageFile);
-				this.screenShot = screenShot;
-			}
-
-			@Override ContentType getContentType() { return ContentType.Image; }
-			@Override public BufferedImage getContentAsImage() {
-				try {
-					return ImageIO.read(screenShot.image);
-				} catch (IOException e) {
-					System.out.printf("IOException while reading image \"%s\": %s%n", screenShot.image.getAbsolutePath(), e.getMessage());
-					return null;
-				}
-			}
-
-			@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.ImageViewer; }
-			@Override public LabeledFile getFile() { return new LabeledFile(screenShot.image); }
-			@Override protected Vector<? extends TreeNode> createChildren() { return null; }
 		}
 
 		static class PlayerNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode {
@@ -1319,13 +1586,12 @@ class TreeNodes {
 				
 				GroupingNode<?> groupingNode;
 				if (player.steamCloudFolders!=null && !player.steamCloudFolders.isEmpty()) {
-					Comparator<Map.Entry<Integer, File>> sortOrder = Comparator.comparing(Map.Entry<Integer, File>::getKey,gameIdOrder);
 					GroupingNode.NodeCreator2<Integer, File> createFolderNode = (parent, gameID, file) -> new FileSystem.FolderNode(parent, getGameTitle(gameID), file, getGameIcon(gameID, TreeIcons.Folder));
-					children.add(groupingNode = GroupingNode.create(this, "SteamCloud Shared Data", player.steamCloudFolders, sortOrder, createFolderNode));
+					children.add(groupingNode = GroupingNode.create(this, "SteamCloud Shared Data", player.steamCloudFolders, createGameIdKeyOrder(), createFolderNode));
 					groupingNode.setFileSource(player.folder, null);
 				}
 				if (player.screenShots!=null && !player.screenShots.isEmpty()) {
-					children.add(groupingNode = GroupingNode.create(this, "ScreenShots", player.screenShots, createGameIdOrder(), PlayersNGames::createGameScreenShotsNode));
+					children.add(groupingNode = GroupingNode.create(this, "ScreenShots", player.screenShots, createGameIdKeyOrder(), PlayersNGames::createGameScreenShotsNode));
 					groupingNode.setFileSource(player.screenShots.folder, null);
 					//children.add(new ScreenShotsNode<Integer>(this,player.screenShots,id->getGameTitle(id),id->getGameIcon(id,TreeIcons.ImageFile),gameIdOrder));
 				}
@@ -1339,8 +1605,7 @@ class TreeNodes {
 					children.add(new AchievementProgressNode(this, player.achievementProgress));
 				}
 				if (!player.gameStateInfos.isEmpty()) {
-					Comparator<Map.Entry<Integer, GameStateInfo>> sortOrder = Comparator.comparing(Map.Entry<Integer,GameStateInfo>::getKey,gameIdOrder);
-					children.add(groupingNode = GroupingNode.create(this, "Game Status Infos", player.gameStateInfos, sortOrder, GameStateInfoNode::new));
+					children.add(groupingNode = GroupingNode.create(this, "Game Status Infos", player.gameStateInfos, createGameIdKeyOrder(), GameStateInfoNode::new));
 					groupingNode.setFileSource(player.gameStateFolder, null);
 				}
 				
@@ -1372,7 +1637,7 @@ class TreeNodes {
 						GroupingNode.create(
 							this, "Values", data.values,
 							Comparator.comparing(Map.Entry<String,String>::getKey),
-							(parent, id, value) -> new SimpleTextNode(parent, "%s: \"%s\"", id, value)
+							(parent, id, value) -> new PrimitiveValueNode(parent, id, value)
 						)
 					);
 				}
@@ -1462,12 +1727,15 @@ class TreeNodes {
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
-				GroupingNode<GameStateInfoBlock> groupingNode;
+				GroupingNode<GameStateInfo.Block> groupingNode;
 				if (data.fullDesc!=null) {
 					children.add(new TextContentNode(this, "Full Game Description", data.fullDesc, TreeIcons.TextFile));
 				}
 				if (data.shortDesc!=null) {
 					children.add(new TextContentNode(this, "Short Game Description", data.shortDesc, TreeIcons.TextFile));
+				}
+				if (data.badge!=null) {
+					children.add(new BadgeNode(this, data.badge));
 				}
 				if (data.blocks!=null) {
 					children.add(groupingNode = GroupingNode.create(this, "Raw Blocks", data.blocks, null, BlockNode::new));
@@ -1478,16 +1746,111 @@ class TreeNodes {
 				return children;
 			}
 
+			static class BadgeNode extends BaseTreeNode<TreeNode,TreeNode> implements ImageContentSource, ExternViewableNode, URLBasedNode {
+
+				private final GameStateInfo.Badge badge;
+
+				public BadgeNode(TreeNode parent, GameStateInfo.Badge badge) {
+					super(parent, getTitle(badge), true, false);
+					this.badge = badge;
+				}
+				
+				private static String getTitle(GameStateInfo.Badge badge) {
+					if (badge==null) return "(NULL) Badge";
+					if (badge.name==null) return "(Nameless) Badge";
+					String str = String.format("Badge \"%s\"", badge.name);
+					if (badge.currentLevel!=null) str += String.format(" (%d)", badge.currentLevel);
+					return str;
+				}
+
+				@Override public String getURL() { return badge.iconURL; }
+				@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
+
+				@Override ContentType getContentType() { return ContentType.Image; }
+				@Override public BufferedImage getContentAsImage() {
+					if (badge.iconURL==null) return null;
+					try {
+						return ImageIO.read(new URL(badge.iconURL));
+					} catch (MalformedURLException e) {
+						System.err.printf("MalformedURLException while reading badge icon: URL=\"%s\" Exception: %s%n", badge.iconURL, e.getMessage());
+					} catch (IOException e) {
+						System.err.printf("IOException while reading badge icon: URL=\"%s\" Exception: %s%n", badge.iconURL, e.getMessage());
+					}
+					return createImageOfMessage("Can't read image.",200,25,Color.RED);
+				}
+
+				@Override protected Vector<? extends TreeNode> createChildren() {
+					Vector<TreeNode> children = new Vector<>();
+					if (badge.rawData      !=null) children.add(new RawJsonDataNode<> (this, "raw data"       , badge.rawData      ));
+					if (badge.name         !=null) children.add(new PrimitiveValueNode(this, "name"           , badge.name         ));
+					if (badge.hasBadgeData !=null) children.add(new PrimitiveValueNode(this, "has badge data" , badge.hasBadgeData ));
+					if (badge.maxLevel     !=null) children.add(new PrimitiveValueNode(this, "max level"      , badge.maxLevel     ));
+					if (badge.currentLevel !=null) children.add(new PrimitiveValueNode(this, "current level"  , badge.currentLevel ));
+					if (badge.currentXP    !=null) children.add(new PrimitiveValueNode(this, "current XP"     , badge.currentXP    ));
+					if (badge.nextLevelName!=null) children.add(new PrimitiveValueNode(this, "next level name", badge.nextLevelName));
+					if (badge.nextLevelXP  !=null) children.add(new PrimitiveValueNode(this, "next level XP"  , badge.nextLevelXP  ));
+					if (badge.iconURL      !=null) children.add(new ImageUrlNode      (this, "icon URL"       , badge.iconURL      ));
+					if (badge.steamCards   !=null) children.add(GroupingNode.create(this, "Steam Cards", badge.steamCards, null, SteamCardNode::new));
+					return children;
+				}
+			}
+
+			static class SteamCardNode extends BaseTreeNode<TreeNode,TreeNode> implements ImageContentSource, ExternViewableNode, URLBasedNode {
+				
+				private final GameStateInfo.Badge.SteamCard steamCard;
+				
+				SteamCardNode(TreeNode parent, GameStateInfo.Badge.SteamCard steamCard) {
+					super(parent, getTitle(steamCard), true, false);
+					this.steamCard = steamCard;
+				}
+				
+				private static String getTitle(GameStateInfo.Badge.SteamCard steamCard) {
+					if (steamCard==null) return "(NULL) Steam Card";
+					if (steamCard.name==null) return "(Nameless) Steam Card";
+					String str = String.format("Steam Card \"%s\"", steamCard.name);
+					if (steamCard.owned!=null && steamCard.owned!=0) str += String.format(" (%d)", steamCard.owned);
+					return str;
+				}
+
+				@Override public String getURL() { return steamCard.imageURL; }
+				@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
+
+				@Override ContentType getContentType() { return ContentType.Image; }
+				@Override public BufferedImage getContentAsImage() {
+					if (steamCard.imageURL==null) return null;
+					try {
+						return ImageIO.read(new URL(steamCard.imageURL));
+					} catch (MalformedURLException e) {
+						System.err.printf("MalformedURLException while reading steam card image: URL=\"%s\" Exception: %s%n", steamCard.imageURL, e.getMessage());
+					} catch (IOException e) {
+						System.err.printf("IOException while reading steam card image: URL=\"%s\" Exception: %s%n", steamCard.imageURL, e.getMessage());
+					}
+					return createImageOfMessage("Can't read image.",200,25,Color.RED);
+				}
+			
+				@Override protected Vector<? extends TreeNode> createChildren() {
+					Vector<TreeNode> children = new Vector<>();
+					if (steamCard.rawData   !=null) children.add(new RawJsonDataNode<> (this, "raw data"   , steamCard.rawData   ));
+					if (steamCard.name      !=null) children.add(new PrimitiveValueNode(this, "name"       , steamCard.name      ));
+					if (steamCard.title     !=null) children.add(new PrimitiveValueNode(this, "title"      , steamCard.title     ));
+					if (steamCard.owned     !=null) children.add(new PrimitiveValueNode(this, "owned"      , steamCard.owned     ));
+					if (steamCard.artworkURL!=null) children.add(new ImageUrlNode      (this, "artwork URL", steamCard.artworkURL));
+					if (steamCard.imageURL  !=null) children.add(new ImageUrlNode      (this, "image URL"  , steamCard.imageURL  ));
+					if (steamCard.marketHash!=null) children.add(new PrimitiveValueNode(this, "market hash", steamCard.marketHash));
+					return children;
+				}
+			}
+
 			static class BlockNode extends BaseTreeNode<TreeNode,TreeNode> {
 				
-				private GameStateInfoBlock block;
+				private final GameStateInfo.Block block;
 			
-				BlockNode(TreeNode parent, GameStateInfoBlock block) {
+				BlockNode(TreeNode parent, GameStateInfo.Block block) {
 					super(parent, getTitle(block), true, false);
 					this.block = block;
 				}
 			
-				private static String getTitle(GameStateInfoBlock block) {
+				private static String getTitle(GameStateInfo.Block block) {
 					if (block==null) return "Block ???";
 					if (block.rawData!=null) return "Block "+block.blockIndex+" (RawData)";
 					return "["+block.blockIndex+"] "+block.label;
@@ -1498,13 +1861,36 @@ class TreeNodes {
 					if (block.rawData!=null)
 						children.add(new RawJsonDataNode<>(this, "raw data", block.rawData));
 					else {
-						children.add(new SimpleTextNode(this, "version: %d", block.version));
+						children.add(new PrimitiveValueNode(this, "version", block.version));
 						if (block.dataValue!=null)
 							children.add(new RawJsonDataNode<>(this, "data", block.dataValue));
 					}
 					return children;
 				}
 			}
+		}
+
+		static class ScreenShotNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, ImageContentSource {
+			
+			private final ScreenShot screenShot;
+			ScreenShotNode(TreeNode parent, ScreenShot screenShot) {
+				super(parent, screenShot.image.getName(), false, true, TreeIcons.ImageFile);
+				this.screenShot = screenShot;
+			}
+		
+			@Override ContentType getContentType() { return ContentType.Image; }
+			@Override public BufferedImage getContentAsImage() {
+				try {
+					return ImageIO.read(screenShot.image);
+				} catch (IOException e) {
+					System.out.printf("IOException while reading image \"%s\": %s%n", screenShot.image.getAbsolutePath(), e.getMessage());
+					return null;
+				}
+			}
+		
+			@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.ImageViewer; }
+			@Override public LabeledFile getFile() { return new LabeledFile(screenShot.image); }
+			@Override protected Vector<? extends TreeNode> createChildren() { return null; }
 		}
 		
 		/*
@@ -1689,7 +2075,7 @@ class TreeNodes {
 						if (file!=null)
 							children.add(new ImageFile(this, file));
 						else if (showNullValues)
-							children.add(new BaseTreeNode.SimpleTextNode(this, "no \"%s\"", key.toString()));
+							children.add(new SimpleTextNode(this, "no \"%s\"", key.toString()));
 					}
 					return children;
 				}
@@ -1985,18 +2371,6 @@ class TreeNodes {
 				}
 				return imageContent;
 			}
-
-			private BufferedImage createImageOfMessage(String message, int width, int height, Color textColor) {
-				BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-				JTextArea label = new JTextArea(message);
-				label.setBorder(BorderFactory.createDashedBorder(Color.BLACK));
-				label.setLineWrap(true);
-				label.setWrapStyleWord(true);
-				label.setSize(width, height);
-				label.setForeground(textColor);
-				label.paint(image.getGraphics());
-				return image;
-			}
 		}
 
 		static class TextFile extends FileNode implements ExtendedTextFileSource {
@@ -2065,11 +2439,11 @@ class TreeNodes {
 					} catch (JSON_Parser.ParseException e) {
 						System.err.printf("ParseException: %s%n", e.getMessage());
 						//e.printStackTrace();
-						return BaseTreeNode.SimpleTextNode.createSingleTextLineTree("Parse Error: %s", e.getMessage());
+						return SimpleTextNode.createSingleTextLineTree("Parse Error: %s", e.getMessage());
 					}
 					if (parseResult==null)
 						// return null;
-						return BaseTreeNode.SimpleTextNode.createSingleTextLineTree("Parse Error: Parser returns <null>");
+						return SimpleTextNode.createSingleTextLineTree("Parse Error: Parser returns <null>");
 				}
 				return JSON_TreeNode.create(parseResult,isLarge());
 			}
@@ -2140,7 +2514,7 @@ class TreeNodes {
 				static <NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> TreeRoot create(JSON_Parser.Result<NV,V> parseResult, boolean isLarge) {
 					if (parseResult.object!=null) return new TreeRoot(create(null,null,new JSON_Data.ObjectValue<NV,V>(parseResult.object,null)),true,!isLarge,contextMenu);
 					if (parseResult.array !=null) return new TreeRoot(create(null,null,new JSON_Data. ArrayValue<NV,V>(parseResult.array ,null)),true,!isLarge,contextMenu);
-					return BaseTreeNode.SimpleTextNode.createSingleTextLineTree("Parse Error: Parser returns neither an JSON array nor an JSON object");
+					return SimpleTextNode.createSingleTextLineTree("Parse Error: Parser returns neither an JSON array nor an JSON object");
 				}
 				
 				static <NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> TreeRoot create(JSON_Data.Value<NV,V> value, boolean isLarge) {
@@ -2221,7 +2595,7 @@ class TreeNodes {
 					} catch (VDFParser.ParseException e) {
 						System.err.printf("ParseException: %s%n", e.getMessage());
 						//e.printStackTrace();
-						return BaseTreeNode.SimpleTextNode.createSingleTextLineTree("Parse Error: %s", e.getMessage());
+						return SimpleTextNode.createSingleTextLineTree("Parse Error: %s", e.getMessage());
 					}
 				}
 				return vdfData==null ? null : vdfData.getTreeRoot(isLarge(),contextMenu);
