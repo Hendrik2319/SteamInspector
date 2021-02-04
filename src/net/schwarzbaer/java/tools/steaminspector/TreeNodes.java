@@ -432,7 +432,7 @@ class TreeNodes {
 			this.rawData = rawData;
 		}
 		@Override ContentType getContentType() { return ContentType.DataTree; }
-		@Override public TreeRoot getContentAsTree() { return new TreeRoot(rawData, true, true); }
+		@Override public TreeRoot getContentAsTree() { return new TreeRoot(rawData, true, true, new DataTreeNodeContextMenu()); }
 		@Override protected Vector<? extends TreeNode> createChildren() { return null; }
 	}
 
@@ -559,9 +559,10 @@ class TreeNodes {
 		static class ScreenShots {
 
 			final HashMap<Integer,Vector<ScreenShot>> list;
+			final File folder;
 
-			ScreenShots(File folder) {
-				
+			ScreenShots(File folder) { // TODO: Vector<ScreenShot> -> GameScreenShots | store folder in GameScreenShots 
+				this.folder = folder;
 				list = new HashMap<>();
 				File subFolder = new File(folder,"remote");
 				if (subFolder.isDirectory()) {
@@ -593,6 +594,7 @@ class TreeNodes {
 			final File folder;
 			final File configFolder;
 			final File gameStateFolder;
+			final File localconfigFile;
 			final HashMap<Integer, File> steamCloudFolders;
 			final ScreenShots screenShots;
 			final VDFTreeNode localconfig;
@@ -617,10 +619,7 @@ class TreeNodes {
 				
 				// Folders
 				subFolder = new File(folder,"760");
-				if (subFolder.isDirectory()) {
-					screenShots = new ScreenShots(subFolder);
-				} else
-					screenShots = null;
+				screenShots = !subFolder.isDirectory() ? null : new ScreenShots(subFolder);
 				
 				subFolder = new File(folder,"config");
 				if (subFolder.isDirectory()) {
@@ -638,13 +637,19 @@ class TreeNodes {
 					try { localconfigData = VDFParser.parse(localconfigFile,StandardCharsets.UTF_8); }
 					catch (VDFParser.ParseException e) { showParseException(e, localconfigFile); }
 				}
-				localconfig = localconfigData!=null ? localconfigData.createVDFTreeNode() : null;
+				if (localconfigData!=null) {
+					this.localconfig = localconfigData.createVDFTreeNode();
+					this.localconfigFile = localconfigFile;
+				} else {
+					this.localconfig = null;
+					this.localconfigFile = null;
+				}
 				
 				FriendList preFriends = null;
 				if (localconfig!=null) {
 					VDFTreeNode friendsNode = localconfig.getSubNode("UserLocalConfigStore","friends");
 					if (friendsNode!=null) {
-						try { preFriends = FriendList.parse(friendsNode); }
+						try { preFriends = FriendList.parse(friendsNode,playerID); }
 						catch (ParseException e) { showParseException(e, localconfigFile); }
 						if (preFriends==null)
 							preFriends = new FriendList(friendsNode);
@@ -709,26 +714,62 @@ class TreeNodes {
 			
 			static class FriendList {
 				
+				//static final HashSet<String> unknownValueNames = new HashSet<>();
+				
 				final VDFTreeNode rawData;
 				final Vector<Friend> friends;
+				final HashMap<String,String> values;
 				
 				FriendList() {
 					rawData = null;
 					friends = new Vector<>();
+					values = new HashMap<>();
 				}
 				
 				FriendList(VDFTreeNode rawData) {
 					this.rawData = rawData;
 					friends = null;
+					values = null;
 				}
 
-				public static FriendList parse(VDFTreeNode friendsNode) throws ParseException {
-					
-					// TODO Auto-generated method stub
-					return null;
+				public static FriendList parse(VDFTreeNode friendsNode, long playerID) throws ParseException {
+					if (friendsNode==null) throw new ParseException("FriendList: base VDFTreeNode is NULL");
+					if (friendsNode.type!=VDFTreeNode.Type.Array) throw new ParseException("FriendList: base VDFTreeNode is not an Array");
+					FriendList friendList = new FriendList();
+					friendsNode.forEach((subNode, type, name, value)->{
+						switch (type) {
+						case Root: System.err.printf("FriendList[Player %d]: Root node as sub node of base VDFTreeNode%n", playerID); break;
+
+						case Array: // Friend
+							Friend parse = null;
+							try { parse = Friend.parse(subNode,name); }
+							catch (ParseException e) { System.err.printf("ParseException in Friend[%s] of Player %d: %s%n", name, playerID, e.getMessage()); }
+							if (parse==null) parse = new Friend(name,subNode);
+							friendList.friends.add(parse);
+							break;
+							
+						case String: // simple value
+							friendList.values.put(name, value);
+							break;
+						}
+					});
+					return friendList;
 				}
 
 				static class Friend {
+
+					final String name;
+					final VDFTreeNode rawData;
+
+					public Friend(String name, VDFTreeNode rawData) {
+						this.name = name;
+						this.rawData = rawData;
+					}
+
+					public static Friend parse(VDFTreeNode subNode, String name) throws ParseException {
+						// TODO: Friend.parse
+						return null;
+					}
 					
 					
 				}
@@ -1084,7 +1125,7 @@ class TreeNodes {
 				}
 			});
 			
-			players.clear();;
+			players.clear();
 			folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.USERDATA);
 			if (folder!=null) {
 				File[] files = folder.listFiles(file->file.isDirectory() && parseLongNumber(file.getName())!=null);
@@ -1231,11 +1272,11 @@ class TreeNodes {
 				if (player.configFolder!=null) {
 					children.add(new FileSystem.FolderNode(this, "Config Folder", player.configFolder));
 				}
+				if (player.friends!=null) {
+					children.add(new FriendListNode(this, player.friends, player.localconfigFile));
+				}
 				if (player.achievementProgress!=null) {
 					children.add(new AchievementProgressNode(this, player.achievementProgress));
-				}
-				if (player.friends!=null) {
-					children.add(new FriendListNode(this, player.friends));
 				}
 				if (!player.gameStateInfos.isEmpty()) {
 					Comparator<Map.Entry<Integer, GameStateInfo>> sortOrder = Comparator.comparing(Map.Entry<Integer,GameStateInfo>::getKey,gameIdOrder);
@@ -1247,40 +1288,61 @@ class TreeNodes {
 			}
 		}
 		
-		static class FriendListNode extends BaseTreeNode<TreeNode,TreeNode> {
+		static class FriendListNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode {
 
 			private final FriendList data;
+			private final File localconfigFile;
 
-			public FriendListNode(TreeNode parent, FriendList friends) {
+			public FriendListNode(TreeNode parent, FriendList friendList, File localconfigFile) {
 				super(parent,"Friends",true,false);
-				this.data = friends;
+				this.data = friendList;
+				this.localconfigFile = localconfigFile;
 			}
+
+			@Override public ExternalViewerInfo getExternalViewerInfo() { return localconfigFile==null ? null : ExternalViewerInfo.TextEditor; }
+			@Override public LabeledFile getFile() { return localconfigFile==null ? null : new LabeledFile(localconfigFile); }
 
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				if (data.rawData!=null)
 					children.add( new RawVDFDataNode(this, "Raw VDF Data", data.rawData) );
+				if (data.values!=null) {
+					children.add(
+						GroupingNode.create(
+							this, "Values", data.values,
+							Comparator.comparing(Map.Entry<String,String>::getKey),
+							(parent, id, value) -> new SimpleTextNode(parent, "%s: \"%s\"", id, value)
+						)
+					);
+				}
 				if (data.friends!=null)
-					for (Friend friend:data.friends)
-						children.add( new FriendNode(this, friend) );
+//					for (Friend friend:data.friends)
+//						children.add( new FriendNode(this, friend) );
+					children.add(
+							GroupingNode.create(
+								this, "Friends", data.friends,
+								Comparator.<Friend,Long>comparing(friend->parseLongNumber(friend.name),Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(friend->friend.name),
+								FriendNode::new
+							)
+						);
 				return children;
 			}
 			
 			static class FriendNode extends BaseTreeNode<TreeNode,TreeNode> {
 				
-				@SuppressWarnings("unused")
 				private final Friend friend;
 				
 				FriendNode(TreeNode parent, Friend friend) {
-					super(parent,"Friend",true,false);
+					super(parent,"Friend "+friend.name,true,false);
 					this.friend = friend;
 				}
 
 				@Override
 				protected Vector<? extends TreeNode> createChildren() {
 					Vector<TreeNode> children = new Vector<>();
-					// TODO: create TreeNodes for values of Friend
+					if (friend.rawData!=null)
+						children.add( new RawVDFDataNode(this, "Raw VDF Data", friend.rawData) );
 					return children;
 				}
 			}

@@ -383,8 +383,8 @@ class VDFParser {
 		@Override public String  getName() { return name; }
 		@Override public boolean hasValue() { return value!=null || (valuePairArray!=null && !valuePairArray.isEmpty()); }
 		@Override public String getValueStr() {
-			if (value!=null) return value;
-			if (valuePairArray!=null) return String.format("Array of %d values ", valuePairArray.size());
+			if (value!=null) return String.format("\"%s\"", value);
+			if (valuePairArray!=null) return String.format("Array[%d]", valuePairArray.size());
 			return null;
 		}
 		
@@ -401,64 +401,13 @@ class VDFParser {
 			return children;
 		}
 		
-	}
-	
-	static class VDFTreeNode_old extends SteamInspector.BaseTreeNode<VDFTreeNode_old,VDFTreeNode_old> implements DataTreeNode {
-
-		private final Vector<ValuePair> pairArray;
-		private final ValuePair valuePair;
-
-		private VDFTreeNode_old(VDFTreeNode_old parent, ValuePair valuePair, String title, Vector<ValuePair> pairArray) {
-			super(parent, title, pairArray!=null, pairArray==null);
-			this.valuePair = valuePair;
-			this.pairArray = pairArray;
+		void forEach(ForEachAction action) {
+			checkChildren("forEach(action)");
+			for (VDFTreeNode child:children)
+				action.applyTo(child, child.type, child.name, child.value);
 		}
-		@SuppressWarnings("unused")
-		private static VDFTreeNode_old createRoot(Vector<ValuePair> rootPairs) {
-			return new VDFTreeNode_old(null, null, "VDF Root", rootPairs);
-		}
-		private static VDFTreeNode_old create(VDFTreeNode_old parent, ValuePair valuePair) {
-			switch (valuePair.datablock.type) {
-			case String: return new VDFTreeNode_old(parent, valuePair, toTitle(valuePair.label.str,valuePair.datablock.str), null);
-			case Array : return new VDFTreeNode_old(parent, valuePair, valuePair.label.str, valuePair.datablock.array);
-			}
-			throw new IllegalStateException();
-		}
-		private static String toTitle(String label, String value) {
-			return String.format("%s : \"%s\"", label, value);
-		}
-		
-		@Override
-		protected Vector<? extends VDFTreeNode_old> createChildren() {
-			Vector<VDFTreeNode_old> children = new Vector<>();
-			if (pairArray!=null)
-				pairArray.forEach(vp->children.add(create(this,vp)));
-			return children;
-		}
-		
-		@Override public boolean hasName () { return valuePair!=null; }
-		@Override public boolean hasValue() { return valuePair!=null; }
-
-		@Override public String getPath() {
-			if (parent==null || valuePair==null) return "RootPairs";
-			return parent.getPath()+"["+parent.getIndex(this)+"]."+getName();
-		}
-
-		@Override public String getAccessCall() {
-			return "AccessCall["+getPath()+"]";
-		}
-
-		@Override public String getName() {
-			return valuePair==null ? null : valuePair.label.str;
-		}
-		
-		@Override public String getValueStr() {
-			//if (valuePair==null) return null;
-			switch (valuePair.datablock.type) {
-			case String: return String.format("\"%s\"", valuePair.datablock.str);
-			case Array : return String.format("Array[%d]", valuePair.datablock.array.size());
-			}
-			throw new IllegalStateException();
+		interface ForEachAction {
+			void applyTo(VDFTreeNode subNode, Type type, String name, String value);
 		}
 	}
 }
