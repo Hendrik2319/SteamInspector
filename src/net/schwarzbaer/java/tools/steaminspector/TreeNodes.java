@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLConnection;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -195,7 +196,7 @@ class TreeNodes {
 		return null;
 	}
 
-	private static BufferedImage createImageOfMessage(String message, int width, int height, Color textColor) {
+	static BufferedImage createImageOfMessage(String message, int width, int height, Color textColor) {
 		BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
 		JTextArea label = new JTextArea(message);
 		label.setBorder(BorderFactory.createDashedBorder(Color.BLACK));
@@ -205,6 +206,14 @@ class TreeNodes {
 		label.setForeground(textColor);
 		label.paint(image.getGraphics());
 		return image;
+	}
+
+	private static BufferedImage readImageFromURL(URL url) throws IOException {
+		URLConnection conn = url.openConnection();
+		conn.setRequestProperty("User-Agent", "KlaUS");
+		conn.setDoInput(true);
+		conn.connect();
+		return ImageIO.read(conn.getInputStream());
 	}
 
 	private static class HashMatrix<KeyType1,KeyType2,ValueType> {
@@ -437,11 +446,11 @@ class TreeNodes {
 		@Override public BufferedImage getContentAsImage() {
 			if (url==null) return null;
 			try {
-				return ImageIO.read(new URL(url));
+				return readImageFromURL(new URL(url));
 			} catch (MalformedURLException e) {
-				System.err.printf("MalformedURLException while reading image: URL=\"%s\" Exception: %s%n", url, e.getMessage());
+				System.err.printf("MalformedURLException while reading image:%n    URL: \"%s\"%n    Exception: %s%n", url, e.getMessage());
 			} catch (IOException e) {
-				System.err.printf("IOException while reading image: URL=\"%s\" Exception: %s%n", url, e.getMessage());
+				System.err.printf("IOException while reading image:%n    URL: \"%s\"%n    Exception: %s%n", url, e.getMessage());
 			}
 			return createImageOfMessage("Can't read image.",200,25,Color.RED);
 		}
@@ -1770,11 +1779,11 @@ class TreeNodes {
 				@Override public BufferedImage getContentAsImage() {
 					if (badge.iconURL==null) return null;
 					try {
-						return ImageIO.read(new URL(badge.iconURL));
+						return readImageFromURL(new URL(badge.iconURL));
 					} catch (MalformedURLException e) {
-						System.err.printf("MalformedURLException while reading badge icon: URL=\"%s\" Exception: %s%n", badge.iconURL, e.getMessage());
+						System.err.printf("MalformedURLException while reading badge icon:%n    URL: \"%s\"%n    Exception: %s%n", badge.iconURL, e.getMessage());
 					} catch (IOException e) {
-						System.err.printf("IOException while reading badge icon: URL=\"%s\" Exception: %s%n", badge.iconURL, e.getMessage());
+						System.err.printf("IOException while reading badge icon:%n    URL: \"%s\"%n    Exception: %s%n", badge.iconURL, e.getMessage());
 					}
 					return createImageOfMessage("Can't read image.",200,25,Color.RED);
 				}
@@ -1819,11 +1828,11 @@ class TreeNodes {
 				@Override public BufferedImage getContentAsImage() {
 					if (steamCard.imageURL==null) return null;
 					try {
-						return ImageIO.read(new URL(steamCard.imageURL));
+						return readImageFromURL(new URL(steamCard.imageURL));
 					} catch (MalformedURLException e) {
-						System.err.printf("MalformedURLException while reading steam card image: URL=\"%s\" Exception: %s%n", steamCard.imageURL, e.getMessage());
+						System.err.printf("MalformedURLException while reading steam card image:%n    URL: \"%s\"%n    Exception: %s%n", steamCard.imageURL, e.getMessage());
 					} catch (IOException e) {
-						System.err.printf("IOException while reading steam card image: URL=\"%s\" Exception: %s%n", steamCard.imageURL, e.getMessage());
+						System.err.printf("IOException while reading steam card image:%n    URL: \"%s\"%n    Exception: %s%n", steamCard.imageURL, e.getMessage());
 					}
 					return createImageOfMessage("Can't read image.",200,25,Color.RED);
 				}

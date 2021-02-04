@@ -1005,7 +1005,7 @@ class SteamInspector {
 		}
 	
 		@Override Component getMainComponent() { return imageView; }
-		@Override void showLoadingMsg() {}
+		@Override void showLoadingMsg() { setImage(TreeNodes.createImageOfMessage("loading image ...",200,25,Color.RED)); }
 		
 		private class ImageLoaderThread extends SwingWorker<BufferedImage, BufferedImage> {
 			
