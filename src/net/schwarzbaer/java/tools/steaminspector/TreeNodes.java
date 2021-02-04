@@ -69,7 +69,7 @@ import net.schwarzbaer.system.ClipboardTools;
 
 class TreeNodes {
 
-	enum TreeIcons { GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Folder, RootFolder_Simple, RootFolder }
+	enum TreeIcons { GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Badge, Folder, RootFolder_Simple, RootFolder }
 	static CachedIcons<TreeIcons> TreeIconsIS;
 	
 	enum JsonTreeIcons { Object, Array, String, Number, Boolean }
@@ -1715,14 +1715,22 @@ class TreeNodes {
 			private final GameStateInfo data;
 
 			GameStateInfoNode(TreeNode parent, Long playerID, GameStateInfo gameStateInfo) {
-				super(parent, "by "+getPlayerName(playerID), true, false);
+				super(parent, "by "+getPlayerName(playerID), true, false, getMergedIcon( TreeIconsIS.getCachedIcon(TreeIcons.Folder), gameStateInfo ));
 				this.data = gameStateInfo;
 			}
 			GameStateInfoNode(TreeNode parent, Integer gameID, GameStateInfo gameStateInfo) {
-				super(parent, getGameTitle(gameID), true, false, getGameIcon(gameID, TreeIcons.Folder));
+				super(parent, getGameTitle(gameID), true, false, getMergedIcon( getGameIcon(gameID, TreeIcons.Folder), gameStateInfo ));
 				this.data = gameStateInfo;
 			}
 
+			private static Icon getMergedIcon(Icon baseIcon, GameStateInfo gameStateInfo) {
+				return IconSource.setSideBySide(
+					true, 1, baseIcon,
+					gameStateInfo.fullDesc==null ? null : TreeIconsIS.getCachedIcon(TreeIcons.TextFile),
+					gameStateInfo.badge   ==null ? null : TreeIconsIS.getCachedIcon(TreeIcons.Badge)
+				);
+			}
+			
 			@Override
 			public LabeledFile getFile() {
 				return new LabeledFile(data.file);
@@ -1760,7 +1768,7 @@ class TreeNodes {
 				private final GameStateInfo.Badge badge;
 
 				public BadgeNode(TreeNode parent, GameStateInfo.Badge badge) {
-					super(parent, getTitle(badge), true, false);
+					super(parent, getTitle(badge), true, false, TreeIcons.Badge);
 					this.badge = badge;
 				}
 				
