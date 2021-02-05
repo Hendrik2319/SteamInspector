@@ -1305,8 +1305,12 @@ class TreeNodes {
 			@Override
 			public int compareTo(Game other) {
 				if (other==null) return -1;
-				if (this.appManifest!=null && other.appManifest==null) return -1;
-				if (this.appManifest==null && other.appManifest!=null) return +1;
+				if (this.title!=null && other.title==null) return -1;
+				if (this.title==null && other.title!=null) return +1;
+				if (this.title!=null && other.title!=null) {
+					int n = this.title.compareTo(other.title);
+					if (n!=0) return n;
+				}
 				return this.appID-other.appID;
 			}
 		}
@@ -1532,6 +1536,7 @@ class TreeNodes {
 			return game.getTitle();
 		}
 
+		@SuppressWarnings("unused")
 		private static boolean hasGameATitle(Integer gameID) {
 			if (gameID==null) return false;
 			Game game = games.get(gameID);
@@ -1540,7 +1545,12 @@ class TreeNodes {
 		}
 		
 		private static Comparator<Integer> createGameIdOrder() {
-			return Comparator.<Integer,Boolean>comparing(id->!hasGameATitle(id)).thenComparing(Comparator.naturalOrder());
+			return Comparator.<Integer,Game>comparing(games::get,Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
+			
+			//Function<Integer,String> getTitle = gameID->{ Game game = games.get(gameID); return game==null ? null : game.title; };
+			//return Comparator.<Integer,String>comparing(getTitle,Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
+			
+			//return Comparator.<Integer,Boolean>comparing(id->!hasGameATitle(id)).thenComparing(Comparator.naturalOrder());
 		}
 		private static <ValueType> Comparator<Map.Entry<Integer,ValueType>> createGameIdKeyOrder() {
 			return Comparator.comparing(Map.Entry<Integer,ValueType>::getKey, createGameIdOrder());
@@ -1783,8 +1793,8 @@ class TreeNodes {
 			private static Icon getMergedIcon(Icon baseIcon, GameStateInfo gameStateInfo) {
 				return IconSource.setSideBySide(
 					true, 1, baseIcon,
-					gameStateInfo.fullDesc==null ? null : TreeIconsIS.getCachedIcon(TreeIcons.TextFile),
-					gameStateInfo.badge   ==null ? null : TreeIconsIS.getCachedIcon(TreeIcons.Badge)
+					gameStateInfo.fullDesc==null ? IconSource.createEmptyIcon(16,16) : TreeIconsIS.getCachedIcon(TreeIcons.TextFile),
+					gameStateInfo.badge   ==null ? IconSource.createEmptyIcon(16,16) : TreeIconsIS.getCachedIcon(TreeIcons.Badge)
 				);
 			}
 			
