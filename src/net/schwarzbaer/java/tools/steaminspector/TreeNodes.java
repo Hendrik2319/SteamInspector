@@ -577,26 +577,34 @@ class TreeNodes {
 		}
 	}
 
+	@SuppressWarnings("unused")
 	private static class DevHelper {
 		
-		static class KnownJsonValues extends HashMap<String,JSON_Data.Value.Type> {
-			private static final long serialVersionUID = 7036252837135555435L;
+		static class ExtHashMap<TypeType> extends HashMap<String,TypeType> {
+			private static final long serialVersionUID = -3042424737957471534L;
 			
-			KnownJsonValues add(String name, JSON_Data.Value.Type type) {
+			ExtHashMap<TypeType> add(String name, TypeType type) {
 				put(name,type);
 				return this;
 			}
-			boolean contains(String name, JSON_Data.Value.Type type) {
+			boolean contains(String name, TypeType type) {
 				return type==get(name);
 			}
 		}
 		
-		static KnownJsonValues createKnownJsonValues() {
-			return new KnownJsonValues();
+		static ExtHashMap<JSON_Data.Value.Type> createKnownJsonValues() {
+			return new ExtHashMap<JSON_Data.Value.Type>();
+		}
+		
+		static ExtHashMap<VDFTreeNode.Type> createKnownVdfValues() {
+			return new ExtHashMap<VDFTreeNode.Type>();
 		}
 		
 		static final HashSet<String> unknownValues = new HashSet<>();
 		
+		static void addUnknownVdfValue(String baseLabel, String name, VDFTreeNode.Type type) {
+			unknownValues.add(String.format("%s.%s:%s", baseLabel, name, type));
+		}
 		static void clearUnknownValues() {
 			unknownValues.clear();
 		}
@@ -609,12 +617,18 @@ class TreeNodes {
 				out.printf("   \"%s\"%n", str);
 		}
 		
-		@SuppressWarnings("unused")
+		static void scanVdfStructure(VDFTreeNode node, String nodeLabel) {
+			node.forEach((node1,t,n,v) -> {
+				addUnknownVdfValue(nodeLabel, n, t);
+				if (t==VDFTreeNode.Type.Array)
+					scanVdfStructure(node1, nodeLabel+"."+n);
+			});
+		}
+		
 		static Vector<String> strList(String...strings) {
 			return new Vector<>(Arrays.asList(strings));
 		}
 		
-		@SuppressWarnings("unused")
 		static void scanJsonStructure_OAO( JSON_Data.Value<Data.NV, Data.V> baseValue, String baseValueLabel, String subArrayName, Vector<String> knownValueNames, Vector<String> knownSubArrayValueNames, String errorPrefix, File file) {
 			JSON_Object<Data.NV, Data.V> object = null;
 			try { object = Data.getJsonValue(baseValue, JSON_Data.Value::castToObjectValue, errorPrefix, "ObjectValue"); }
@@ -859,11 +873,7 @@ class TreeNodes {
 						case Root: System.err.printf("FriendList[Player %d]: Root node as sub node of base VDFTreeNode%n", playerID); break;
 
 						case Array: // Friend
-							Friend parse = null;
-							try { parse = Friend.parse(subNode,name); }
-							catch (ParseException e) { System.err.printf("ParseException in Friend[%s] of Player %d: %s%n", name, playerID, e.getMessage()); }
-							if (parse==null) parse = new Friend(name,subNode);
-							friendList.friends.add(parse);
+							friendList.friends.add(new Friend(name,subNode));
 							break;
 							
 						case String: // simple value
@@ -875,21 +885,52 @@ class TreeNodes {
 				}
 
 				static class Friend {
-
-					final String name;
+					private static final DevHelper.ExtHashMap<VDFTreeNode.Type> KNOWN_VDF_VALUES = DevHelper.createKnownVdfValues()
+							.add("name"  , VDFTreeNode.Type.String)
+							.add("tag"   , VDFTreeNode.Type.String)
+							.add("avatar", VDFTreeNode.Type.String)
+							.add("NameHistory", VDFTreeNode.Type.Array);
+					
 					final VDFTreeNode rawData;
+					final String idStr;
+					final Long id;
+					final String name;
+					final String tag;
+					final String avatar;
+					final HashMap<Integer, String> nameHistory;
 
-					public Friend(String name, VDFTreeNode rawData) {
-						this.name = name;
-						this.rawData = rawData;
+					public Friend(String idStr, VDFTreeNode node) {
+						this.idStr = idStr;
+						this.id = parseLongNumber(idStr);
+						this.rawData = null;
+						//this.rawData = node;
+						//DevHelper.scanVdfStructure(node,"Friend");
+						
+						name   = node.getString("name"  );
+						tag    = node.getString("tag"   );
+						avatar = node.getString("avatar");
+						VDFTreeNode arrayNode = node.getArray("NameHistory");
+						if (arrayNode!=null) {
+							nameHistory = new HashMap<Integer,String>();
+							arrayNode.forEach((subNode,t,n,v) -> {
+								if (t==VDFTreeNode.Type.String) {
+									Integer index = parseNumber(n);
+									if (index!=null && v!=null) {
+										nameHistory.put(index,v);
+										return;
+									}
+								}
+								DevHelper.addUnknownVdfValue("Friend.NameHistory", n, t);
+							});
+						} else
+							nameHistory = null;
+						
+						node.forEach((subNode,t,n,v) -> {
+							if (!KNOWN_VDF_VALUES.contains(n,t))
+								DevHelper.addUnknownVdfValue("Friend", n, t);
+						});
+						
 					}
-
-					public static Friend parse(VDFTreeNode subNode, String name) throws ParseException {
-						// TODO: Friend.parse
-						return null;
-					}
-					
-					
 				}
 			}
 			
@@ -940,9 +981,9 @@ class TreeNodes {
 						String blockStr = "GameStateInfo.Block["+block.blockIndex+"]";
 						String dataValueStr = blockStr+".dataValue";
 						JSON_Object<NV, V> object;
-						// TODO: parse GameStateInfo.Block["achievements"|"badge"] 
 						switch (block.label) {
 						case "achievements":
+							// TODO: parse GameStateInfo.Block["achievements"] 
 							break;
 							
 						case "badge":
@@ -993,7 +1034,7 @@ class TreeNodes {
 				
 				static class Badge {
 					
-					private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = DevHelper.createKnownJsonValues()
+					private static final DevHelper.ExtHashMap<JSON_Data.Value.Type> KNOWN_JSON_VALUES = DevHelper.createKnownJsonValues()
 							.add("strName"         , JSON_Data.Value.Type.String)
 							.add("bHasBadgeData"   , JSON_Data.Value.Type.Bool)
 							.add("bMaxed"          , JSON_Data.Value.Type.Null)
@@ -1065,7 +1106,7 @@ class TreeNodes {
 
 					static class TradingCard {
 						
-						private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = DevHelper.createKnownJsonValues()
+						private static final DevHelper.ExtHashMap<JSON_Data.Value.Type> KNOWN_JSON_VALUES = DevHelper.createKnownJsonValues()
 								.add("strName"      , JSON_Data.Value.Type.String)
 								.add("strTitle"     , JSON_Data.Value.Type.String)
 								.add("nOwned"       , JSON_Data.Value.Type.Integer)
@@ -1658,7 +1699,7 @@ class TreeNodes {
 					children.add(
 							GroupingNode.create(
 								this, "Friends", data.friends,
-								Comparator.<Friend,Long>comparing(friend->parseLongNumber(friend.name),Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(friend->friend.name),
+								Comparator.<Friend,Long>comparing(friend->friend.id,Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(friend->friend.idStr),
 								FriendNode::new
 							)
 						);
@@ -1670,15 +1711,29 @@ class TreeNodes {
 				private final Friend friend;
 				
 				FriendNode(TreeNode parent, Friend friend) {
-					super(parent,"Friend "+friend.name,true,false);
+					super(parent,getTitle(friend),true,false);
 					this.friend = friend;
+				}
+
+				private static String getTitle(Friend friend) {
+					if (friend==null) return "(NULL) Friend ";
+					String str = "Friend";
+					if (friend.id  !=null) str += String.format(" %016X", friend.id);
+					else                   str += String.format(" [%s]", friend.idStr);
+					if (friend.name!=null) str += String.format(" \"%s\"", friend.name);
+					if (friend.tag !=null) str += String.format(" (Tag:%s)", friend.tag);
+					return str;
 				}
 
 				@Override
 				protected Vector<? extends TreeNode> createChildren() {
 					Vector<TreeNode> children = new Vector<>();
-					if (friend.rawData!=null)
-						children.add( new RawVDFDataNode(this, "Raw VDF Data", friend.rawData) );
+					if (friend.rawData!=null) children.add( new RawVDFDataNode(this, "Raw VDF Data", friend.rawData) );
+					if (friend.avatar !=null) children.add( new PrimitiveValueNode(this, "avatar", friend.avatar) );
+					if (friend.nameHistory!=null) {
+						Comparator<Map.Entry<Integer,String>> sortOrder = Comparator.comparing(Map.Entry<Integer,String>::getKey).thenComparing(Map.Entry<Integer,String>::getValue);
+						children.add( GroupingNode.create(this, "Name History", friend.nameHistory, sortOrder, (p,id,val)->new SimpleTextNode(p, "[%d] \"%s\"", id, val)) );
+					}
 					return children;
 				}
 			}

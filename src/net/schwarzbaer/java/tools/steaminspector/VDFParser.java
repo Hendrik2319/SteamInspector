@@ -8,6 +8,7 @@ import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.util.Locale;
 import java.util.Vector;
+import java.util.function.Function;
 
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContextMenuHandler;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
@@ -408,6 +409,22 @@ class VDFParser {
 		}
 		interface ForEachAction {
 			void applyTo(VDFTreeNode subNode, Type type, String name, String value);
+		}
+		
+		String      getString(String name) { return getValue(name, VDFTreeNode.Type.String, node->node.value, "getString"); }
+		VDFTreeNode getArray (String name) { return getValue(name, VDFTreeNode.Type.Array , node->node      , "getArray" ); }
+		
+		<ValueType> ValueType getValue(String name, VDFTreeNode.Type type, Function<VDFTreeNode,ValueType> getValue, String functionName) {
+			if (name==null) return null;
+			checkChildren(String.format("%s(\"%s\")", functionName, name));
+			for (VDFTreeNode child:children) {
+				if (name.equals(child.name)) {
+					if (child.type==type)
+						return getValue.apply(child);
+					break;
+				}
+			}
+			return null;
 		}
 	}
 }
