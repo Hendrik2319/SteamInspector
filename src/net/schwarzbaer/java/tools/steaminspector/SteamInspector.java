@@ -801,21 +801,26 @@ class SteamInspector {
 	enum ExternalViewerInfo {
 		TextEditor  ( "Text Editor" , SteamInspector.AppSettings.ValueKey.TextEditor , AddressType.File),
 		ImageViewer ( "Image Viewer", SteamInspector.AppSettings.ValueKey.ImageViewer, AddressType.File),
-		Browser     ( "Browser"     , SteamInspector.AppSettings.ValueKey.Browser    , AddressType.URL ),
+		Browser     ( "Browser"     , SteamInspector.AppSettings.ValueKey.Browser    , AddressType.URL, AddressType.File),
 		;
 		
-		enum AddressType { File, URL }
+		enum AddressType { Folder, File, URL }
 		
 		final String viewerName;
 		final AppSettings.ValueKey viewerKey;
-		final AddressType addressType;
+		final AddressType[] addressTypes;
 		
-		ExternalViewerInfo(String viewerName, AppSettings.ValueKey viewerKey, AddressType addressType) {
+		ExternalViewerInfo(String viewerName, AppSettings.ValueKey viewerKey, AddressType... addressTypes) {
 			this.viewerName = viewerName;
 			this.viewerKey = viewerKey;
-			this.addressType = addressType;
+			this.addressTypes = addressTypes;
 			if (this.viewerName==null) throw new IllegalArgumentException();
 			if (this.viewerKey ==null) throw new IllegalArgumentException();
+		}
+		boolean is(AddressType addressType) {
+			for (AddressType at:addressTypes)
+				if (addressType==at) return true;
+			return false;
 		}
 		File getExecutable(Component parent) {
 			if (settings.contains(viewerKey))
@@ -882,19 +887,24 @@ class SteamInspector {
 				
 				String viewerPath = viewer.getAbsolutePath();
 				String filePath = null;
-				switch (clickedExternalViewerInfo.addressType) {
-				case File: filePath = clickedFile.file.getAbsolutePath(); break;
-				case URL : filePath = clickedURL; break;
-				}
-				try {
-					System.out.printf("Execute in Shell: \"%s\" \"%s\"%n", viewerPath, filePath);
-					Runtime.getRuntime().exec(new String[] { viewerPath, filePath });
-				} catch (IOException ex) {
-					System.err.println("Exception occured while opening selected file in an external viewer:");
-					System.err.printf ("    selected %s: %s%n", clickedExternalViewerInfo.addressType, filePath);
-					System.err.printf ("    external viewer: %s%n", viewerPath);
-					ex.printStackTrace();
-				}
+				//clickedExternalViewerInfo.
+				for (ExternalViewerInfo.AddressType at:ExternalViewerInfo.AddressType.values())
+					if (clickedExternalViewerInfo.is(at))
+						switch (at) {
+						case Folder: if (clickedFile!=null && clickedFile.file.isDirectory()) filePath = clickedFile.file.getAbsolutePath(); break;
+						case File  : if (clickedFile!=null && clickedFile.file.isFile     ()) filePath = clickedFile.file.getAbsolutePath(); break;
+						case URL   : if (clickedURL !=null) filePath = clickedURL; break;
+						}
+				if (viewerPath!=null && filePath!=null)
+					try {
+						System.out.printf("Execute in Shell: \"%s\" \"%s\"%n", viewerPath, filePath);
+						Runtime.getRuntime().exec(new String[] { viewerPath, filePath });
+					} catch (IOException ex) {
+						System.err.println("Exception occured while opening selected file in an external viewer:");
+						System.err.printf ("    external viewer: \"%s\"%n", viewerPath);
+						System.err.printf ("    parameter: \"%s\"%n", filePath);
+						ex.printStackTrace();
+					}
 			}));
 			
 			tree.addMouseListener(new MouseAdapter() {
@@ -920,11 +930,12 @@ class SteamInspector {
 			miCopyURL  .setEnabled(clickedURL!=null);
 			miExtViewer.setEnabled(
 				clickedExternalViewerInfo!=null && 
-				(  ( clickedExternalViewerInfo.addressType==AddressType.File && clickedFile!=null && clickedFile.file.isFile() )
-				|| ( clickedExternalViewerInfo.addressType==AddressType.URL  && clickedURL !=null ) )
+				(  ( clickedExternalViewerInfo.is(AddressType.Folder) && clickedFile!=null && clickedFile.file.isDirectory() )
+				|| ( clickedExternalViewerInfo.is(AddressType.File  ) && clickedFile!=null && clickedFile.file.isFile     () )
+				|| ( clickedExternalViewerInfo.is(AddressType.URL   ) && clickedURL !=null ) )
 			);
 			miCopyPath .setText(String.format("Copy %sPath to Clipboard", clickedFile==null ? "" : clickedFile.file.isFile() ? "File " : clickedFile.file.isDirectory() ? "Folder " : ""));
-			miExtViewer.setText(String.format("Open in %s" , clickedExternalViewerInfo==null ? "External Viewer" : clickedExternalViewerInfo.viewerName));
+			miExtViewer.setText(String.format("Open %sin %s" , clickedFile==null ? "" : clickedFile.label+" ", clickedExternalViewerInfo==null ? "External Viewer" : clickedExternalViewerInfo.viewerName));
 		}
 		
 	}

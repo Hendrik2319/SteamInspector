@@ -2,17 +2,24 @@ package net.schwarzbaer.java.tools.steaminspector;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileFilter;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.io.PrintStream;
+import java.io.PrintWriter;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
@@ -24,6 +31,7 @@ import java.util.Vector;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import javax.imageio.ImageIO;
@@ -272,8 +280,15 @@ class TreeNodes {
 		LabeledFile(File file) { this(null,file); }
 		LabeledFile(String label, File file) {
 			if (file==null) throw new IllegalArgumentException();
-			this.label = label!=null ? label : file.getName();
+			this.label = label!=null ? label : String.format("%s\"%s\"", file.isDirectory() ? "Folder " : file.isFile() ? "File " : "", file.getName());
 			this.file = file;
+		}
+		static LabeledFile create(File file) {
+			return create(null, file);
+		}
+		static LabeledFile create(String label, File file) {
+			if (file==null) return null;
+			return new LabeledFile(label, file);
 		}
 	}
 	
@@ -379,7 +394,7 @@ class TreeNodes {
 		private final Collection<ValueType> values;
 		private final Comparator<ValueType> sortOrder;
 		private final NodeCreator1<ValueType> createChildNode;
-		private File file;
+		private Supplier<LabeledFile> getFile;
 		private ExternalViewerInfo externalViewerInfo;
 		
 		static <I,V> GroupingNode<Map.Entry<I,V>> create(TreeNode parent, String title, HashMap<I,V> values, Comparator<V> sortOrder, NodeCreator1<V> createChildNode) {
@@ -405,12 +420,18 @@ class TreeNodes {
 			this.values = values;
 			this.sortOrder = sortOrder;
 			this.createChildNode = createChildNode;
-			file = null;
+			getFile = null;
 			externalViewerInfo = null;
 		}
 	
 		public void setFileSource(File file, ExternalViewerInfo externalViewerInfo) {
-			this.file = file;
+			setFileSource(new LabeledFile(file), externalViewerInfo);
+		}
+		public void setFileSource(LabeledFile file, ExternalViewerInfo externalViewerInfo) {
+			setFileSource(()->file, externalViewerInfo);
+		}
+		public void setFileSource(Supplier<LabeledFile> getFile, ExternalViewerInfo externalViewerInfo) {
+			this.getFile = getFile;
 			this.externalViewerInfo = externalViewerInfo;
 		}
 		
@@ -427,7 +448,7 @@ class TreeNodes {
 		}
 		
 		@Override public LabeledFile getFile() {
-			return file==null ? null : new LabeledFile(file);
+			return getFile==null ? null : getFile.get();
 		}
 		@Override public ExternalViewerInfo getExternalViewerInfo() {
 			return externalViewerInfo;
@@ -600,35 +621,64 @@ class TreeNodes {
 			return new ExtHashMap<VDFTreeNode.Type>();
 		}
 		
-		static final HashSet<String> unknownValues = new HashSet<>();
-		
-		static void addUnknownVdfValue(String baseLabel, String name, VDFTreeNode.Type type) {
-			unknownValues.add(String.format("%s.%s:%s", baseLabel, name, type));
-		}
-		static void clearUnknownValues() {
-			unknownValues.clear();
-		}
-		static void showUnknownLabels(PrintStream out) {
-			if (unknownValues.isEmpty()) return;
-			Vector<String> vec = new Vector<>(unknownValues);
-			out.printf("Unknown Labels: [%d]%n", vec.size());
-			vec.sort(null);
-			for (String str:vec)
-				out.printf("   \"%s\"%n", str);
+		static final UnknownValues unknownValues = new UnknownValues();
+		static class UnknownValues extends HashSet<String> {
+			private static final long serialVersionUID = 7229990445347378652L;
+			
+			void add(String baseLabel, String name, VDFTreeNode.Type type) {
+				if (name==null) add(String.format("[VDF]%s:%s"   , baseLabel,       type==null?"<null>":type));
+				else            add(String.format("[VDF]%s.%s:%s", baseLabel, name, type==null?"<null>":type));
+			}
+			void add(String baseLabel, String name, JSON_Data.Value.Type type) {
+				if (name==null) add(String.format("[JSON]%s:%s"   , baseLabel,       type==null?"<null>":type));
+				else            add(String.format("[JSON]%s.%s:%s", baseLabel, name, type==null?"<null>":type));
+			}
+			void show(PrintStream out) {
+				if (isEmpty()) return;
+				Vector<String> vec = new Vector<>(this);
+				out.printf("Unknown Labels: [%d]%n", vec.size());
+				vec.sort(null);
+				for (String str:vec)
+					out.printf("   \"%s\"%n", str);
+			}
 		}
 		
 		static void scanVdfStructure(VDFTreeNode node, String nodeLabel) {
 			node.forEach((node1,t,n,v) -> {
-				addUnknownVdfValue(nodeLabel, n, t);
+				unknownValues.add(nodeLabel, n, t);
 				if (t==VDFTreeNode.Type.Array)
 					scanVdfStructure(node1, nodeLabel+"."+n);
 			});
 		}
 		
-		static Vector<String> strList(String...strings) {
-			return new Vector<>(Arrays.asList(strings));
+		public static void scanJsonStructure(JSON_Data.Value<Data.NV, Data.V> value, String valueLabel) {
+			if (value==null) { unknownValues.add(valueLabel+" = <null>"); return; }
+			unknownValues.add(valueLabel+":"+value.type);
+			switch (value.type) {
+			case Bool: case Float: case Integer: case Null: case String: break;
+			case Object:
+				JSON_Data.ObjectValue<Data.NV, Data.V> objectValue = value.castToObjectValue();
+				if (objectValue==null)
+					unknownValues.add(valueLabel+":"+value.type+" is not instance of JSON_Data.ObjectValue");
+				else if (objectValue.value==null)
+					unknownValues.add(valueLabel+":"+value.type+" (ObjectValue.value == <null>)");
+				else
+					for (JSON_Data.NamedValue<Data.NV, Data.V> nval:objectValue.value)
+						scanJsonStructure(nval.value, valueLabel+"."+(nval.name==null?"<null>":nval.name));
+				break;
+			case Array:
+				JSON_Data.ArrayValue<Data.NV, Data.V> arrayValue = value.castToArrayValue();
+				if (arrayValue==null)
+					unknownValues.add(valueLabel+":"+value.type+" is not instance of JSON_Data.ArrayValue");
+				else if (arrayValue.value==null)
+					unknownValues.add(valueLabel+":"+value.type+" (ArrayValue.value == <null>)");
+				else
+					for (JSON_Data.Value<Data.NV, Data.V> val:arrayValue.value)
+						scanJsonStructure(val, valueLabel+"[]");
+				break;
+			}
 		}
-		
+
 		static void scanJsonStructure_OAO( JSON_Data.Value<Data.NV, Data.V> baseValue, String baseValueLabel, String subArrayName, Vector<String> knownValueNames, Vector<String> knownSubArrayValueNames, String errorPrefix, File file) {
 			JSON_Object<Data.NV, Data.V> object = null;
 			try { object = Data.getJsonValue(baseValue, JSON_Data.Value::castToObjectValue, errorPrefix, "ObjectValue"); }
@@ -659,6 +709,10 @@ class TreeNodes {
 					}
 				}
 			}
+		}
+
+		static Vector<String> strList(String...strings) {
+			return new Vector<>(Arrays.asList(strings));
 		}
 	}
 
@@ -920,14 +974,14 @@ class TreeNodes {
 										return;
 									}
 								}
-								DevHelper.addUnknownVdfValue("Friend.NameHistory", n, t);
+								DevHelper.unknownValues.add("Friend.NameHistory", n, t);
 							});
 						} else
 							nameHistory = null;
 						
 						node.forEach((subNode,t,n,v) -> {
 							if (!KNOWN_VDF_VALUES.contains(n,t))
-								DevHelper.addUnknownVdfValue("Friend", n, t);
+								DevHelper.unknownValues.add("Friend", n, t);
 						});
 						
 					}
@@ -978,8 +1032,8 @@ class TreeNodes {
 					String preShortDesc = null;
 					Badge preBadge = null;
 					for (Block block:this.blocks) {
-						String blockStr = "GameStateInfo.Block["+block.blockIndex+"]";
-						String dataValueStr = blockStr+".dataValue";
+						String dataValueStr = String.format("GameStateInfo.Block[%d].dataValue", block.blockIndex);
+						//DevHelper.scanJsonStructure(block.dataValue,String.format("GameStateInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
 						JSON_Object<NV, V> object;
 						switch (block.label) {
 						case "achievements":
@@ -1047,7 +1101,7 @@ class TreeNodes {
 							.add("rgCards"         , JSON_Data.Value.Type.Array);
 				
 					final JSON_Data.Value<NV, V> rawData;
-					final Vector<TradingCard> steamCards;
+					final Vector<TradingCard> tradingCards;
 
 					final String name;
 					final Boolean hasBadgeData;
@@ -1060,7 +1114,7 @@ class TreeNodes {
 
 					Badge(JSON_Data.Value<NV, V> rawData) {
 						this.rawData = rawData;
-						steamCards = null;
+						tradingCards  = null;
 						name          = null;
 						hasBadgeData  = null;
 						maxLevel      = null;
@@ -1087,21 +1141,80 @@ class TreeNodes {
 						try { array = getJsonValue(object, "rgCards", JSON_Data.Value::castToArrayValue, dataValueStr, "ArrayValue"); }
 						catch (ParseException e) { showParseException(e, file); }
 						if (array!=null) {
-							steamCards = new Vector<>();
+							tradingCards = new Vector<>();
 							for (int i=0; i<array.size(); i++) {
 								JSON_Object<NV,V> object1 = null;
 								try { object1 = getJsonValue(array.get(i), JSON_Data.Value::castToObjectValue, dataValueStr+".rgCards["+i+"]", "ObjectValue"); }
 								catch (ParseException e) { showParseException(e, file); }
-								if (object1!=null) steamCards.add(new TradingCard(object1, dataValueStr+".rgCards["+i+"]", file));
-								else               steamCards.add(new TradingCard(array.get(i)));
+								if (object1!=null) tradingCards.add(new TradingCard(object1, dataValueStr+".rgCards["+i+"]", file));
+								else               tradingCards.add(new TradingCard(array.get(i)));
 							}
 						} else
-							steamCards = null;
+							tradingCards = null;
 						
 						// unexpected values
 						for (JSON_Data.NamedValue<NV,V> nvalue:object)
 							if (!KNOWN_JSON_VALUES.contains(nvalue.name, nvalue.value.type))
 								DevHelper.unknownValues.add("GameStateInfo.Badge."+nvalue.name+" = "+nvalue.value.type+"...");
+					}
+
+					String getTreeNodeExtraInfo() {
+						String str = "";
+						
+						if (currentLevel!=null && currentLevel!=0)
+							str += (str.isEmpty()?"":", ") + "B:"+currentLevel;
+						
+						if (tradingCards!=null) {
+							int tcCount = 0;
+							for (TradingCard tc:tradingCards) {
+								if (tc.owned!=null)
+									tcCount += tc.owned;
+							}
+							if (tcCount>0)
+								str += (str.isEmpty()?"":", ") + "TC:"+tcCount;
+						}
+						return str;
+					}
+
+					File createTempTradingCardsOverviewHTML() {
+						Path htmlPath;
+						try { htmlPath = Files.createTempFile(null, ".html"); }
+						catch (IOException e) {
+							System.err.printf("IOException while createing a temporary file (*.html): %s%n", e.getMessage());
+							return null;
+						}
+						File htmlFile = htmlPath.toFile();
+						try (
+							PrintWriter htmlOut = new PrintWriter(new OutputStreamWriter(new FileOutputStream(htmlFile), StandardCharsets.UTF_8));
+							BufferedReader templateIn = new BufferedReader(new InputStreamReader(getClass().getResourceAsStream("/html/templateTradingCardsOverview.html"), StandardCharsets.UTF_8)); 
+						) {
+							
+							String line;
+							while ( (line=templateIn.readLine())!=null ) {
+								if (line.trim().equals("// write url array here"))
+									writeTradingCardsOverviewHTML(htmlOut);
+								else
+									htmlOut.println(line);
+							}
+							
+						} catch (FileNotFoundException e) {
+							System.err.printf("FileNotFoundException while writing in a temporary file (\"%s\"): %s%n", htmlFile, e.getMessage());
+						} catch (IOException e) {
+							System.err.printf("IOException while writing in a temporary file (\"%s\"): %s%n", htmlFile, e.getMessage());
+						}
+						return htmlFile;
+					}
+
+					private void writeTradingCardsOverviewHTML(PrintWriter htmlOut) {
+						if (tradingCards!=null)
+							for (TradingCard tc:tradingCards) {
+								htmlOut.printf("		new TradingCard(%s,%s,%s,%s),%n", toString(tc.name), tc.owned, toString(tc.imageURL), toString(tc.artworkURL));
+							}
+					}
+
+					private String toString(String str) {
+						if (str==null) return "null";
+						return "\""+str+"\"";
 					}
 
 					static class TradingCard {
@@ -1464,7 +1577,7 @@ class TreeNodes {
 		private static final HashMap<Long,Player> players = new HashMap<>();
 
 		static void loadData() {
-			DevHelper.clearUnknownValues();
+			DevHelper.unknownValues.clear();
 			
 			File folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
 			GameImages gameImages = null;
@@ -1512,7 +1625,7 @@ class TreeNodes {
 				games.put(appID, new Game(appID, appManifest, imageFiles, players));
 			}
 			
-			DevHelper.showUnknownLabels(System.err);
+			DevHelper.unknownValues.show(System.err);
 		}
 
 		private static String getPlayerName(Long playerID) {
@@ -1782,11 +1895,11 @@ class TreeNodes {
 			private final GameStateInfo data;
 
 			GameStateInfoNode(TreeNode parent, Long playerID, GameStateInfo gameStateInfo) {
-				super(parent, "by "+getPlayerName(playerID), true, false, getMergedIcon( TreeIconsIS.getCachedIcon(TreeIcons.Folder), gameStateInfo ));
+				super(parent, "by "+getPlayerName(playerID)+getExtraInfo(gameStateInfo), true, false, getMergedIcon( TreeIconsIS.getCachedIcon(TreeIcons.Folder), gameStateInfo ));
 				this.data = gameStateInfo;
 			}
 			GameStateInfoNode(TreeNode parent, Integer gameID, GameStateInfo gameStateInfo) {
-				super(parent, getGameTitle(gameID), true, false, getMergedIcon( getGameIcon(gameID, TreeIcons.Folder), gameStateInfo ));
+				super(parent, getGameTitle(gameID)+getExtraInfo(gameStateInfo), true, false, getMergedIcon( getGameIcon(gameID, TreeIcons.Folder), gameStateInfo ));
 				this.data = gameStateInfo;
 			}
 
@@ -1799,6 +1912,11 @@ class TreeNodes {
 				);
 			}
 			
+			private static String getExtraInfo(GameStateInfo gameStateInfo) {
+				String str = "";
+				if (gameStateInfo.badge!=null) { String str1 = gameStateInfo.badge.getTreeNodeExtraInfo(); if (str1!=null && !str1.isEmpty()) str += (str.isEmpty()?"":", ") + str1; }
+				return str.isEmpty() ? "" : " ("+str+")";
+			}
 			@Override
 			public LabeledFile getFile() {
 				return new LabeledFile(data.file);
@@ -1859,6 +1977,7 @@ class TreeNodes {
 
 				@Override protected Vector<? extends TreeNode> createChildren() {
 					Vector<TreeNode> children = new Vector<>();
+					GroupingNode<?> gnode;
 					
 					if (badge.nextLevelName!=null || badge.nextLevelXP  !=null) {
 						String str = "";
@@ -1876,7 +1995,10 @@ class TreeNodes {
 					//if (badge.nextLevelXP  !=null) children.add(new PrimitiveValueNode(this, "next level XP"  , badge.nextLevelXP  ));
 					if (badge.iconURL      !=null) children.add(new ImageUrlNode      (this, "icon URL"       , badge.iconURL      ));
 					if (badge.rawData      !=null) children.add(new RawJsonDataNode<> (this, "raw data"       , badge.rawData      ));
-					if (badge.steamCards   !=null) children.add(GroupingNode.create   (this, "Trading Cards"    , badge.steamCards, null, TradingCardNode::new));
+					if (badge.tradingCards !=null) {
+						children.add(gnode = GroupingNode.create(this, "Trading Cards", badge.tradingCards, null, TradingCardNode::new));
+						gnode.setFileSource(()->LabeledFile.create("HTML-Overview", badge.createTempTradingCardsOverviewHTML()), ExternalViewerInfo.Browser);
+					}
 					return children;
 				}
 			}

@@ -1,0 +1,103 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>(Example) Trading Cards Overview</title>
+    <meta http-equiv="Content-Type" content="text/html;charset=UTF-8">
+<script type="text/javascript" charset="utf-8">
+	
+	function TradingCard(strName, nOwned, strImageURL, strArtwortURL) {
+		this.strName = strName;
+		this.nOwned = nOwned ? nOwned : 0;
+		this.strImageURL = strImageURL;
+		this.strArtwortURL = strArtwortURL;
+	}
+	
+	var tradingCards = [
+	// write url array here
+	];
+	
+	var nIndex = 0;
+	function selectTradingCard( strIndex ) {
+		nIndex = parseInt(strIndex);
+		if (isNaN(nIndex)) nIndex=0;
+		updateImage();
+	}
+	
+	var strSelectedImageType = 'Card Image';
+	function selectImageType( strImageType ) {
+		strSelectedImageType = strImageType;
+		updateImage();
+	}
+	
+	function updateImage() {
+		var imageOut   = document.getElementById('imageOut');
+		var imageLabel = document.getElementById('imageLabel');
+		if (!imageOut) return;
+		if (!imageLabel) return;
+		
+		if (nIndex<0 || nIndex>=tradingCards.length) {
+			imageOut.src = '';
+			var msg = "Index "+nIndex+" is out of range of TradingCards";
+			imageOut.alt = msg;
+			imageOut.title = msg;
+			return;
+		}
+		
+		var tc = tradingCards[nIndex];
+		var url = "";
+		
+		switch (strSelectedImageType) {
+			case 'Card Image': url = tc.strImageURL;   break;
+			case 'Artwork'   : url = tc.strArtwortURL; break;
+			default:
+				imageOut.src = '';
+				var msg = "Unknown ImageType \""+strSelectedImageType+"\" selected";
+				imageOut.alt = msg;
+				imageOut.title = msg;
+				imageLabel.textContent = msg;
+				return;
+				break;
+		}
+		
+		if (!url) url = "";
+		
+		imageOut.src = url;
+		var msg = "TradingCard["+(nIndex+1)+"] \""+tc.strName+"\" (owned:"+tc.nOwned+") "+strSelectedImageType;
+		imageOut.alt = msg;
+		imageOut.title = msg;
+		imageLabel.textContent = msg;
+	}
+	
+	function fillGUI() {
+		var selectTradingCardObj = document.getElementById('selectTradingCard');
+		if (!selectTradingCardObj) return;
+		for (var i=0; i<tradingCards.length; i++) {
+			var option = selectTradingCardObj.appendChild(document.createElement("option"));
+			option.value = i;
+			option.textContent = tradingCards[i].strName;
+			option.selected = (i==nIndex);
+		}
+	}
+	
+</script>
+<style type="text/css" media="screen">
+	body { font-family: sans-serif; }
+	#selectDiv  { border: 1px solid gray; padding: 2px 5px; }
+	#imageLabel { padding: 5px 5px; }
+</style>
+</head>
+<body onload="fillGUI();updateImage();">
+	<div id="selectDiv">
+		TradingCard:
+		<select id="selectTradingCard" onchange="selectTradingCard(this.value);">
+			<!--<option value="option1"></option>-->
+			
+		</select>
+		&nbsp;&nbsp;&nbsp;
+		<label>Card Image<input type="radio" name="imageUrl" checked onclick="selectImageType('Card Image');"/></label>
+		<label>Artwork<input type="radio" name="imageUrl" onclick="selectImageType('Artwork');"/></label>
+	</div>
+	<div id="imageLabel"></div>
+	<img id="imageOut" src="" title="empty" alt="empty"/>
+</body>
+</html>
