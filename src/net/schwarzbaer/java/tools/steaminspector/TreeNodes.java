@@ -274,6 +274,17 @@ class TreeNodes {
 		}
 	}
 
+	static class FilePromise {
+		final String label;
+		final Supplier<File> createFile;
+		FilePromise(String label, Supplier<File> createFile) {
+			if (label     ==null) throw new IllegalArgumentException();
+			if (createFile==null) throw new IllegalArgumentException();
+			this.label = label;
+			this.createFile = createFile;
+		}
+	}
+
 	static class LabeledFile {
 		final String label;
 		final File file;
@@ -321,6 +332,10 @@ class TreeNodes {
 
 	interface FileBasedNode {
 		LabeledFile getFile();
+	}
+
+	interface FileCreatingNode {
+		FilePromise getFilePromise();
 	}
 	
 	interface ExternViewableNode {
@@ -389,13 +404,14 @@ class TreeNodes {
 		}
 	}
 
-	private static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode {
+	private static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, FileCreatingNode, ExternViewableNode {
 		
 		private final Collection<ValueType> values;
 		private final Comparator<ValueType> sortOrder;
 		private final NodeCreator1<ValueType> createChildNode;
-		private Supplier<LabeledFile> getFile;
 		private ExternalViewerInfo externalViewerInfo;
+		private LabeledFile file;
+		private FilePromise getFile;
 		
 		static <I,V> GroupingNode<Map.Entry<I,V>> create(TreeNode parent, String title, HashMap<I,V> values, Comparator<V> sortOrder, NodeCreator1<V> createChildNode) {
 			return create(parent, title, values, sortOrder, createChildNode, null);
@@ -420,6 +436,7 @@ class TreeNodes {
 			this.values = values;
 			this.sortOrder = sortOrder;
 			this.createChildNode = createChildNode;
+			file = null;
 			getFile = null;
 			externalViewerInfo = null;
 		}
@@ -428,13 +445,24 @@ class TreeNodes {
 			setFileSource(new LabeledFile(file), externalViewerInfo);
 		}
 		public void setFileSource(LabeledFile file, ExternalViewerInfo externalViewerInfo) {
-			setFileSource(()->file, externalViewerInfo);
+			this.file = file;
+			this.externalViewerInfo = externalViewerInfo;
+			if (getFile!=null) throw new IllegalStateException();
+			if (file==null) throw new IllegalArgumentException();
 		}
-		public void setFileSource(Supplier<LabeledFile> getFile, ExternalViewerInfo externalViewerInfo) {
+		public void setFileSource(FilePromise getFile, ExternalViewerInfo externalViewerInfo) {
 			this.getFile = getFile;
 			this.externalViewerInfo = externalViewerInfo;
+			if (getFile==null) throw new IllegalArgumentException();
+			if (file!=null) throw new IllegalStateException();
 		}
 		
+		@Override public LabeledFile getFile() { return file; }
+		@Override public FilePromise getFilePromise() { return getFile; }
+		@Override public ExternalViewerInfo getExternalViewerInfo() {
+			return externalViewerInfo;
+		}
+	
 		@Override
 		protected Vector<? extends TreeNode> createChildren() {
 			Vector<ValueType> vector = new Vector<>(values);
@@ -446,14 +474,7 @@ class TreeNodes {
 			});
 			return children;
 		}
-		
-		@Override public LabeledFile getFile() {
-			return getFile==null ? null : getFile.get();
-		}
-		@Override public ExternalViewerInfo getExternalViewerInfo() {
-			return externalViewerInfo;
-		}
-	
+
 		interface NodeCreator1<ValueType> {
 			TreeNode create(TreeNode parent, ValueType value);
 		}
@@ -651,7 +672,7 @@ class TreeNodes {
 			});
 		}
 		
-		public static void scanJsonStructure(JSON_Data.Value<Data.NV, Data.V> value, String valueLabel) {
+		static void scanJsonStructure(JSON_Data.Value<Data.NV, Data.V> value, String valueLabel) {
 			if (value==null) { unknownValues.add(valueLabel+" = <null>"); return; }
 			unknownValues.add(valueLabel+":"+value.type);
 			switch (value.type) {
@@ -660,23 +681,33 @@ class TreeNodes {
 				JSON_Data.ObjectValue<Data.NV, Data.V> objectValue = value.castToObjectValue();
 				if (objectValue==null)
 					unknownValues.add(valueLabel+":"+value.type+" is not instance of JSON_Data.ObjectValue");
-				else if (objectValue.value==null)
-					unknownValues.add(valueLabel+":"+value.type+" (ObjectValue.value == <null>)");
-				else
-					for (JSON_Data.NamedValue<Data.NV, Data.V> nval:objectValue.value)
-						scanJsonStructure(nval.value, valueLabel+"."+(nval.name==null?"<null>":nval.name));
+				else 
+					scanJsonStructure(objectValue.value, valueLabel);
 				break;
 			case Array:
 				JSON_Data.ArrayValue<Data.NV, Data.V> arrayValue = value.castToArrayValue();
 				if (arrayValue==null)
 					unknownValues.add(valueLabel+":"+value.type+" is not instance of JSON_Data.ArrayValue");
-				else if (arrayValue.value==null)
-					unknownValues.add(valueLabel+":"+value.type+" (ArrayValue.value == <null>)");
 				else
-					for (JSON_Data.Value<Data.NV, Data.V> val:arrayValue.value)
-						scanJsonStructure(val, valueLabel+"[]");
+					scanJsonStructure(arrayValue.value, valueLabel);
 				break;
 			}
+		}
+
+		static void scanJsonStructure(JSON_Object<Data.NV, Data.V> object, String valueLabel) {
+			if (object==null)
+				unknownValues.add(valueLabel+" (JSON_Object == <null>)");
+			else
+				for (JSON_Data.NamedValue<Data.NV, Data.V> nval:object)
+					scanJsonStructure(nval.value, valueLabel+"."+(nval.name==null?"<null>":nval.name));
+		}
+
+		static void scanJsonStructure(JSON_Array<Data.NV, Data.V> array, String valueLabel) {
+			if (array==null)
+				unknownValues.add(valueLabel+" (JSON_Array == <null>)");
+			else
+				for (JSON_Data.Value<Data.NV, Data.V> val:array)
+					scanJsonStructure(val, valueLabel+"[]");
 		}
 
 		static void scanJsonStructure_OAO( JSON_Data.Value<Data.NV, Data.V> baseValue, String baseValueLabel, String subArrayName, Vector<String> knownValueNames, Vector<String> knownSubArrayValueNames, String errorPrefix, File file) {
@@ -999,6 +1030,7 @@ class TreeNodes {
 				}
 
 				public static AchievementProgress parse(File file, JSON_Data.JSON_Object<NV,V> object) {
+					//DevHelper.scanJsonStructure(object, "AchievementProgress");
 					// TODO: parse AchievementProgress
 					return null;
 				}
@@ -1183,6 +1215,7 @@ class TreeNodes {
 							System.err.printf("IOException while createing a temporary file (*.html): %s%n", e.getMessage());
 							return null;
 						}
+						System.out.printf("Create TradingCards Overview HTML: %s%n", htmlPath);
 						File htmlFile = htmlPath.toFile();
 						try (
 							PrintWriter htmlOut = new PrintWriter(new OutputStreamWriter(new FileOutputStream(htmlFile), StandardCharsets.UTF_8));
@@ -1997,7 +2030,7 @@ class TreeNodes {
 					if (badge.rawData      !=null) children.add(new RawJsonDataNode<> (this, "raw data"       , badge.rawData      ));
 					if (badge.tradingCards !=null) {
 						children.add(gnode = GroupingNode.create(this, "Trading Cards", badge.tradingCards, null, TradingCardNode::new));
-						gnode.setFileSource(()->LabeledFile.create("HTML-Overview", badge.createTempTradingCardsOverviewHTML()), ExternalViewerInfo.Browser);
+						gnode.setFileSource(new FilePromise("HTML-Overview", ()->badge.createTempTradingCardsOverviewHTML()), ExternalViewerInfo.Browser);
 					}
 					return children;
 				}

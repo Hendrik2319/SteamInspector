@@ -78,7 +78,6 @@ import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode.ContentType;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerInfo.AddressType;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.LabeledFile;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.system.ClipboardTools;
 import net.schwarzbaer.system.Settings;
@@ -868,9 +867,11 @@ class SteamInspector {
 		private final JMenuItem miExtViewer;
 		
 		private Object clickedNode = null;
-		private LabeledFile clickedFile = null;
+		private TreeNodes.LabeledFile clickedFile = null;
+		private TreeNodes.FilePromise clickedFileCreator = null;
 		private String clickedURL = null;
 		private ExternalViewerInfo clickedExternalViewerInfo = null;
+
 
 		
 		MainTreeContextMenue(JTree tree) {
@@ -891,9 +892,14 @@ class SteamInspector {
 				for (ExternalViewerInfo.AddressType at:ExternalViewerInfo.AddressType.values())
 					if (clickedExternalViewerInfo.is(at))
 						switch (at) {
-						case Folder: if (clickedFile!=null && clickedFile.file.isDirectory()) filePath = clickedFile.file.getAbsolutePath(); break;
-						case File  : if (clickedFile!=null && clickedFile.file.isFile     ()) filePath = clickedFile.file.getAbsolutePath(); break;
 						case URL   : if (clickedURL !=null) filePath = clickedURL; break;
+						case Folder: if (clickedFile!=null && clickedFile.file.isDirectory()) filePath = clickedFile.file.getAbsolutePath(); break;
+						case File  : if (clickedFile!=null && clickedFile.file.isFile     ()) filePath = clickedFile.file.getAbsolutePath();
+						else if (clickedFileCreator!=null) {
+							File file = clickedFileCreator.createFile.get();
+							if (file!=null) filePath = file.getAbsolutePath();
+						}
+							break;
 						}
 				if (viewerPath!=null && filePath!=null)
 					try {
@@ -924,18 +930,24 @@ class SteamInspector {
 		protected void prepareMenueItems() {
 			clickedURL                = clickedNode instanceof TreeNodes.URLBasedNode       ? ((TreeNodes.URLBasedNode      ) clickedNode).getURL()                : null;
 			clickedFile               = clickedNode instanceof TreeNodes.FileBasedNode      ? ((TreeNodes.FileBasedNode     ) clickedNode).getFile()               : null;
+			clickedFileCreator        = clickedNode instanceof TreeNodes.FileCreatingNode   ? ((TreeNodes.FileCreatingNode  ) clickedNode).getFilePromise()        : null;
 			clickedExternalViewerInfo = clickedNode instanceof TreeNodes.ExternViewableNode ? ((TreeNodes.ExternViewableNode) clickedNode).getExternalViewerInfo() : null;
 			
 			miCopyPath .setEnabled(clickedFile!=null);
-			miCopyURL  .setEnabled(clickedURL!=null);
+			miCopyURL  .setEnabled(clickedURL !=null);
 			miExtViewer.setEnabled(
 				clickedExternalViewerInfo!=null && 
-				(  ( clickedExternalViewerInfo.is(AddressType.Folder) && clickedFile!=null && clickedFile.file.isDirectory() )
-				|| ( clickedExternalViewerInfo.is(AddressType.File  ) && clickedFile!=null && clickedFile.file.isFile     () )
-				|| ( clickedExternalViewerInfo.is(AddressType.URL   ) && clickedURL !=null ) )
+				(  ( clickedExternalViewerInfo.is(AddressType.Folder) &&    clickedFile!=null && clickedFile.file.isDirectory() )
+				|| ( clickedExternalViewerInfo.is(AddressType.File  ) && ( (clickedFile!=null && clickedFile.file.isFile     ()) || clickedFileCreator!=null ) )
+				|| ( clickedExternalViewerInfo.is(AddressType.URL   ) &&    clickedURL !=null )
+				)
 			);
-			miCopyPath .setText(String.format("Copy %sPath to Clipboard", clickedFile==null ? "" : clickedFile.file.isFile() ? "File " : clickedFile.file.isDirectory() ? "Folder " : ""));
-			miExtViewer.setText(String.format("Open %sin %s" , clickedFile==null ? "" : clickedFile.label+" ", clickedExternalViewerInfo==null ? "External Viewer" : clickedExternalViewerInfo.viewerName));
+			String pathPrefix = clickedFile!=null ? (clickedFile.file.isFile() ? "File " : clickedFile.file.isDirectory() ? "Folder " : "") : clickedFileCreator!=null ? "File " : "";
+			String viewerName = clickedExternalViewerInfo==null ? "External Viewer" : clickedExternalViewerInfo.viewerName;
+			String fileLabel  = clickedFile!=null ? clickedFile.label : clickedFileCreator!=null ? clickedFileCreator.label : "";
+			
+			miCopyPath .setText(String.format("Copy %sPath to Clipboard", pathPrefix));
+			miExtViewer.setText(String.format("Open %sin %s" , fileLabel.isEmpty() ? "" : fileLabel+" ", viewerName));
 		}
 		
 	}
