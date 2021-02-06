@@ -48,7 +48,6 @@ import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Array;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
-import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AppSettings.ValueKey;
@@ -76,6 +75,9 @@ import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;
 import net.schwarzbaer.system.ClipboardTools;
 
 class TreeNodes {
+	
+	private static class NV extends JSON_Data.NamedValueExtra.Dummy{}
+	private static class V  extends JSON_Data.ValueExtra.Dummy{}
 
 	enum TreeIcons { GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Badge, Folder, RootFolder_Simple, RootFolder }
 	static CachedIcons<TreeIcons> TreeIconsIS;
@@ -413,22 +415,22 @@ class TreeNodes {
 		private LabeledFile file;
 		private FilePromise getFile;
 		
-		static <I,V> GroupingNode<Map.Entry<I,V>> create(TreeNode parent, String title, HashMap<I,V> values, Comparator<V> sortOrder, NodeCreator1<V> createChildNode) {
+		static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode) {
 			return create(parent, title, values, sortOrder, createChildNode, null);
 		}
-		static <I,V> GroupingNode<Map.Entry<I,V>> create(TreeNode parent, String title, HashMap<I,V> values, Comparator<V> sortOrder, NodeCreator1<V> createChildNode, Icon icon) {
-			return new GroupingNode<Map.Entry<I,V>>(parent, title, values.entrySet(), Comparator.comparing(Map.Entry<I, V>::getValue,sortOrder), (p,e)->createChildNode.create(p,e.getValue()), icon);
+		static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode, Icon icon) {
+			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), Comparator.comparing(Map.Entry<IT, VT>::getValue,sortOrder), (p,e)->createChildNode.create(p,e.getValue()), icon);
 		}
-		static <I,V> GroupingNode<Map.Entry<I,V>> create(TreeNode parent, String title, HashMap<I,V> values, Comparator<Map.Entry<I,V>> sortOrder, NodeCreator2<I,V> createChildNode) {
+		static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<Map.Entry<IT,VT>> sortOrder, NodeCreator2<IT,VT> createChildNode) {
 			return create(parent, title, values, sortOrder, createChildNode, null);
 		}
-		static <I,V> GroupingNode<Map.Entry<I,V>> create(TreeNode parent, String title, HashMap<I,V> values, Comparator<Map.Entry<I,V>> sortOrder, NodeCreator2<I,V> createChildNode, Icon icon) {
-			return new GroupingNode<Map.Entry<I,V>>(parent, title, values.entrySet(), sortOrder, (p,e)->createChildNode.create(p,e.getKey(),e.getValue()), icon);
+		static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<Map.Entry<IT,VT>> sortOrder, NodeCreator2<IT,VT> createChildNode, Icon icon) {
+			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), sortOrder, (p,e)->createChildNode.create(p,e.getKey(),e.getValue()), icon);
 		}
-		static <V> GroupingNode<V> create(TreeNode parent, String title, Collection<V> values, Comparator<V> sortOrder, NodeCreator1<V> createChildNode) {
+		static <VT> GroupingNode<VT> create(TreeNode parent, String title, Collection<VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode) {
 			return new GroupingNode<>(parent, title, values, sortOrder, createChildNode, null);
 		}
-		static <V> GroupingNode<V> create(TreeNode parent, String title, Collection<V> values, Comparator<V> sortOrder, NodeCreator1<V> createChildNode, Icon icon) {
+		static <VT> GroupingNode<VT> create(TreeNode parent, String title, Collection<VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode, Icon icon) {
 			return new GroupingNode<>(parent, title, values, sortOrder, createChildNode, icon);
 		}
 		GroupingNode(TreeNode parent, String title, Collection<ValueType> values, Comparator<ValueType> sortOrder, NodeCreator1<ValueType> createChildNode, Icon icon) {
@@ -552,17 +554,16 @@ class TreeNodes {
 		@Override protected Vector<? extends TreeNode> createChildren() { return null; }
 	}
 
-	private static class RawJsonDataNode<NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
+	@SuppressWarnings("unused")
+	private static class RawJsonDataNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
 	
 		private final File file;
 		private final JSON_Parser.Result<NV,V> rawData;
 		private final JSON_Data.Value <NV,V> rawValue;
 	
-		@SuppressWarnings("unused")
 		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData) {
 			this(parent, title, rawData, null, null);
 		}
-		@SuppressWarnings("unused")
 		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData, Icon icon) {
 			this(parent, title, rawData, null, icon);
 		}
@@ -578,11 +579,9 @@ class TreeNodes {
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue) {
 			this(parent, title, rawValue, null, null);
 		}
-		@SuppressWarnings("unused")
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, Icon icon) {
 			this(parent, title, rawValue, null, icon);
 		}
-		@SuppressWarnings("unused")
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, File file) {
 			this(parent, title, rawValue, file, null);
 		}
@@ -622,26 +621,41 @@ class TreeNodes {
 	@SuppressWarnings("unused")
 	private static class DevHelper {
 		
-		static class ExtHashMap<TypeType> extends HashMap<String,TypeType> {
+		static class ExtHashMap<TypeType> extends HashMap<String,HashSet<TypeType>> {
 			private static final long serialVersionUID = -3042424737957471534L;
-			
 			ExtHashMap<TypeType> add(String name, TypeType type) {
-				put(name,type);
+				HashSet<TypeType> hashSet = get(name);
+				if (hashSet==null) put(name,hashSet = new HashSet<>());
+				hashSet.add(type);
 				return this;
 			}
 			boolean contains(String name, TypeType type) {
-				return type==get(name);
+				HashSet<TypeType> hashSet = get(name);
+				return hashSet!=null && hashSet.contains(type);
 			}
 		}
-		
-		static ExtHashMap<JSON_Data.Value.Type> createKnownJsonValues() {
-			return new ExtHashMap<JSON_Data.Value.Type>();
+		static class KnownJsonValues extends ExtHashMap<JSON_Data.Value.Type> {
+			private static final long serialVersionUID = 875837641187739890L;
+			@Override KnownJsonValues add(String name, JSON_Data.Value.Type type) { super.add(name, type); return this; }
+		}
+		static class KnownVdfValues extends ExtHashMap<VDFTreeNode.Type> {
+			private static final long serialVersionUID = -8137083046811709725L;
+			@Override KnownVdfValues add(String name, VDFTreeNode.Type type) { super.add(name, type); return this; }
 		}
 		
-		static ExtHashMap<VDFTreeNode.Type> createKnownVdfValues() {
-			return new ExtHashMap<VDFTreeNode.Type>();
+		static void scanUnexpectedValues(JSON_Object<NV,V> object, KnownJsonValues knownValues, String prefixStr) {
+			for (JSON_Data.NamedValue<NV,V> nvalue:object)
+				if (!knownValues.contains(nvalue.name, nvalue.value.type))
+					//DevHelper.unknownValues.add(prefixStr+"."+nvalue.name+" = "+nvalue.value.type+"...");
+					DevHelper.unknownValues.add(prefixStr,nvalue.name,nvalue.value.type);
 		}
-		
+		static void scanUnexpectedValues(VDFTreeNode node, KnownVdfValues knownValues, String prefixStr) {
+			node.forEach((subNode,t,n,v) -> {
+				if (!knownValues.contains(n,t))
+					DevHelper.unknownValues.add(prefixStr, n, t);
+			});
+		}
+
 		static final UnknownValues unknownValues = new UnknownValues();
 		static class UnknownValues extends HashSet<String> {
 			private static final long serialVersionUID = 7229990445347378652L;
@@ -672,20 +686,20 @@ class TreeNodes {
 			});
 		}
 		
-		static void scanJsonStructure(JSON_Data.Value<Data.NV, Data.V> value, String valueLabel) {
+		static void scanJsonStructure(JSON_Data.Value<NV, V> value, String valueLabel) {
 			if (value==null) { unknownValues.add(valueLabel+" = <null>"); return; }
 			unknownValues.add(valueLabel+":"+value.type);
 			switch (value.type) {
 			case Bool: case Float: case Integer: case Null: case String: break;
 			case Object:
-				JSON_Data.ObjectValue<Data.NV, Data.V> objectValue = value.castToObjectValue();
+				JSON_Data.ObjectValue<NV,V> objectValue = value.castToObjectValue();
 				if (objectValue==null)
 					unknownValues.add(valueLabel+":"+value.type+" is not instance of JSON_Data.ObjectValue");
 				else 
 					scanJsonStructure(objectValue.value, valueLabel);
 				break;
 			case Array:
-				JSON_Data.ArrayValue<Data.NV, Data.V> arrayValue = value.castToArrayValue();
+				JSON_Data.ArrayValue<NV,V> arrayValue = value.castToArrayValue();
 				if (arrayValue==null)
 					unknownValues.add(valueLabel+":"+value.type+" is not instance of JSON_Data.ArrayValue");
 				else
@@ -694,42 +708,42 @@ class TreeNodes {
 			}
 		}
 
-		static void scanJsonStructure(JSON_Object<Data.NV, Data.V> object, String valueLabel) {
+		static void scanJsonStructure(JSON_Object<NV,V> object, String valueLabel) {
 			if (object==null)
 				unknownValues.add(valueLabel+" (JSON_Object == <null>)");
 			else
-				for (JSON_Data.NamedValue<Data.NV, Data.V> nval:object)
+				for (JSON_Data.NamedValue<NV, V> nval:object)
 					scanJsonStructure(nval.value, valueLabel+"."+(nval.name==null?"<null>":nval.name));
 		}
 
-		static void scanJsonStructure(JSON_Array<Data.NV, Data.V> array, String valueLabel) {
+		static void scanJsonStructure(JSON_Array<NV,V> array, String valueLabel) {
 			if (array==null)
 				unknownValues.add(valueLabel+" (JSON_Array == <null>)");
 			else
-				for (JSON_Data.Value<Data.NV, Data.V> val:array)
+				for (JSON_Data.Value<NV,V> val:array)
 					scanJsonStructure(val, valueLabel+"[]");
 		}
 
-		static void scanJsonStructure_OAO( JSON_Data.Value<Data.NV, Data.V> baseValue, String baseValueLabel, String subArrayName, Vector<String> knownValueNames, Vector<String> knownSubArrayValueNames, String errorPrefix, File file) {
-			JSON_Object<Data.NV, Data.V> object = null;
+		static void scanJsonStructure_OAO( JSON_Data.Value<NV,V> baseValue, String baseValueLabel, String subArrayName, Vector<String> knownValueNames, Vector<String> knownSubArrayValueNames, String errorPrefix, File file) {
+			JSON_Object<NV,V> object = null;
 			try { object = Data.getJsonValue(baseValue, JSON_Data.Value::castToObjectValue, errorPrefix, "ObjectValue"); }
 			catch (ParseException e) { Data.showParseException(e, file); }
 			if (object!=null) {
-				for (JSON_Data.NamedValue<Data.NV, Data.V> nvalue:object) {
+				for (JSON_Data.NamedValue<NV,V> nvalue:object) {
 					String valueStr = nvalue.value.type+"...";
 					if (!knownValueNames.contains(nvalue.name)) valueStr = nvalue.value.toString();
 					DevHelper.unknownValues.add(baseValueLabel+"."+nvalue.name+" = "+valueStr);
 					if (subArrayName.equals(nvalue.name)) {
-						JSON_Array<Data.NV, Data.V> array = null;
+						JSON_Array<NV,V> array = null;
 						try { array = Data.getJsonValue(nvalue.value, JSON_Data.Value::castToArrayValue, errorPrefix+"."+subArrayName, "ArrayValue"); }
 						catch (ParseException e) { Data.showParseException(e, file); }
 						if (array!=null) {
 							for (int i=0; i<array.size(); i++) {
-								JSON_Object<Data.NV, Data.V> object1 = null;
+								JSON_Object<NV, V> object1 = null;
 								try { object1 = Data.getJsonValue(array.get(i), JSON_Data.Value::castToObjectValue, errorPrefix+"."+subArrayName+"["+i+"]", "ObjectValue"); }
 								catch (ParseException e) { Data.showParseException(e, file); }
 								if (object1!=null) {
-									for (JSON_Data.NamedValue<Data.NV, Data.V> nvalue1:object1) {
+									for (JSON_Data.NamedValue<NV, V> nvalue1:object1) {
 										valueStr = nvalue1.value.type+"...";
 										if (!knownSubArrayValueNames.contains(nvalue1.name)) valueStr = nvalue1.value.toString();
 										DevHelper.unknownValues.add(baseValueLabel+"."+"rgCards."+nvalue1.name+" = "+valueStr);
@@ -748,10 +762,28 @@ class TreeNodes {
 	}
 
 	protected static class Data {
+
+		static double getJsonNumber( JSON_Object<NV,V> object, String subValueName, String debugOutputPrefixStr ) throws ParseException {
+			if (object==null) throw new ParseException("%s==NULL", debugOutputPrefixStr);
+			JSON_Data.Value<NV, V> value = object.getValue(subValueName);
+			return getJsonNumber(value, debugOutputPrefixStr+"."+subValueName);
+		}
 		
-		private static class NV extends JSON_Data.NamedValueExtra.Dummy{}
-		private static class V  extends JSON_Data.ValueExtra.Dummy{}
-		
+		static double getJsonNumber(JSON_Data.Value<NV,V> value, String debugOutputPrefixStr) throws ParseException {
+			if (value==null) throw new ParseException("%s==NULL", debugOutputPrefixStr);
+			JSON_Data.IntegerValue<NV, V> integerValue = value.castToIntegerValue();
+			JSON_Data.  FloatValue<NV, V>   floatValue = value.castToFloatValue();
+			if (integerValue!=null) {
+				if (integerValue.value==null) throw new ParseException("%s.value==NULL", debugOutputPrefixStr);
+				return integerValue.value;
+			}
+			if (floatValue!=null) {
+				if (floatValue.value==null) throw new ParseException("%s.value==NULL", debugOutputPrefixStr);
+				return floatValue.value;
+			}
+			throw new ParseException("%s isn't wsether an IntegerValue nor a FloatValue", debugOutputPrefixStr);
+		}
+
 		static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getJsonValue(
 				JSON_Object<NV,V> object,
 				String subValueName,
@@ -875,7 +907,7 @@ class TreeNodes {
 				friends = preFriends;
 				
 				gameStateInfos = new HashMap<>();
-				AchievementProgress achievementProgress_ = null;
+				AchievementProgress preAchievementProgress = null;
 				if (configFolder!=null) {
 					File gameStateFolder = new File(configFolder,"librarycache");
 					if (gameStateFolder.isDirectory()) {
@@ -889,8 +921,12 @@ class TreeNodes {
 									// \config\librarycache\achievement_progress.json
 									JSON_Parser.Result<NV,V> result = new JSON_Parser<NV,V>(file,null).parse();
 									if (result!=null) {
-										AchievementProgress parsed = AchievementProgress.parse(file,result.object);
-										achievementProgress_ = parsed!=null ? parsed : new AchievementProgress(file,result);
+										try {
+											preAchievementProgress = new AchievementProgress(file,result.object);
+										} catch (ParseException e) {
+											showParseException(e, file);
+											preAchievementProgress = new AchievementProgress(file,result);
+										}
 									}
 									
 								} else if ((gameID=parseNumber(fileNameNExt.name))!=null) {
@@ -916,7 +952,7 @@ class TreeNodes {
 						this.gameStateFolder = null;
 				} else
 					this.gameStateFolder = null;
-				achievementProgress = achievementProgress_;
+				achievementProgress = preAchievementProgress;
 				
 			}
 
@@ -970,7 +1006,7 @@ class TreeNodes {
 				}
 
 				static class Friend {
-					private static final DevHelper.ExtHashMap<VDFTreeNode.Type> KNOWN_VDF_VALUES = DevHelper.createKnownVdfValues()
+					private static final DevHelper.KnownVdfValues KNOWN_VDF_VALUES = new DevHelper.KnownVdfValues()
 							.add("name"  , VDFTreeNode.Type.String)
 							.add("tag"   , VDFTreeNode.Type.String)
 							.add("avatar", VDFTreeNode.Type.String)
@@ -1010,31 +1046,79 @@ class TreeNodes {
 						} else
 							nameHistory = null;
 						
-						node.forEach((subNode,t,n,v) -> {
-							if (!KNOWN_VDF_VALUES.contains(n,t))
-								DevHelper.unknownValues.add("Friend", n, t);
-						});
-						
+						DevHelper.scanUnexpectedValues(node, KNOWN_VDF_VALUES, "Friend");
 					}
 				}
 			}
 			
 			static class AchievementProgress {
+				private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues()
+						.add("nVersion", JSON_Data.Value.Type.Integer)
+						.add("mapCache", JSON_Data.Value.Type.Object);
 
 				final File file;
 				final JSON_Parser.Result<NV, V> rawData;
+				final Long version;
+				final Vector<GameStatus> gameStates;
 
-				public AchievementProgress(File file, JSON_Parser.Result<NV, V> rawData) {
+				AchievementProgress(File file, JSON_Parser.Result<NV, V> rawData) {
 					this.file = file;
 					this.rawData = rawData;
+					version    = null;
+					gameStates = null;
 				}
-
-				public static AchievementProgress parse(File file, JSON_Data.JSON_Object<NV,V> object) {
+				AchievementProgress(File file, JSON_Object<NV,V> object) throws ParseException {
+					this.file = file;
+					rawData = null;
 					//DevHelper.scanJsonStructure(object, "AchievementProgress");
-					// TODO: parse AchievementProgress
-					return null;
+					String prefixStr = "AchievementProgress";
+					if (object==null) throw new ParseException("%s == <NULL>", prefixStr);
+					version                    = getJsonValue(object, "nVersion", JSON_Data.Value::castToIntegerValue, prefixStr, "IntegerValue");
+					JSON_Object<NV,V> mapCache = getJsonValue(object, "mapCache", JSON_Data.Value::castToObjectValue , prefixStr, "ObjectValue" );
+					gameStates = new Vector<>();
+					for (JSON_Data.NamedValue<NV,V> nv:mapCache)
+						gameStates.add(new GameStatus(nv.name,nv.value));
+					DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,prefixStr+".GameStatus");
 				}
 				
+				static class GameStatus {
+					private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues()
+							.add("all_unlocked", JSON_Data.Value.Type.Bool)
+							.add("appid"       , JSON_Data.Value.Type.Integer)
+							.add("cache_time"  , JSON_Data.Value.Type.Integer)
+							.add("total"       , JSON_Data.Value.Type.Integer)
+							.add("unlocked"    , JSON_Data.Value.Type.Integer)
+							.add("percentage"  , JSON_Data.Value.Type.Integer)
+							.add("percentage"  , JSON_Data.Value.Type.Float);
+					// "AchievementProgress.GameStatus.all_unlocked:Bool"
+					// "AchievementProgress.GameStatus.appid:Integer"
+					// "AchievementProgress.GameStatus.cache_time:Integer"
+					// "AchievementProgress.GameStatus.percentage:Float"
+					// "AchievementProgress.GameStatus.percentage:Integer"
+					// "AchievementProgress.GameStatus.total:Integer"
+					// "AchievementProgress.GameStatus.unlocked:Integer"
+					// "AchievementProgress.GameStatus:Object"
+					
+					final boolean allUnlocked;
+					final long    appID;
+					final long    cacheTime;
+					final long    total;
+					final long    unlocked;
+					final double  percentage;
+
+					GameStatus(String name, JSON_Data.Value<NV, V> value) throws ParseException {
+						// DevHelper.scanJsonStructure(value, "AchievementProgress.GameStatus");
+						String prefixStr = "AchievementProgress.GameStatus["+name+"]";
+						JSON_Object<NV,V> object = getJsonValue(value, JSON_Data.Value::castToObjectValue, prefixStr, "ObjectValue");
+						allUnlocked = getJsonValue (object, "all_unlocked", JSON_Data.Value::castToBoolValue   , prefixStr, "BoolValue");
+						appID       = getJsonValue (object, "appid"       , JSON_Data.Value::castToIntegerValue, prefixStr, "IntegerValue");
+						cacheTime   = getJsonValue (object, "cache_time"  , JSON_Data.Value::castToIntegerValue, prefixStr, "IntegerValue");
+						total       = getJsonValue (object, "total"       , JSON_Data.Value::castToIntegerValue, prefixStr, "IntegerValue");
+						unlocked    = getJsonValue (object, "unlocked"    , JSON_Data.Value::castToIntegerValue, prefixStr, "IntegerValue");
+						percentage  = getJsonNumber(object, "percentage"  , prefixStr);
+						DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"AchievementProgress.GameStatus");
+					}
+				}
 			}
 			
 			static class GameStateInfo {
@@ -1045,24 +1129,27 @@ class TreeNodes {
 				final String fullDesc;
 				final String shortDesc;
 				final Badge badge;
+				final JSON_Array<NV, V> sourceData;
 
 				public GameStateInfo(File file, JSON_Parser.Result<NV, V> rawData) {
 					this.file = file;
 					this.rawData = rawData;
-					this.blocks    = null;
-					this.fullDesc  = null;
-					this.shortDesc = null;
-					this.badge     = null;
+					this.blocks     = null;
+					this.sourceData = null;
+					this.fullDesc   = null;
+					this.shortDesc  = null;
+					this.badge      = null;
 				}
 
-				public GameStateInfo(File file, Vector<Block> blocks) {
+				public GameStateInfo(File file, Vector<Block> blocks, JSON_Array<NV, V> sourceData) {
 					this.file = file;
 					this.rawData = null;
 					this.blocks = blocks;
+					this.sourceData = sourceData;
 					
 					String preFullDesc  = null;
 					String preShortDesc = null;
-					Badge preBadge = null;
+					Badge  preBadge     = null;
 					for (Block block:this.blocks) {
 						String dataValueStr = String.format("GameStateInfo.Block[%d].dataValue", block.blockIndex);
 						//DevHelper.scanJsonStructure(block.dataValue,String.format("GameStateInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
@@ -1103,7 +1190,7 @@ class TreeNodes {
 					}
 					this.fullDesc  = preFullDesc;
 					this.shortDesc = preShortDesc;
-					this.badge = preBadge;
+					this.badge     = preBadge;
 				}
 
 				public static GameStateInfo parse(File file, JSON_Array<NV,V> array) throws ParseException {
@@ -1115,12 +1202,12 @@ class TreeNodes {
 						if (block!=null) blocks.add(block);
 						else blocks.add(new Block(i,value));
 					}
-					return new GameStateInfo(file,blocks);
+					return new GameStateInfo(file,blocks,array);
 				}
 				
 				static class Badge {
 					
-					private static final DevHelper.ExtHashMap<JSON_Data.Value.Type> KNOWN_JSON_VALUES = DevHelper.createKnownJsonValues()
+					private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues()
 							.add("strName"         , JSON_Data.Value.Type.String)
 							.add("bHasBadgeData"   , JSON_Data.Value.Type.Bool)
 							.add("bMaxed"          , JSON_Data.Value.Type.Null)
@@ -1185,9 +1272,7 @@ class TreeNodes {
 							tradingCards = null;
 						
 						// unexpected values
-						for (JSON_Data.NamedValue<NV,V> nvalue:object)
-							if (!KNOWN_JSON_VALUES.contains(nvalue.name, nvalue.value.type))
-								DevHelper.unknownValues.add("GameStateInfo.Badge."+nvalue.name+" = "+nvalue.value.type+"...");
+						DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"GameStateInfo.Badge");
 					}
 
 					String getTreeNodeExtraInfo() {
@@ -1252,7 +1337,7 @@ class TreeNodes {
 
 					static class TradingCard {
 						
-						private static final DevHelper.ExtHashMap<JSON_Data.Value.Type> KNOWN_JSON_VALUES = DevHelper.createKnownJsonValues()
+						private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues()
 								.add("strName"      , JSON_Data.Value.Type.String)
 								.add("strTitle"     , JSON_Data.Value.Type.String)
 								.add("nOwned"       , JSON_Data.Value.Type.Integer)
@@ -1260,7 +1345,7 @@ class TreeNodes {
 								.add("strImgURL"    , JSON_Data.Value.Type.String)
 								.add("strMarketHash", JSON_Data.Value.Type.String);
 
-						final Value<NV, V> rawData;
+						final JSON_Data.Value<NV, V> rawData;
 						final String name;
 						final String title;
 						final Long   owned;
@@ -1289,9 +1374,7 @@ class TreeNodes {
 							marketHash = getJsonValue(object, "strMarketHash", JSON_Data.Value::castToStringValue);
 							
 							// unexpected values
-							for (JSON_Data.NamedValue<NV,V> nvalue:object)
-								if (!KNOWN_JSON_VALUES.contains(nvalue.name, nvalue.value.type))
-									DevHelper.unknownValues.add("GameStateInfo.Badge.SteamCard."+nvalue.name+" = "+nvalue.value.type+"...");
+							DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"GameStateInfo.Badge.SteamCard");
 						}
 					}
 				}
@@ -1918,12 +2001,12 @@ class TreeNodes {
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				if (data.rawData!=null)
-					children.add( new RawJsonDataNode<>(this, "Raw JSON Data", data.rawData, data.file) );
+					children.add( new RawJsonDataNode(this, "Raw JSON Data", data.rawData, data.file) );
 				return children;
 			}
 		}
 		
-		static class GameStateInfoNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode {
+		static class GameStateInfoNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, TreeContentSource {
 			
 			private final GameStateInfo data;
 
@@ -1950,16 +2033,16 @@ class TreeNodes {
 				if (gameStateInfo.badge!=null) { String str1 = gameStateInfo.badge.getTreeNodeExtraInfo(); if (str1!=null && !str1.isEmpty()) str += (str.isEmpty()?"":", ") + str1; }
 				return str.isEmpty() ? "" : " ("+str+")";
 			}
-			@Override
-			public LabeledFile getFile() {
-				return new LabeledFile(data.file);
-			}
+			
+			@Override public LabeledFile getFile() { return new LabeledFile(data.file); }
+			@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.TextEditor; }
 
-			@Override
-			public ExternalViewerInfo getExternalViewerInfo() {
-				return ExternalViewerInfo.TextEditor;
+			@Override ContentType getContentType() { return ContentType.DataTree; }
+			@Override public TreeRoot getContentAsTree() {
+				if (data.sourceData==null) return null;
+				return FileSystem.JSON_File.JSON_TreeNode.create(data.sourceData, false);
 			}
-
+			
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
@@ -1978,7 +2061,7 @@ class TreeNodes {
 					groupingNode.setFileSource(data.file,ExternalViewerInfo.TextEditor);
 				}
 				if (data.rawData!=null)
-					children.add( new RawJsonDataNode<>(this, "Raw JSON Data", data.rawData, data.file) );
+					children.add( new RawJsonDataNode(this, "Raw JSON Data", data.rawData, data.file) );
 				return children;
 			}
 
@@ -2027,7 +2110,7 @@ class TreeNodes {
 					//if (badge.nextLevelName!=null) children.add(new PrimitiveValueNode(this, "next level name", badge.nextLevelName));
 					//if (badge.nextLevelXP  !=null) children.add(new PrimitiveValueNode(this, "next level XP"  , badge.nextLevelXP  ));
 					if (badge.iconURL      !=null) children.add(new ImageUrlNode      (this, "icon URL"       , badge.iconURL      ));
-					if (badge.rawData      !=null) children.add(new RawJsonDataNode<> (this, "raw data"       , badge.rawData      ));
+					if (badge.rawData      !=null) children.add(new RawJsonDataNode   (this, "raw data"       , badge.rawData      ));
 					if (badge.tradingCards !=null) {
 						children.add(gnode = GroupingNode.create(this, "Trading Cards", badge.tradingCards, null, TradingCardNode::new));
 						gnode.setFileSource(new FilePromise("HTML-Overview", ()->badge.createTempTradingCardsOverviewHTML()), ExternalViewerInfo.Browser);
@@ -2061,7 +2144,7 @@ class TreeNodes {
 			
 				@Override protected Vector<? extends TreeNode> createChildren() {
 					Vector<TreeNode> children = new Vector<>();
-					if (tradingCard.rawData   !=null) children.add(new RawJsonDataNode<> (this, "raw data"   , tradingCard.rawData   ));
+					if (tradingCard.rawData   !=null) children.add(new RawJsonDataNode   (this, "raw data"   , tradingCard.rawData   ));
 					if (tradingCard.name      !=null) children.add(new PrimitiveValueNode(this, "name"       , tradingCard.name      ));
 					if (tradingCard.title     !=null) children.add(new PrimitiveValueNode(this, "title"      , tradingCard.title     ));
 					if (tradingCard.owned     !=null) children.add(new PrimitiveValueNode(this, "owned"      , tradingCard.owned     ));
@@ -2090,11 +2173,11 @@ class TreeNodes {
 				@Override protected Vector<? extends TreeNode> createChildren() {
 					Vector<TreeNode> children = new Vector<>();
 					if (block.rawData!=null)
-						children.add(new RawJsonDataNode<>(this, "raw data", block.rawData));
+						children.add(new RawJsonDataNode(this, "raw data", block.rawData));
 					else {
 						children.add(new PrimitiveValueNode(this, "version", block.version));
 						if (block.dataValue!=null)
-							children.add(new RawJsonDataNode<>(this, "data", block.dataValue));
+							children.add(new RawJsonDataNode(this, "data", block.dataValue));
 					}
 					return children;
 				}
@@ -2637,11 +2720,8 @@ class TreeNodes {
 		
 		static class JSON_File extends TextFile implements ParsedTextFileSource {
 			
-			private static class NV_ extends JSON_Data.NamedValueExtra.Dummy{}
-			private static class V_  extends JSON_Data.ValueExtra.Dummy{}
-			
 			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
-			private JSON_Parser.Result<NV_,V_> parseResult;
+			private JSON_Parser.Result<NV,V> parseResult;
 
 			JSON_File(TreeNode parent, File file) {
 				this(parent, file, TreeIcons.JSONFile);
@@ -2664,7 +2744,7 @@ class TreeNodes {
 				if (parseResult==null) {
 					String text = getContentAsText();
 					if (text==null) return null;
-					JSON_Parser<NV_,V_> parser = new JSON_Parser<>(text,null);
+					JSON_Parser<NV,V> parser = new JSON_Parser<>(text,null);
 					try {
 						parseResult = parser.parse_withParseException();
 					} catch (JSON_Parser.ParseException e) {
@@ -2679,7 +2759,7 @@ class TreeNodes {
 				return JSON_TreeNode.create(parseResult,isLarge());
 			}
 			
-			static class JSON_TreeNode<ValueType, NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> extends BaseTreeNode<JSON_TreeNode<?,NV,V>,JSON_TreeNode<?,NV,V>> implements DataTreeNode {
+			static class JSON_TreeNode<ValueType> extends BaseTreeNode<JSON_TreeNode<?>,JSON_TreeNode<?>> implements DataTreeNode {
 
 				private final Vector<ValueType> childValues;
 				private final Function<ValueType, String> getName;
@@ -2687,7 +2767,7 @@ class TreeNodes {
 				final String name;
 				final JSON_Data.Value<NV,V> value;
 
-				private JSON_TreeNode(JSON_TreeNode<?,NV,V> parent, String title, JsonTreeIcons icon, String name, JSON_Data.Value<NV,V> value, Vector<ValueType> childValues, Function<ValueType,String> getName, Function<ValueType,JSON_Data.Value<NV,V>> getValue) {
+				private JSON_TreeNode(JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, JSON_Data.Value<NV,V> value, Vector<ValueType> childValues, Function<ValueType,String> getName, Function<ValueType,JSON_Data.Value<NV,V>> getValue) {
 					super(parent, title, childValues!=null, childValues==null || childValues.isEmpty(), icon==null ? null : JsonTreeIconsIS.getCachedIcon(icon));
 					this.name = name;
 					this.value = value;
@@ -2735,24 +2815,34 @@ class TreeNodes {
 				@Override public boolean hasValue() { return value!=null; }
 
 				@Override
-				protected Vector<? extends JSON_TreeNode<?,NV,V>> createChildren() {
+				protected Vector<? extends JSON_TreeNode<?>> createChildren() {
 					if (childValues==null) return null;
-					Vector<JSON_TreeNode<?,NV,V>> childNodes = new Vector<>();
+					Vector<JSON_TreeNode<?>> childNodes = new Vector<>();
 					for (ValueType value:childValues) childNodes.add(create(this,getName.apply(value),getValue.apply(value)));
 					return childNodes;
 				}
 				
-				static <NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> TreeRoot create(JSON_Parser.Result<NV,V> parseResult, boolean isLarge) {
-					if (parseResult.object!=null) return new TreeRoot(create(null,null,new JSON_Data.ObjectValue<NV,V>(parseResult.object,null)),true,!isLarge,contextMenu);
-					if (parseResult.array !=null) return new TreeRoot(create(null,null,new JSON_Data. ArrayValue<NV,V>(parseResult.array ,null)),true,!isLarge,contextMenu);
+				static TreeRoot create(JSON_Parser.Result<NV,V> parseResult, boolean isLarge) {
+					if (parseResult.object != null) return create(parseResult.object, isLarge);
+					if (parseResult.array  != null) return create(parseResult.array , isLarge);
 					return SimpleTextNode.createSingleTextLineTree("Parse Error: Parser returns neither an JSON array nor an JSON object");
 				}
+
+				static TreeRoot create(JSON_Array<NV, V> array, boolean isLarge) {
+					if (array == null) return null;
+					return new TreeRoot(create(null,null,new JSON_Data.ArrayValue<NV,V>(array,null)),true,!isLarge,contextMenu);
+				}
+
+				static TreeRoot create(JSON_Object<NV, V> object, boolean isLarge) {
+					if (object == null) return null;
+					return new TreeRoot(create(null,null,new JSON_Data.ObjectValue<NV,V>(object,null)),true,!isLarge,contextMenu);
+				}
 				
-				static <NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> TreeRoot create(JSON_Data.Value<NV,V> value, boolean isLarge) {
+				static TreeRoot create(JSON_Data.Value<NV,V> value, boolean isLarge) {
 					return new TreeRoot(create(null,null,value),true,!isLarge,contextMenu);
 				}
 				
-				private static <NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> JSON_TreeNode<?,NV,V> create(JSON_TreeNode<?,NV,V> parent, String name, JSON_Data.Value<NV,V> value) {
+				private static JSON_TreeNode<?> create(JSON_TreeNode<?> parent, String name, JSON_Data.Value<NV,V> value) {
 					String title = getTitle(name,value);
 					JsonTreeIcons icon = getIcon(value.type);
 					switch (value.type) {
@@ -2776,7 +2866,7 @@ class TreeNodes {
 					return null;
 				}
 				
-				private static <NV extends JSON_Data.NamedValueExtra, V extends JSON_Data.ValueExtra> String getTitle(String name, JSON_Data.Value<NV,V> value) {
+				private static String getTitle(String name, JSON_Data.Value<NV,V> value) {
 					switch (value.type) {
 					case Object : return getTitle(name, "{", value.castToObjectValue ().value.size(), "}");
 					case Array  : return getTitle(name, "[", value.castToArrayValue  ().value.size(), "]");
