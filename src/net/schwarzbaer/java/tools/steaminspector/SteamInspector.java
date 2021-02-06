@@ -20,9 +20,12 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
+import java.util.TimeZone;
 import java.util.Vector;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
@@ -85,6 +88,19 @@ import net.schwarzbaer.system.Settings;
 class SteamInspector {
 	
 	public static void main(String[] args) {
+		long time = System.currentTimeMillis();
+		Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"), Locale.GERMANY);
+		cal.setTimeInMillis(time);
+		System.out.printf(Locale.ENGLISH, "[%s] %2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz]%n", new Date(time), cal);
+		cal.setTimeZone(TimeZone.getTimeZone("ECT"));
+		System.out.printf(Locale.ENGLISH, "[%s] %2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz]%n", new Date(time), cal);
+		cal.setTimeInMillis(time);
+		System.out.printf(Locale.ENGLISH, "[%s] %2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz]%n", new Date(time), cal);
+		cal.setTimeZone(TimeZone.getTimeZone("PST"));
+		System.out.printf(Locale.ENGLISH, "[%s] %2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz]%n", new Date(time), cal);
+		cal.setTimeInMillis(time);
+		System.out.printf(Locale.ENGLISH, "[%s] %2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz]%n", new Date(time), cal);
+		
 		new SteamInspector().createGUI();
 	}
 	

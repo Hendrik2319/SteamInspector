@@ -21,12 +21,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TimeZone;
 import java.util.Vector;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
@@ -65,6 +68,7 @@ import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Game;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.GameImages;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.AchievementProgress;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.AchievementProgress.GameStatus;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.FriendList;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.FriendList.Friend;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameStateInfo;
@@ -506,6 +510,7 @@ class TreeNodes {
 		PrimitiveValueNode(TreeNode parent, String label, boolean value) { super(parent, "%s: "+  "%s"  , label, value); }
 		PrimitiveValueNode(TreeNode parent, String label, int     value) { super(parent, "%s: "+  "%d"  , label, value); }
 		PrimitiveValueNode(TreeNode parent, String label, long    value) { super(parent, "%s: "+  "%d"  , label, value); }
+		PrimitiveValueNode(TreeNode parent, String label, double  value) { super(parent, "%s: "+"%1.4f" , label, value); }
 		PrimitiveValueNode(TreeNode parent, String label, String  value) { super(parent, "%s: "+"\"%s\"", label, value); }
 	}
 	
@@ -1118,6 +1123,8 @@ class TreeNodes {
 						percentage  = getJsonNumber(object, "percentage"  , prefixStr);
 						DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"AchievementProgress.GameStatus");
 					}
+
+					int getGameID() { return (int) appID; }
 				}
 			}
 			
@@ -1983,26 +1990,79 @@ class TreeNodes {
 			private final AchievementProgress data;
 
 			AchievementProgressNode(TreeNode parent, AchievementProgress data) {
-				super(parent,"Achievement Progress",true,false);
+				super(parent,getTitle(data),true,false);
 				this.data = data;
 			}
 
-			@Override
-			public LabeledFile getFile() {
-				return new LabeledFile(data.file);
+			private static String getTitle(AchievementProgress data) {
+				String str = "Achievement Progress";
+				if (data!=null) {
+					if (data.version!=null) str += " V"+data.version;
+				}
+				return str;
 			}
 
-			@Override
-			public ExternalViewerInfo getExternalViewerInfo() {
-				return ExternalViewerInfo.TextEditor;
-			}
+			@Override public LabeledFile getFile() { return new LabeledFile(data.file); }
+			@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.TextEditor; }
 
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				if (data.rawData!=null)
 					children.add( new RawJsonDataNode(this, "Raw JSON Data", data.rawData, data.file) );
+				if (data.gameStates!=null) {
+					Vector<AchievementProgress.GameStatus> vec = new Vector<>(data.gameStates);
+					vec.sort(Comparator.comparing(AchievementProgress.GameStatus::getGameID,createGameIdOrder()));
+					for (AchievementProgress.GameStatus gameStatus:vec)
+						children.add(new GameStatusNode(this,gameStatus));
+				}
 				return children;
+			}
+			
+			static class GameStatusNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource {
+
+				private final GameStatus gameStatus;
+
+				public GameStatusNode(TreeNode parent, AchievementProgress.GameStatus gameStatus) {
+					super(parent,getTitle(gameStatus),true,false,getIcon(gameStatus));
+					this.gameStatus = gameStatus;
+				}
+
+				private static Icon getIcon(AchievementProgress.GameStatus gameStatus) {
+					if (gameStatus==null) return null;
+					return getGameIcon(gameStatus.getGameID(), TreeIcons.Folder);
+				}
+
+				private static String getTitle(AchievementProgress.GameStatus gameStatus) {
+					if (gameStatus==null) return "(NULL) GameStatus";
+					return getGameTitle(gameStatus.getGameID());
+				}
+
+				@Override ContentType getContentType() { return ContentType.PlainText; }
+				@Override public String getContentAsText() {
+					String str = "";
+					Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("CET"), Locale.GERMANY);
+					cal.setTimeInMillis(gameStatus.cacheTime*1000);
+					str += String.format(Locale.ENGLISH, "Unlocked: %d/%d (%1.2f%%)%n", gameStatus.unlocked, gameStatus.total, gameStatus.total==0 ? Double.NaN : gameStatus.unlocked/(double)gameStatus.total*100);
+					str += String.format(Locale.ENGLISH, "Percentage: %f%n"  , gameStatus.percentage);
+					str += String.format(Locale.ENGLISH, "All Unlocked: %s%n", gameStatus.allUnlocked);
+					str += String.format(Locale.GERMAN , "Cache Time: %d (%2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz])%n", gameStatus.cacheTime, cal);
+					return str;
+				}
+
+				@Override
+				protected Vector<? extends TreeNode> createChildren() {
+					Vector<TreeNode> children = new Vector<>();
+					if (gameStatus!=null) {
+						Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("CET"), Locale.GERMANY);
+						cal.setTimeInMillis(gameStatus.cacheTime*1000);
+						children.add(new SimpleTextNode    (this, "Unlocked: %d/%d (%1.2f%%)", gameStatus.unlocked, gameStatus.total, gameStatus.total==0 ? Double.NaN : gameStatus.unlocked/(double)gameStatus.total*100) );
+						children.add(new PrimitiveValueNode(this, "Percentage"  , gameStatus.percentage));
+						children.add(new PrimitiveValueNode(this, "All Unlocked", gameStatus.allUnlocked));
+						children.add(new SimpleTextNode    (this, "Cache Time: %d (%2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz])", gameStatus.cacheTime, cal));
+					}
+					return children;
+				}
 			}
 		}
 		
