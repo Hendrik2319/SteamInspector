@@ -73,6 +73,7 @@ import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.Achieveme
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.FriendList;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.FriendList.Friend;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameStateInfo;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameStateInfo.Achievements;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShotLists;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FolderNode;
@@ -171,6 +172,12 @@ class TreeNodes {
 
 	private static boolean isImageFile(File file) {
 		return file.isFile() && fileNameEndsWith(file,".jpg",".jpeg",".png",".bmp",".ico",".tga");
+	}
+	
+	private static String getTimeStr(long millis) {
+		Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("CET"), Locale.GERMANY);
+		cal.setTimeInMillis(millis);
+		return String.format(Locale.ENGLISH, "%1$tA, %1$te. %1$tb %1$tY, %1$tT [%1$tZ:%1$tz]", cal);
 	}
 	
 	private static String getSizeStr(File file) {
@@ -2328,12 +2335,10 @@ class TreeNodes {
 				@Override ContentType getContentType() { return ContentType.PlainText; }
 				@Override public String getContentAsText() {
 					String str = "";
-					Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("CET"), Locale.GERMANY);
-					cal.setTimeInMillis(gameStatus.cacheTime*1000);
 					str += String.format(Locale.ENGLISH, "Unlocked: %d/%d (%f%%)%n", gameStatus.unlocked, gameStatus.total, gameStatus.total==0 ? Double.NaN : gameStatus.unlocked/(double)gameStatus.total*100);
 					str += String.format(Locale.ENGLISH, "Percentage: %f%n"  , gameStatus.percentage);
 					str += String.format(Locale.ENGLISH, "All Unlocked: %s%n", gameStatus.allUnlocked);
-					str += String.format(Locale.ENGLISH, "Cache Time: %d (%2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ:%2$tz])%n", gameStatus.cacheTime, cal);
+					str += String.format(Locale.ENGLISH, "Cache Time: %d (%s)%n", gameStatus.cacheTime, getTimeStr(gameStatus.cacheTime*1000));
 					return str;
 				}
 
@@ -2341,12 +2346,10 @@ class TreeNodes {
 				protected Vector<? extends TreeNode> createChildren() {
 					Vector<TreeNode> children = new Vector<>();
 					if (gameStatus!=null) {
-						Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("CET"), Locale.GERMANY);
-						cal.setTimeInMillis(gameStatus.cacheTime*1000);
 						children.add(new SimpleTextNode    (this, "Unlocked: %d/%d (%f%%)", gameStatus.unlocked, gameStatus.total, gameStatus.total==0 ? Double.NaN : gameStatus.unlocked/(double)gameStatus.total*100) );
 						children.add(new PrimitiveValueNode(this, "Percentage"  , gameStatus.percentage));
 						children.add(new PrimitiveValueNode(this, "All Unlocked", gameStatus.allUnlocked));
-						children.add(new SimpleTextNode    (this, "Cache Time: %d (%2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ:%2$tz])", gameStatus.cacheTime, cal));
+						children.add(new SimpleTextNode    (this, "Cache Time: %d (%s)", gameStatus.cacheTime, getTimeStr(gameStatus.cacheTime*1000)));
 					}
 					return children;
 				}
@@ -2407,6 +2410,9 @@ class TreeNodes {
 				if (data.badge!=null) {
 					children.add(new BadgeNode(this, data.badge));
 				}
+				if (data.achievements!=null) {
+					children.add(new AchievementsNode(this, data.achievements));
+				}
 				if (data.blocks!=null) {
 					children.add(groupingNode = GroupingNode.create(this, "Raw Blocks", data.blocks, null, BlockNode::new));
 					groupingNode.setFileSource(data.file,ExternalViewerInfo.TextEditor);
@@ -2414,6 +2420,102 @@ class TreeNodes {
 				if (data.rawData!=null)
 					children.add( new RawJsonDataNode(this, "Raw JSON Data", data.rawData, data.file) );
 				return children;
+			}
+
+			static class AchievementsNode extends BaseTreeNode<TreeNode,TreeNode> {
+
+				private final Achievements achievements;
+
+				public AchievementsNode(TreeNode parent, GameStateInfo.Achievements achievements) {
+					super(parent, getTitle(achievements), true, false);
+					this.achievements = achievements;
+				}
+				
+				private static String getTitle(GameStateInfo.Achievements achievements) {
+					if (achievements==null) return "(NULL) Achievements";
+					String str = "Achievements";
+					if (achievements.hasParsedData)
+						str += String.format(" (achieved: %d/%d)", achievements.achieved, achievements.total);
+					else if (achievements.rawData!=null)
+						str += " [ Raw Data ]";
+					return str;
+				}
+				
+				@Override protected Vector<? extends TreeNode> createChildren() {
+					Vector<TreeNode> children = new Vector<>();
+					if (achievements.rawData!=null)
+						children.add(new RawJsonDataNode   (this, "raw data"   , achievements.rawData   ));
+					if (achievements.hasParsedData) {
+						if (achievements.achievedHidden!=null) children.add(GroupingNode.create(this, "Achieved (hidden)", achievements.achievedHidden, null, AchievementNode::new));
+						if (achievements.highlight     !=null) children.add(GroupingNode.create(this, "Highlight"        , achievements.highlight     , null, AchievementNode::new));
+						if (achievements.unachieved    !=null) children.add(GroupingNode.create(this, "Unachieved"       , achievements.unachieved    , null, AchievementNode::new));
+					}
+					return children;
+				}
+
+				static class AchievementNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource, TreeContentSource {
+					
+					private GameStateInfo.Achievements.Achievement achievement;
+					
+					AchievementNode(TreeNode parent, GameStateInfo.Achievements.Achievement achievement) {
+						super(parent, getTitle(achievement), true, false);
+						this.achievement = achievement;
+					}
+					
+					private static String getTitle(GameStateInfo.Achievements.Achievement achievement) {
+						if (achievement==null) return "(NULL) Achievement";
+						String str = "Achievement";
+						if (achievement.hasParsedData) {
+							str = achievement.name;
+							if (achievement.isAchieved) str = "[+] "+str;
+						} else if (achievement.rawData!=null)
+							str += " [ Raw Data ]";
+						return str;
+					}
+					
+					@Override ContentType getContentType() {
+						if (achievement.hasParsedData) return ContentType.PlainText;
+						if (achievement.rawData!=null) return ContentType.DataTree;
+						return null;
+					}
+
+					@Override
+					public String getContentAsText() {
+						if (achievement.hasParsedData) {
+							String str = "";
+							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n" , "Description", achievement.description);
+							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n" , "ID"         , achievement.id         );
+							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n" , "Image"      , achievement.image      );
+							str += String.format(Locale.ENGLISH, "%s: "+"%d (%s)"+"%n", "Unlocked"   , achievement.unlocked, achievement.unlocked==0 ? "not yet" : getTimeStr(achievement.unlocked*1000));
+							if (achievement.achievedRatio!=null)
+								str += String.format(Locale.ENGLISH, "%s: %f%n" , "Achieved Ratio", achievement.achievedRatio);
+							return str;
+						}
+						return null;
+					}
+
+					@Override
+					public TreeRoot getContentAsTree() {
+						if (achievement.rawData==null) return null;
+						return FileSystem.JSON_File.JSON_TreeNode.create(achievement.rawData, false);
+					}
+
+					@Override protected Vector<? extends TreeNode> createChildren() {
+						Vector<TreeNode> children = new Vector<>();
+						if (achievement.rawData!=null)
+							children.add(new RawJsonDataNode   (this, "raw data"   , achievement.rawData    ));
+						if (achievement.hasParsedData) {
+							children.add(new PrimitiveValueNode(this, "Description", achievement.description));
+							children.add(new PrimitiveValueNode(this, "ID"         , achievement.id         ));
+							children.add(new SimpleTextNode    (this, "Unlocked: %d (%s)", achievement.unlocked, achievement.unlocked==0 ? "not yet" : getTimeStr(achievement.unlocked*1000)));
+							if (achievement.achievedRatio!=null)
+								children.add(new PrimitiveValueNode(this, "Achieved Ratio", achievement.achievedRatio));
+							children.add(new ImageUrlNode      (this, "Image"      , achievement.image      ));
+						}
+						return children;
+					}
+				}
+				
 			}
 
 			static class BadgeNode extends BaseTreeNode<TreeNode,TreeNode> implements ImageContentSource, ExternViewableNode, URLBasedNode {
@@ -3295,3 +3397,4 @@ class TreeNodes {
 		}
 	}
 }
+
