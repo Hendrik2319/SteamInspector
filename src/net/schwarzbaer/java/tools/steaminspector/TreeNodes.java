@@ -61,6 +61,7 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerInfo;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageNTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedTextFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContentSource;
@@ -87,7 +88,7 @@ class TreeNodes {
 	private static class NV extends JSON_Data.NamedValueExtra.Dummy{}
 	private static class V  extends JSON_Data.ValueExtra.Dummy{}
 
-	enum TreeIcons { GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Badge, Folder, RootFolder_Simple, RootFolder }
+	enum TreeIcons { GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Badge, Achievement, Folder, RootFolder_Simple, RootFolder }
 	static CachedIcons<TreeIcons> TreeIconsIS;
 	
 	enum JsonTreeIcons { Object, Array, String, Number, Boolean }
@@ -1364,6 +1365,12 @@ class TreeNodes {
 						return array;
 					}
 					
+					public String getTreeNodeExtraInfo() {
+						if (hasParsedData && achieved!=0 && total!=0)
+							return String.format("A:%d/%d", achieved, total);
+						return "";
+					}
+
 					static class Achievement {
 
 						private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
@@ -1493,7 +1500,7 @@ class TreeNodes {
 					}
 
 					String getTreeNodeExtraInfo() {
-						if (!hasParsedData) return rawData!=null ? "[Raw Data]" : "";
+						if (!hasParsedData) return "";
 						
 						String str = "";
 						if (currentLevel!=0)
@@ -2245,11 +2252,11 @@ class TreeNodes {
 				private final Friend friend;
 				
 				FriendNode(TreeNode parent, Friend friend) {
-					super(parent,getTitle(friend),true,false);
+					super(parent,generateTitle(friend),true,false);
 					this.friend = friend;
 				}
 
-				private static String getTitle(Friend friend) {
+				private static String generateTitle(Friend friend) {
 					if (friend==null) return "(NULL) Friend ";
 					String str = "Friend";
 					if (friend.id  !=null) str += String.format(" %016X", friend.id);
@@ -2278,11 +2285,11 @@ class TreeNodes {
 			private final AchievementProgress data;
 
 			AchievementProgressNode(TreeNode parent, AchievementProgress data) {
-				super(parent,getTitle(data),true,false);
+				super(parent,generateTitle(data),true,false,TreeIcons.Achievement);
 				this.data = data;
 			}
 
-			private static String getTitle(AchievementProgress data) {
+			private static String generateTitle(AchievementProgress data) {
 				String str = "Achievement Progress";
 				if (data!=null) {
 					if (data.version!=null) str += " V"+data.version;
@@ -2361,30 +2368,40 @@ class TreeNodes {
 			private final GameStateInfo data;
 
 			GameStateInfoNode(TreeNode parent, Long playerID, GameStateInfo gameStateInfo) {
-				super(parent, "by "+getPlayerName(playerID)+getExtraInfo(gameStateInfo), true, false, getMergedIcon( TreeIconsIS.getCachedIcon(TreeIcons.Folder), gameStateInfo ));
+				super(parent, "by "+getPlayerName(playerID)+generateExtraInfo(gameStateInfo), true, false, generateMergedIcon( TreeIconsIS.getCachedIcon(TreeIcons.Folder), gameStateInfo ));
 				this.data = gameStateInfo;
 			}
 			GameStateInfoNode(TreeNode parent, Integer gameID, GameStateInfo gameStateInfo) {
-				super(parent, getGameTitle(gameID)+getExtraInfo(gameStateInfo), true, false, getMergedIcon( getGameIcon(gameID, TreeIcons.Folder), gameStateInfo ));
+				super(parent, getGameTitle(gameID)+generateExtraInfo(gameStateInfo), true, false, generateMergedIcon( getGameIcon(gameID, TreeIcons.Folder), gameStateInfo ));
 				gameChangeListeners.add(gameID, new GameChangeListener() {
 					@Override public TreeNode getTreeNode() { return GameStateInfoNode.this; }
-					@Override public void gameTitleWasChanged() { setTitle(getGameTitle(gameID)+getExtraInfo(gameStateInfo)); }
+					@Override public void gameTitleWasChanged() { setTitle(getGameTitle(gameID)+generateExtraInfo(gameStateInfo)); }
 				});
 				this.data = gameStateInfo;
 			}
 
-			private static Icon getMergedIcon(Icon baseIcon, GameStateInfo gameStateInfo) {
+			private static Icon generateMergedIcon(Icon baseIcon, GameStateInfo gameStateInfo) {
 				if (baseIcon==null) baseIcon = TreeIconsIS.getCachedIcon(TreeIcons.Folder);
 				return IconSource.setSideBySide(
 					true, 1, baseIcon,
-					gameStateInfo.fullDesc==null ? IconSource.createEmptyIcon(16,16) : TreeIconsIS.getCachedIcon(TreeIcons.TextFile),
-					gameStateInfo.badge   ==null ? IconSource.createEmptyIcon(16,16) : TreeIconsIS.getCachedIcon(TreeIcons.Badge)
+					gameStateInfo.fullDesc    ==null ? IconSource.createEmptyIcon(16,16) : TreeIconsIS.getCachedIcon(TreeIcons.TextFile),
+					gameStateInfo.badge       ==null ? IconSource.createEmptyIcon(16,16) : TreeIconsIS.getCachedIcon(TreeIcons.Badge),
+					gameStateInfo.achievements==null ? IconSource.createEmptyIcon(16,16) : TreeIconsIS.getCachedIcon(TreeIcons.Achievement)
 				);
 			}
 			
-			private static String getExtraInfo(GameStateInfo gameStateInfo) {
+			private static String generateExtraInfo(GameStateInfo gameStateInfo) {
 				String str = "";
-				if (gameStateInfo.badge!=null) { String str1 = gameStateInfo.badge.getTreeNodeExtraInfo(); if (str1!=null && !str1.isEmpty()) str += (str.isEmpty()?"":", ") + str1; }
+				if (gameStateInfo.badge!=null) {
+					String str1 = gameStateInfo.badge.getTreeNodeExtraInfo();
+					if (str1!=null && !str1.isEmpty())
+						str += (str.isEmpty()?"":", ") + str1;
+				}
+				if (gameStateInfo.achievements!=null) {
+					String str1 = gameStateInfo.achievements.getTreeNodeExtraInfo();
+					if (str1!=null && !str1.isEmpty())
+						str += (str.isEmpty()?"":", ") + str1;
+				}
 				return str.isEmpty() ? "" : " ("+str+")";
 			}
 			
@@ -2427,11 +2444,11 @@ class TreeNodes {
 				private final Achievements achievements;
 
 				public AchievementsNode(TreeNode parent, GameStateInfo.Achievements achievements) {
-					super(parent, getTitle(achievements), true, false);
+					super(parent, generateTitle(achievements), true, false, TreeIcons.Achievement);
 					this.achievements = achievements;
 				}
 				
-				private static String getTitle(GameStateInfo.Achievements achievements) {
+				private static String generateTitle(GameStateInfo.Achievements achievements) {
 					if (achievements==null) return "(NULL) Achievements";
 					String str = "Achievements";
 					if (achievements.hasParsedData)
@@ -2453,16 +2470,16 @@ class TreeNodes {
 					return children;
 				}
 
-				static class AchievementNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource, TreeContentSource {
+				static class AchievementNode extends BaseTreeNode<TreeNode,TreeNode> implements ImageNTextContentSource, TreeContentSource {
 					
 					private GameStateInfo.Achievements.Achievement achievement;
 					
 					AchievementNode(TreeNode parent, GameStateInfo.Achievements.Achievement achievement) {
-						super(parent, getTitle(achievement), true, false);
+						super(parent, generateTitle(achievement), true, false, TreeIcons.Achievement);
 						this.achievement = achievement;
 					}
 					
-					private static String getTitle(GameStateInfo.Achievements.Achievement achievement) {
+					private static String generateTitle(GameStateInfo.Achievements.Achievement achievement) {
 						if (achievement==null) return "(NULL) Achievement";
 						String str = "Achievement";
 						if (achievement.hasParsedData) {
@@ -2474,15 +2491,22 @@ class TreeNodes {
 					}
 					
 					@Override ContentType getContentType() {
-						if (achievement.hasParsedData) return ContentType.PlainText;
+						if (achievement.hasParsedData) return ContentType.ImageNText;
 						if (achievement.rawData!=null) return ContentType.DataTree;
 						return null;
+					}
+
+					@Override
+					public BufferedImage getContentAsImage() {
+						return readImageFromURL(achievement.image,"achievement image");
 					}
 
 					@Override
 					public String getContentAsText() {
 						if (achievement.hasParsedData) {
 							String str = "";
+							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n" , "Name"       , achievement.name       );
+							str += String.format(Locale.ENGLISH, "%s: "+  "%s"   +"%n" , "Achieved"   , achievement.isAchieved);
 							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n" , "Description", achievement.description);
 							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n" , "ID"         , achievement.id         );
 							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n" , "Image"      , achievement.image      );
@@ -2523,11 +2547,11 @@ class TreeNodes {
 				private final GameStateInfo.Badge badge;
 
 				public BadgeNode(TreeNode parent, GameStateInfo.Badge badge) {
-					super(parent, getTitle(badge), true, false, TreeIcons.Badge);
+					super(parent, generateTitle(badge), true, false, TreeIcons.Badge);
 					this.badge = badge;
 				}
 				
-				private static String getTitle(GameStateInfo.Badge badge) {
+				private static String generateTitle(GameStateInfo.Badge badge) {
 					if (badge==null) return "(NULL) Badge";
 					String str = "Badge";
 					if (badge.hasParsedData) {
@@ -2573,11 +2597,11 @@ class TreeNodes {
 				private final GameStateInfo.Badge.TradingCard tradingCard;
 				
 				TradingCardNode(TreeNode parent, GameStateInfo.Badge.TradingCard tradingCard) {
-					super(parent, getTitle(tradingCard), true, false);
+					super(parent, generateTitle(tradingCard), true, false);
 					this.tradingCard = tradingCard;
 				}
 				
-				private static String getTitle(GameStateInfo.Badge.TradingCard tradingCard) {
+				private static String generateTitle(GameStateInfo.Badge.TradingCard tradingCard) {
 					if (tradingCard==null)
 						return "(NULL) Trading Card";
 					if (!tradingCard.hasParsedData)
@@ -2615,11 +2639,11 @@ class TreeNodes {
 				private final GameStateInfo.Block block;
 			
 				BlockNode(TreeNode parent, GameStateInfo.Block block) {
-					super(parent, getTitle(block), true, false);
+					super(parent, generateTitle(block), true, false);
 					this.block = block;
 				}
 			
-				private static String getTitle(GameStateInfo.Block block) {
+				private static String generateTitle(GameStateInfo.Block block) {
 					if (block==null) return "Block ???";
 					if (block.rawData!=null) return "Block "+block.blockIndex+" (RawData)";
 					return "["+block.blockIndex+"] "+block.label;
@@ -3162,7 +3186,7 @@ class TreeNodes {
 			}
 
 			@Override ContentType getContentType() {
-				return ContentType.ExtendedText;
+				return ContentType.ByteBasedText;
 			}
 		
 			@Override public String getContentAsText() {
@@ -3191,7 +3215,7 @@ class TreeNodes {
 			}
 			
 			@Override ContentType getContentType() {
-				return ContentType.ParsedText;
+				return ContentType.ParsedByteBasedText;
 			}
 			
 			@Override
@@ -3359,7 +3383,7 @@ class TreeNodes {
 			}
 			
 			@Override ContentType getContentType() {
-				return ContentType.ParsedText;
+				return ContentType.ParsedByteBasedText;
 			}
 			
 			@Override

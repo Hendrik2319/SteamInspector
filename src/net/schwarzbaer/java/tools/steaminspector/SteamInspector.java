@@ -114,6 +114,7 @@ class SteamInspector {
 	private final CombinedOutput extendedTextOutput;
 	private final CombinedOutput parsedTextOutput;
 	private final CombinedOutput treeOutput;
+	private final ImageNTextOutput imageNTextOutput;
 	private final ImageOutput imageOutput;
 	private final OutputDummy outputDummy;
 	private FileContentOutput lastFileContentOutput;
@@ -121,9 +122,10 @@ class SteamInspector {
 	SteamInspector() {
 		hexTableOutput     = new CombinedOutput(BaseTreeNode.ContentType.Bytes);
 		plainTextOutput    = new CombinedOutput(BaseTreeNode.ContentType.PlainText);
-		extendedTextOutput = new CombinedOutput(BaseTreeNode.ContentType.ExtendedText);
-		parsedTextOutput   = new CombinedOutput(BaseTreeNode.ContentType.ParsedText);
+		extendedTextOutput = new CombinedOutput(BaseTreeNode.ContentType.ByteBasedText);
+		parsedTextOutput   = new CombinedOutput(BaseTreeNode.ContentType.ParsedByteBasedText);
 		treeOutput         = new CombinedOutput(BaseTreeNode.ContentType.DataTree);
+		imageNTextOutput = new ImageNTextOutput();
 		imageOutput = new ImageOutput();
 		outputDummy = new OutputDummy();
 		lastFileContentOutput = outputDummy;
@@ -292,7 +294,7 @@ class SteamInspector {
 						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
 					break;
 					
-				case ExtendedText:
+				case ByteBasedText:
 					if (baseTreeNode instanceof ExtendedTextContentSource) {
 						ExtendedTextContentSource source = (ExtendedTextContentSource) baseTreeNode;
 						if (allowLargeFile(baseTreeNode)) {
@@ -304,7 +306,7 @@ class SteamInspector {
 						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
 					break;
 				
-				case ParsedText:
+				case ParsedByteBasedText:
 					if (baseTreeNode instanceof ParsedTextContentSource) {
 						ParsedTextContentSource source = (ParsedTextContentSource) baseTreeNode;
 						if (allowLargeFile(baseTreeNode)) {
@@ -331,6 +333,16 @@ class SteamInspector {
 						ImageContentSource source = (ImageContentSource) baseTreeNode;
 						imageOutput.setSource(source);
 						changeFileContentOutput(imageOutput);
+						hideOutput = false;
+					} else
+						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
+					break;
+					
+				case ImageNText:
+					if (baseTreeNode instanceof ImageNTextContentSource) {
+						ImageNTextContentSource source = (ImageNTextContentSource) baseTreeNode;
+						imageNTextOutput.setSource(source);
+						changeFileContentOutput(imageNTextOutput);
 						hideOutput = false;
 					} else
 						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
@@ -1031,6 +1043,27 @@ class SteamInspector {
 		@Override void showLoadingMsg() {}
 	}
 
+	static class ImageNTextOutput extends FileContentOutput {
+		
+		private final JSplitPane mainPanel;
+		private final ImageOutput imageView;
+		private final TextOutput textView;
+		
+		ImageNTextOutput() {
+			imageView = new ImageOutput();
+			textView  = new TextOutput ();
+			mainPanel = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, imageView.getMainComponent(), textView.getMainComponent());
+		}
+		@Override Component getMainComponent() { return mainPanel; }
+		@Override void showLoadingMsg() { imageView.showLoadingMsg(); textView.showLoadingMsg(); }
+		
+		void setSource(ImageNTextContentSource source) {
+			imageView.setSource(source);
+			textView.setText(source.getContentAsText());
+			textView.loadScrollPos();
+		}
+	}
+
 	static class ImageOutput extends FileContentOutput {
 		
 		private final ImageView imageView;
@@ -1425,7 +1458,7 @@ class SteamInspector {
 				mainComp   = dataTree.getMainComponent();
 				break;
 			
-			case ExtendedText:
+			case ByteBasedText:
 				add("Hex Table" , hexView   = new HexTableOutput());
 				add("Plain Text", plainText = new TextOutput    ());
 				dataTree = null;
@@ -1433,7 +1466,7 @@ class SteamInspector {
 				mainComp  = super.getMainComponent();
 				break;
 				
-			case ParsedText:
+			case ParsedByteBasedText:
 				add("Hex Table" , hexView   = new HexTableOutput());
 				add("Plain Text", plainText = new TextOutput    ());
 				add("Data Tree" , dataTree  = new DataTreeOutput());
@@ -1469,13 +1502,13 @@ class SteamInspector {
 		}
 		
 		void setSource(ExtendedTextContentSource source) {
-			if (type!=ContentType.ExtendedText || hexView==null || plainText==null || dataTree!=null) throw new IllegalStateException();
+			if (type!=ContentType.ByteBasedText || hexView==null || plainText==null || dataTree!=null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 			setActiveTab(1);
 		}
 
 		void setSource(ParsedTextContentSource source) {
-			if (type!=ContentType.ParsedText || hexView==null || plainText==null || dataTree==null) throw new IllegalStateException();
+			if (type!=ContentType.ParsedByteBasedText || hexView==null || plainText==null || dataTree==null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 			setActiveTab(2);
 		}
@@ -1487,9 +1520,9 @@ class SteamInspector {
 				runningContentLoadWorker.cancel(true);
 			}
 			
-			if (hexView   !=null) hexView   .showLoadingMsg();
-			if (plainText !=null) plainText .showLoadingMsg();
-			if (dataTree!=null) dataTree.showLoadingMsg();
+			if (hexView  !=null) hexView  .showLoadingMsg();
+			if (plainText!=null) plainText.showLoadingMsg();
+			if (dataTree !=null) dataTree .showLoadingMsg();
 			
 			runningContentLoadWorker = createWorker.apply(source);
 			runningContentLoadWorker.execute();
@@ -1627,6 +1660,7 @@ class SteamInspector {
 	interface ImageContentSource {
 		BufferedImage getContentAsImage();
 	}
+	interface ImageNTextContentSource extends ImageContentSource, TextContentSource {}
 	
 	interface ExtendedTextContentSource extends ByteContentSource, TextContentSource {}
 	interface ParsedTextContentSource extends ExtendedTextContentSource, TreeContentSource {}
@@ -1719,7 +1753,7 @@ class SteamInspector {
 
 	static abstract class BaseTreeNode<ParentNodeType extends TreeNode, ChildNodeType extends TreeNode> implements TreeNode {
 		
-		enum ContentType { PlainText, Bytes, ExtendedText, ParsedText, Image, DataTree, }
+		enum ContentType { PlainText, Bytes, ByteBasedText, ParsedByteBasedText, Image, DataTree, ImageNText }
 		
 		protected final ParentNodeType parent;
 		private   String title;
