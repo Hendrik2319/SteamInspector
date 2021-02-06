@@ -20,12 +20,9 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.Calendar;
-import java.util.Date;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
-import java.util.TimeZone;
 import java.util.Vector;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
@@ -88,19 +85,6 @@ import net.schwarzbaer.system.Settings;
 class SteamInspector {
 	
 	public static void main(String[] args) {
-		long time = System.currentTimeMillis();
-		Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"), Locale.GERMANY);
-		cal.setTimeInMillis(time);
-		System.out.printf(Locale.ENGLISH, "[%s] %2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz]%n", new Date(time), cal);
-		cal.setTimeZone(TimeZone.getTimeZone("ECT"));
-		System.out.printf(Locale.ENGLISH, "[%s] %2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz]%n", new Date(time), cal);
-		cal.setTimeInMillis(time);
-		System.out.printf(Locale.ENGLISH, "[%s] %2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz]%n", new Date(time), cal);
-		cal.setTimeZone(TimeZone.getTimeZone("PST"));
-		System.out.printf(Locale.ENGLISH, "[%s] %2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz]%n", new Date(time), cal);
-		cal.setTimeInMillis(time);
-		System.out.printf(Locale.ENGLISH, "[%s] %2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz]%n", new Date(time), cal);
-		
 		new SteamInspector().createGUI();
 	}
 	
@@ -122,6 +106,7 @@ class SteamInspector {
 	
 	private StandardMainWindow mainWindow = null;
 	private JTree tree = null;
+	private DefaultTreeModel treeModel = null;
 	private TreeType selectedTreeType = null;
 	private JPanel fileContentPanel = null;
 	private final CombinedOutput hexTableOutput;
@@ -212,7 +197,7 @@ class SteamInspector {
 		
 		TreeNode treeRoot = selectedTreeType==null || selectedTreeType.createRoot==null ? null : selectedTreeType.createRoot.get();
 		boolean isRootVisible = selectedTreeType==null ? true : selectedTreeType.isRootVisible;
-		tree = new JTree(treeRoot);
+		tree = new JTree(treeModel = treeRoot==null ? null : new DefaultTreeModel(treeRoot));
 		tree.setRootVisible(isRootVisible);
 		tree.setCellRenderer(new BaseTreeNodeRenderer());
 		tree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
@@ -221,7 +206,7 @@ class SteamInspector {
 			if (path==null) return;
 			showContent(path.getLastPathComponent());
 		});
-		new MainTreeContextMenue(tree);
+		new MainTreeContextMenue(tree,()->treeModel);
 		
 		JScrollPane treePanel = new JScrollPane(tree);
 		treePanel.setPreferredSize(new Dimension(500, 800));
@@ -256,10 +241,10 @@ class SteamInspector {
 
 	private void rebuildTree() {
 		if (selectedTreeType==null || selectedTreeType.createRoot==null) {
-			tree.setModel(null);
+			tree.setModel(treeModel = null);
 			tree.setRootVisible(selectedTreeType==null ? true : selectedTreeType.isRootVisible);
 		} else {
-			tree.setModel(new DefaultTreeModel(selectedTreeType.createRoot.get()));
+			tree.setModel(treeModel = new DefaultTreeModel(selectedTreeType.createRoot.get()));
 			tree.setRootVisible(selectedTreeType.isRootVisible);
 		}
 	}
@@ -881,6 +866,7 @@ class SteamInspector {
 		private final JMenuItem miCopyPath;
 		private final JMenuItem miCopyURL;
 		private final JMenuItem miExtViewer;
+		private final JMenuItem miSetTitle;
 		
 		private Object clickedNode = null;
 		private TreeNodes.LabeledFile clickedFile = null;
@@ -888,9 +874,7 @@ class SteamInspector {
 		private String clickedURL = null;
 		private ExternalViewerInfo clickedExternalViewerInfo = null;
 
-
-		
-		MainTreeContextMenue(JTree tree) {
+		MainTreeContextMenue(JTree tree, Supplier<DefaultTreeModel> getCurrentTreeModel) {
 			
 			add(miCopyPath = createMenuItem("Copy Path to Clipboard", true, e->{
 				ClipboardTools.copyToClipBoard(clickedFile.file.getAbsolutePath());
@@ -928,6 +912,24 @@ class SteamInspector {
 						ex.printStackTrace();
 					}
 			}));
+			add(miSetTitle = createMenuItem("Set Title", true, e->{
+				DefaultTreeModel treeModel = getCurrentTreeModel.get();
+				if (treeModel==null) return;
+				if (clickedNode instanceof TreeNode) {
+					TreeNode treeNode = (TreeNode) clickedNode;
+					Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
+					if (gameID!=null) {
+						String currentTitle = TreeNodes.Data.knownGameTitles.get(gameID);
+						String actionName = currentTitle==null ? "Set" : "Change";
+						String newTitle = JOptionPane.showInputDialog(this, actionName+" Title of Game "+gameID, currentTitle);
+						if (newTitle!=null) {
+							TreeNodes.Data.knownGameTitles.put(gameID, newTitle);
+							TreeNodes.Data.knownGameTitles.writeToFile();
+							TreeNodes.PlayersNGames.gameChangeListeners.gameTitleWasChanged(treeModel, gameID);
+						}
+					}
+				}
+			}));
 			
 			tree.addMouseListener(new MouseAdapter() {
 				@Override public void mouseClicked(MouseEvent e) {
@@ -964,6 +966,18 @@ class SteamInspector {
 			
 			miCopyPath .setText(String.format("Copy %sPath to Clipboard", pathPrefix));
 			miExtViewer.setText(String.format("Open %sin %s" , fileLabel.isEmpty() ? "" : fileLabel+" ", viewerName));
+			
+			if (clickedNode instanceof TreeNode) {
+				TreeNode treeNode = (TreeNode) clickedNode;
+				Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
+				miSetTitle.setEnabled(gameID!=null);
+				if (gameID!=null) {
+					String currentTitle = TreeNodes.Data.knownGameTitles.get(gameID);
+					if (currentTitle==null) miSetTitle.setText(String.format(   "Set Title of Game %d"         , gameID));
+					else                    miSetTitle.setText(String.format("Change Title of Game %d (\"%s\")", gameID, currentTitle));
+				} else
+					miSetTitle.setText("Set Title of Game");
+			}
 		}
 		
 	}
@@ -1708,11 +1722,11 @@ class SteamInspector {
 		enum ContentType { PlainText, Bytes, ExtendedText, ParsedText, Image, DataTree, }
 		
 		protected final ParentNodeType parent;
-		protected final String title;
-		protected final boolean allowsChildren;
-		protected final boolean isLeaf;
+		private   String title;
+		private   final boolean allowsChildren;
+		private   final boolean isLeaf;
 		protected Vector<? extends ChildNodeType> children;
-		protected final Icon icon;
+		private   final Icon icon;
 
 		protected BaseTreeNode(ParentNodeType parent, String title, boolean allowsChildren, boolean isLeaf) {
 			this(parent, title, allowsChildren, isLeaf, (Icon)null);
@@ -1728,14 +1742,13 @@ class SteamInspector {
 			this.icon = icon;
 			children = null;
 		}
-		
-//		byte[] getContentAsBytes() { throw new UnsupportedOperationException(); }
-//		String getContentAsText () { throw new UnsupportedOperationException(); }
 
 		ContentType getContentType() { return null; }
 		Icon getIcon() { return icon; }
 
 		protected abstract Vector<? extends ChildNodeType> createChildren();
+
+		public void setTitle(String title) { this.title = title; }
 		@Override public String toString() { return title; }
 
 		@Override public ParentNodeType getParent() { return parent; }

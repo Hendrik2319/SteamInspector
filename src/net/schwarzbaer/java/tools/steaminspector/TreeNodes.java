@@ -6,6 +6,7 @@ import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileFilter;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -24,7 +25,6 @@ import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
@@ -44,6 +44,7 @@ import javax.swing.JFileChooser;
 import javax.swing.JMenuItem;
 import javax.swing.JTextArea;
 import javax.swing.JTree;
+import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 
 import net.schwarzbaer.gui.IconSource;
@@ -74,7 +75,9 @@ import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.FriendLis
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameStateInfo;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShotLists;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FolderNode;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.ImageFile;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.PlayersNGames.GameChangeListeners.GameChangeListener;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;
 import net.schwarzbaer.system.ClipboardTools;
 
@@ -89,6 +92,7 @@ class TreeNodes {
 	enum JsonTreeIcons { Object, Array, String, Number, Boolean }
 	static CachedIcons<JsonTreeIcons> JsonTreeIconsIS;
 	
+	private static final String KNOWN_GAME_TITLES_INI = "SteamInspector.KnownGameTitles.ini";
 	private static final File FOLDER_TEST_FILES                  = new File("./test");
 //	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS      = new File("C:\\__Games\\SteamLibrary\\steamapps\\");
 //	private static final File FOLDER_STEAM_USERDATA              = new File("C:\\Program Files (x86)\\Steam\\userdata");
@@ -516,8 +520,10 @@ class TreeNodes {
 	
 	static class SimpleTextNode extends BaseTreeNode<TreeNode,SimpleTextNode> {
 
-		SimpleTextNode(TreeNode parent, String format, Object...args) { this(parent, null, format, args); }
-		SimpleTextNode(TreeNode parent, Icon icon, String format, Object...args) { super(parent, String.format(Locale.ENGLISH, format, args), false, true, icon); }
+		SimpleTextNode(TreeNode parent,                           String format, Object...args) { this(parent, null, Locale.ENGLISH, format, args); }
+		SimpleTextNode(TreeNode parent,            Locale locale, String format, Object...args) { this(parent, null, locale, format, args); }
+		SimpleTextNode(TreeNode parent, Icon icon,                String format, Object...args) { this(parent, icon, Locale.ENGLISH, format, args); }
+		SimpleTextNode(TreeNode parent, Icon icon, Locale locale, String format, Object...args) { super(parent, String.format(locale, format, args), false, true, icon); }
 		@Override protected Vector<? extends SimpleTextNode> createChildren() { return new Vector<>(); }
 		
 		static TreeRoot createSingleTextLineTree(String format, Object...args) {
@@ -840,6 +846,47 @@ class TreeNodes {
 			String str = String.format("%s: %s%n", prefix, e.getMessage());
 			if (file!=null) str += String.format("   in File \"%s\"%n", file.getAbsolutePath());
 			System.err.print(str);
+		}
+		
+		static final KnownGameTitles knownGameTitles = new KnownGameTitles();
+		static class KnownGameTitles extends HashMap<Integer,String> {
+			private static final long serialVersionUID = 2599578502526459790L;
+			
+			void readFromFile() {
+				try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(KNOWN_GAME_TITLES_INI), StandardCharsets.UTF_8))) {
+					
+					clear();
+					String line;
+					while ( (line=in.readLine())!=null ) {
+						int pos = line.indexOf('=');
+						if (pos>0) {
+							String gameIDStr = line.substring(0, pos);
+							String gameTitle = line.substring(pos+1);
+							Integer gameID = parseNumber(gameIDStr);
+							if (gameID!=null)
+								put(gameID,gameTitle);
+						}
+					}
+					
+				} catch (FileNotFoundException e) {
+				} catch (IOException e) {
+					System.err.printf("IOException while reading KnownGameTitles from file: %s%n", KNOWN_GAME_TITLES_INI);
+					e.printStackTrace();
+				}
+			}
+			void writeToFile() {
+				try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(KNOWN_GAME_TITLES_INI), StandardCharsets.UTF_8))) {
+					
+					Vector<Integer> gameIDs = new Vector<>(this.keySet());
+					gameIDs.sort(null);
+					for (Integer gameID:gameIDs) {
+						String title = get(gameID);
+						if (gameID!=null && title!=null)
+							out.printf("%s=%s%n", gameID, title);
+					}
+					
+				} catch (FileNotFoundException e) {}
+			}
 		}
 
 		static class Player {
@@ -1522,6 +1569,8 @@ class TreeNodes {
 
 			String getTitle() {
 				if (title!=null) return title+" ["+appID+"]";
+				String storedTitle = knownGameTitles.get(appID);
+				if (storedTitle!=null) return storedTitle+" ["+appID+"]";
 				return "Game "+appID;
 			}
 
@@ -1696,11 +1745,60 @@ class TreeNodes {
 	
 	static class PlayersNGames {
 		
+		static final GameChangeListeners gameChangeListeners = new GameChangeListeners();
+		static class GameChangeListeners extends HashMap<Integer,Vector<GameChangeListeners.GameChangeListener>> {
+			private static final long serialVersionUID = 374860814407569282L;
+			
+			private final HashMap<TreeNode,Integer> registeredTreeNodes = new HashMap<>();
+			
+			@Override
+			public void clear() {
+				registeredTreeNodes.clear();
+				super.clear();
+			}
+			
+			Integer getRegisteredGameID(TreeNode node) {
+				return registeredTreeNodes.get(node);
+			}
+			
+			boolean isRegistered(TreeNode node) {
+				return registeredTreeNodes.keySet().contains(node);
+			}
+
+			void add(Integer gameID, GameChangeListener listener) {
+				if (gameID==null) return;
+				if (listener==null) throw new IllegalArgumentException();
+				Vector<GameChangeListener> vector = get(gameID);
+				if (vector==null) put(gameID,vector = new Vector<>());
+				vector.add(listener);
+				TreeNode treeNode = listener.getTreeNode();
+				if (treeNode!=null) registeredTreeNodes.put(treeNode, gameID);
+			}
+			
+			void gameTitleWasChanged(DefaultTreeModel treeModel, Integer gameID) {
+				if (gameID==null) throw new IllegalArgumentException();
+				if (treeModel==null) throw new IllegalArgumentException();
+				Vector<GameChangeListener> vector = get(gameID);
+				if (vector!=null) {
+					for (GameChangeListener l:vector) {
+						l.gameTitleWasChanged();
+						treeModel.nodeChanged(l.getTreeNode());
+					}
+				}
+			}
+			
+			interface GameChangeListener {
+				TreeNode getTreeNode();
+				void gameTitleWasChanged();
+			}
+		}
+		
 		private static final HashMap<Integer,Game> games = new HashMap<>();
 		private static final HashMap<Long,Player> players = new HashMap<>();
 
 		static void loadData() {
 			DevHelper.unknownValues.clear();
+			Data.knownGameTitles.readFromFile();
 			
 			File folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
 			GameImages gameImages = null;
@@ -1747,6 +1845,11 @@ class TreeNodes {
 				AppManifest appManifest = appManifests.get(appID);
 				games.put(appID, new Game(appID, appManifest, imageFiles, players));
 			}
+			
+			for (Game game:games.values())
+				if (game.title!=null)
+					Data.knownGameTitles.put(game.appID, game.title);
+			Data.knownGameTitles.writeToFile();
 			
 			DevHelper.unknownValues.show(System.err);
 		}
@@ -1799,9 +1902,14 @@ class TreeNodes {
 			return createGameScreenShotsNode(parent, "by "+getPlayerName(id), screenShots, null);
 		}
 		private static TreeNode createGameScreenShotsNode(TreeNode parent, Integer gameID, ScreenShotLists.ScreenShotList screenShots) {
-			return createGameScreenShotsNode(parent, getGameTitle(gameID), screenShots, getGameIcon(gameID,TreeIcons.ImageFile));
+			GroupingNode<ScreenShot> node = createGameScreenShotsNode(parent, getGameTitle(gameID), screenShots, getGameIcon(gameID,TreeIcons.ImageFile));
+			gameChangeListeners.add(gameID, new GameChangeListener() {
+				@Override public TreeNode getTreeNode() { return node; }
+				@Override public void gameTitleWasChanged() { node.setTitle(getGameTitle(gameID)); }
+			});
+			return node;
 		}
-		private static TreeNode createGameScreenShotsNode(TreeNode parent, String title, ScreenShotLists.ScreenShotList screenShots, Icon icon) {
+		private static GroupingNode<ScreenShot> createGameScreenShotsNode(TreeNode parent, String title, ScreenShotLists.ScreenShotList screenShots, Icon icon) {
 			GroupingNode<ScreenShot> groupingNode = GroupingNode.create(parent, title, screenShots, Comparator.naturalOrder(), ScreenShotNode::new, icon);
 			groupingNode.setFileSource(screenShots.imagesFolder, null);
 			return groupingNode;
@@ -1827,8 +1935,13 @@ class TreeNodes {
 			protected GameNode(TreeNode parent, Game game) {
 				super(parent, game.getTitle(), true, false, game.getIcon());
 				this.game = game;
+				if (this.game.title==null)
+					gameChangeListeners.add(this.game.appID, new GameChangeListener() {
+						@Override public TreeNode getTreeNode() { return GameNode.this; }
+						@Override public void gameTitleWasChanged() { setTitle(GameNode.this.game.getTitle()); }
+					});
 			}
-		
+
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
@@ -1884,8 +1997,7 @@ class TreeNodes {
 				
 				GroupingNode<?> groupingNode;
 				if (player.steamCloudFolders!=null && !player.steamCloudFolders.isEmpty()) {
-					GroupingNode.NodeCreator2<Integer, File> createFolderNode = (parent, gameID, file) -> new FileSystem.FolderNode(parent, getGameTitle(gameID), file, getGameIcon(gameID, TreeIcons.Folder));
-					children.add(groupingNode = GroupingNode.create(this, "SteamCloud Shared Data", player.steamCloudFolders, createGameIdKeyOrder(), createFolderNode));
+					children.add(groupingNode = GroupingNode.create(this, "SteamCloud Shared Data", player.steamCloudFolders, createGameIdKeyOrder(), this::createSteamCloudFolderNode));
 					groupingNode.setFileSource(player.folder, null);
 				}
 				if (player.screenShots!=null && !player.screenShots.isEmpty()) {
@@ -1908,6 +2020,15 @@ class TreeNodes {
 				}
 				
 				return children;
+			}
+
+			private FolderNode createSteamCloudFolderNode(TreeNode parent, Integer gameID, File file) {
+				FileSystem.FolderNode node = new FileSystem.FolderNode(parent, getGameTitle(gameID), file, getGameIcon(gameID, TreeIcons.Folder));
+				gameChangeListeners.add(gameID, new GameChangeListener() {
+					@Override public TreeNode getTreeNode() { return node; }
+					@Override public void gameTitleWasChanged() { node.setTitle(getGameTitle(gameID)); }
+				});
+				return node;
 			}
 		}
 		
@@ -2024,7 +2145,13 @@ class TreeNodes {
 				private final GameStatus gameStatus;
 
 				public GameStatusNode(TreeNode parent, AchievementProgress.GameStatus gameStatus) {
-					super(parent,getTitle(gameStatus),true,false,getIcon(gameStatus));
+					super(parent,generateTitle(gameStatus),true,false,getIcon(gameStatus));
+					if (gameStatus!=null) {
+						gameChangeListeners.add(gameStatus.getGameID(), new GameChangeListener() {
+							@Override public TreeNode getTreeNode() { return GameStatusNode.this; }
+							@Override public void gameTitleWasChanged() { setTitle(generateTitle(gameStatus)); }
+						});
+					}
 					this.gameStatus = gameStatus;
 				}
 
@@ -2033,7 +2160,7 @@ class TreeNodes {
 					return getGameIcon(gameStatus.getGameID(), TreeIcons.Folder);
 				}
 
-				private static String getTitle(AchievementProgress.GameStatus gameStatus) {
+				private static String generateTitle(AchievementProgress.GameStatus gameStatus) {
 					if (gameStatus==null) return "(NULL) GameStatus";
 					return getGameTitle(gameStatus.getGameID());
 				}
@@ -2043,10 +2170,10 @@ class TreeNodes {
 					String str = "";
 					Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("CET"), Locale.GERMANY);
 					cal.setTimeInMillis(gameStatus.cacheTime*1000);
-					str += String.format(Locale.ENGLISH, "Unlocked: %d/%d (%1.2f%%)%n", gameStatus.unlocked, gameStatus.total, gameStatus.total==0 ? Double.NaN : gameStatus.unlocked/(double)gameStatus.total*100);
+					str += String.format(Locale.ENGLISH, "Unlocked: %d/%d (%f%%)%n", gameStatus.unlocked, gameStatus.total, gameStatus.total==0 ? Double.NaN : gameStatus.unlocked/(double)gameStatus.total*100);
 					str += String.format(Locale.ENGLISH, "Percentage: %f%n"  , gameStatus.percentage);
 					str += String.format(Locale.ENGLISH, "All Unlocked: %s%n", gameStatus.allUnlocked);
-					str += String.format(Locale.GERMAN , "Cache Time: %d (%2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz])%n", gameStatus.cacheTime, cal);
+					str += String.format(Locale.ENGLISH, "Cache Time: %d (%2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ:%2$tz])%n", gameStatus.cacheTime, cal);
 					return str;
 				}
 
@@ -2056,10 +2183,10 @@ class TreeNodes {
 					if (gameStatus!=null) {
 						Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("CET"), Locale.GERMANY);
 						cal.setTimeInMillis(gameStatus.cacheTime*1000);
-						children.add(new SimpleTextNode    (this, "Unlocked: %d/%d (%1.2f%%)", gameStatus.unlocked, gameStatus.total, gameStatus.total==0 ? Double.NaN : gameStatus.unlocked/(double)gameStatus.total*100) );
+						children.add(new SimpleTextNode    (this, "Unlocked: %d/%d (%f%%)", gameStatus.unlocked, gameStatus.total, gameStatus.total==0 ? Double.NaN : gameStatus.unlocked/(double)gameStatus.total*100) );
 						children.add(new PrimitiveValueNode(this, "Percentage"  , gameStatus.percentage));
 						children.add(new PrimitiveValueNode(this, "All Unlocked", gameStatus.allUnlocked));
-						children.add(new SimpleTextNode    (this, "Cache Time: %d (%2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ,%2$tz])", gameStatus.cacheTime, cal));
+						children.add(new SimpleTextNode    (this, "Cache Time: %d (%2$tA, %2$te. %2$tb %2$tY, %2$tT [%2$tZ:%2$tz])", gameStatus.cacheTime, cal));
 					}
 					return children;
 				}
@@ -2076,6 +2203,10 @@ class TreeNodes {
 			}
 			GameStateInfoNode(TreeNode parent, Integer gameID, GameStateInfo gameStateInfo) {
 				super(parent, getGameTitle(gameID)+getExtraInfo(gameStateInfo), true, false, getMergedIcon( getGameIcon(gameID, TreeIcons.Folder), gameStateInfo ));
+				gameChangeListeners.add(gameID, new GameChangeListener() {
+					@Override public TreeNode getTreeNode() { return GameStateInfoNode.this; }
+					@Override public void gameTitleWasChanged() { setTitle(getGameTitle(gameID)+getExtraInfo(gameStateInfo)); }
+				});
 				this.data = gameStateInfo;
 			}
 
@@ -2385,7 +2516,7 @@ class TreeNodes {
 
 			@Override
 			public String toString() {
-				return String.format("%s [%s]", title, folder.getAbsolutePath());
+				return String.format("%s [%s]", super.toString(), folder.getAbsolutePath());
 			}
 
 			@Override
