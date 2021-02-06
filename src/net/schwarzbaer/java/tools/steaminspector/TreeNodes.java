@@ -27,6 +27,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
@@ -2206,7 +2207,7 @@ class TreeNodes {
 			}
 		}
 		
-		static class FriendListNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode {
+		static class FriendListNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, TextContentSource {
 
 			private final FriendList data;
 			private final File localconfigFile;
@@ -2220,30 +2221,44 @@ class TreeNodes {
 			@Override public ExternalViewerInfo getExternalViewerInfo() { return localconfigFile==null ? null : ExternalViewerInfo.TextEditor; }
 			@Override public LabeledFile getFile() { return localconfigFile==null ? null : new LabeledFile(localconfigFile); }
 
+			@Override ContentType getContentType() { return ContentType.PlainText; }
+			@Override public String getContentAsText() {
+				Vector<String> valueKeys = new Vector<>(data.values.keySet());
+				valueKeys.sort(null);
+				Iterator<String> iterator = valueKeys
+						.stream()
+						.map(key->String.format("%s: \"%s\"%n", key, data.values.get(key)))
+						.iterator();
+				return String.join("", (Iterable<String>)()->iterator);
+			}
+			
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				if (data.rawData!=null)
 					children.add( new RawVDFDataNode(this, "Raw VDF Data", data.rawData) );
-				if (data.values!=null) {
-					children.add(
-						GroupingNode.create(
-							this, "Values", data.values,
-							Comparator.comparing(Map.Entry<String,String>::getKey),
-							(parent, id, value) -> new PrimitiveValueNode(parent, id, value)
-						)
-					);
+				//if (data.values!=null) {
+				//	children.add(
+				//		GroupingNode.create(
+				//			this, "Values", data.values,
+				//			Comparator.comparing(Map.Entry<String,String>::getKey),
+				//			(parent, id, value) -> new PrimitiveValueNode(parent, id, value)
+				//		)
+				//	);
+				//}
+				if (data.friends!=null) {
+					Vector<Friend> vector = new Vector<>(data.friends);
+					vector.sort(Comparator.<Friend,Long>comparing(friend->friend.id,Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(friend->friend.idStr));
+					for (Friend friend:vector)
+						children.add( new FriendNode(this, friend) );
+					//children.add(
+					//	GroupingNode.create(
+					//		this, "Friends", data.friends,
+					//		Comparator.<Friend,Long>comparing(friend->friend.id,Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(friend->friend.idStr),
+					//		FriendNode::new
+					//	)
+					//);
 				}
-				if (data.friends!=null)
-//					for (Friend friend:data.friends)
-//						children.add( new FriendNode(this, friend) );
-					children.add(
-							GroupingNode.create(
-								this, "Friends", data.friends,
-								Comparator.<Friend,Long>comparing(friend->friend.id,Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(friend->friend.idStr),
-								FriendNode::new
-							)
-						);
 				return children;
 			}
 			
