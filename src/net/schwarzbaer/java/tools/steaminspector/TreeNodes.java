@@ -1148,26 +1148,51 @@ class TreeNodes {
 
 				final File file;
 				final JSON_Parser.Result<NV, V> rawData;
+				final boolean hasParsedData;
+				final JSON_Object<NV, V> sourceData;
 				final Long version;
-				final Vector<GameStatus> gameStates;
+				final HashMap<Integer,GameStatus> gameStates;
+				final Vector<GameStatus> gameStates_withoutID;
 
 				AchievementProgress(File file, JSON_Parser.Result<NV, V> rawData) {
 					this.file = file;
 					this.rawData = rawData;
+					hasParsedData = false;
+					sourceData = null;
 					version    = null;
 					gameStates = null;
+					gameStates_withoutID = null;
 				}
 				AchievementProgress(File file, JSON_Object<NV,V> object) throws ParseException {
 					this.file = file;
 					rawData = null;
+					hasParsedData = true;
+					sourceData = object;
 					//DevHelper.scanJsonStructure(object, "AchievementProgress");
 					String prefixStr = "AchievementProgress";
 					if (object==null) throw new ParseException("%s == <NULL>", prefixStr);
 					version                    = getJsonValue(object, "nVersion", JSON_Data.Value::castToIntegerValue, "IntegerValue", prefixStr);
 					JSON_Object<NV,V> mapCache = getJsonValue(object, "mapCache", JSON_Data.Value::castToObjectValue , "ObjectValue", prefixStr );
-					gameStates = new Vector<>();
-					for (JSON_Data.NamedValue<NV,V> nv:mapCache)
-						gameStates.add(new GameStatus(nv.name,nv.value));
+					gameStates = new HashMap<>();
+					gameStates_withoutID = new Vector<GameStatus>();
+					for (JSON_Data.NamedValue<NV,V> nv:mapCache) {
+						GameStatus gameStatus;
+						try {
+							gameStatus = new GameStatus(nv.name,nv.value);
+						} catch (ParseException e) {
+							showTreeNodesParseException(e, file);
+							gameStatus = new GameStatus(nv);
+						}
+						
+						Integer gameID = parseNumber(nv.name);
+						if (gameID==null && gameStatus.hasParsedData)
+							gameID = (int) gameStatus.appID;
+						
+						if (gameID!=null)
+							gameStates.put(gameID, gameStatus);
+						else
+							gameStates_withoutID.add(gameStatus);
+					}
 					DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,prefixStr+".GameStatus");
 				}
 				
@@ -1189,6 +1214,10 @@ class TreeNodes {
 					// "AchievementProgress.GameStatus.unlocked:Integer"
 					// "AchievementProgress.GameStatus:Object"
 					
+					final JSON_Data.Value<NV, V> rawData;
+					final String name;
+					final boolean hasParsedData;
+					
 					final boolean allUnlocked;
 					final long    appID;
 					final long    cacheTime;
@@ -1196,7 +1225,22 @@ class TreeNodes {
 					final long    unlocked;
 					final double  percentage;
 
+					GameStatus(JSON_Data.NamedValue<NV, V> rawData) {
+						this.rawData = rawData.value;
+						this.name    = rawData.name;
+						hasParsedData = false;
+						allUnlocked = false;
+						appID       = -1;
+						cacheTime   = -1;
+						total       = -1;
+						unlocked    = -1;
+						percentage  = Double.NaN;
+					}
+
 					GameStatus(String name, JSON_Data.Value<NV, V> value) throws ParseException {
+						this.rawData = null;
+						this.name    = name;
+						hasParsedData = true;
 						// DevHelper.scanJsonStructure(value, "AchievementProgress.GameStatus");
 						String prefixStr = "AchievementProgress.GameStatus["+name+"]";
 						JSON_Object<NV,V> object = getJsonValue(value, JSON_Data.Value::castToObjectValue, "ObjectValue", prefixStr);
@@ -1711,6 +1755,7 @@ class TreeNodes {
 			private final HashMap<Long, File> steamCloudFolders;
 			private final HashMap<Long, ScreenShotLists.ScreenShotList> screenShots;
 			private final HashMap<Long, GameStateInfo>  gameStateInfos;
+			private final HashMap<Long, AchievementProgress.GameStatus>  achievementProgress;
 			
 			Game(int appID, AppManifest appManifest, HashMap<String, File> imageFiles, HashMap<Long, Player> players) {
 				this.appID = appID;
@@ -1721,6 +1766,7 @@ class TreeNodes {
 				steamCloudFolders = new HashMap<>();
 				screenShots = new HashMap<>();
 				gameStateInfos = new HashMap<>();
+				achievementProgress = new HashMap<>();
 				players.forEach((playerID,player)->{
 					
 					File steamCloudFolder = player.steamCloudFolders.get(appID);
@@ -1735,6 +1781,12 @@ class TreeNodes {
 					GameStateInfo gameStateInfo = player.gameStateInfos.get(appID);
 					if (gameStateInfo!=null)
 						gameStateInfos.put(playerID, gameStateInfo);
+					
+					if (player.achievementProgress!=null && player.achievementProgress.gameStates!=null) {
+						AchievementProgress.GameStatus gameStatus = player.achievementProgress.gameStates.get(appID);
+						if (gameStatus!=null)
+							achievementProgress.put(playerID, gameStatus);
+					}
 				});
 			}
 
@@ -1968,8 +2020,8 @@ class TreeNodes {
 			}
 		}
 		
-		private static final HashMap<Integer,Game> games = new HashMap<>();
-		private static final HashMap<Long,Player> players = new HashMap<>();
+		static final HashMap<Integer,Game> games = new HashMap<>();
+		static final HashMap<Long,Player> players = new HashMap<>();
 
 		static void loadData() {
 			DevHelper.unknownValues.clear();
@@ -2110,7 +2162,7 @@ class TreeNodes {
 			protected GameNode(TreeNode parent, Game game) {
 				super(parent, game.getTitle(), true, false, game.getIcon());
 				this.game = game;
-				if (this.game.title==null)
+				//if (this.game.title==null)
 					gameChangeListeners.add(this.game.appID, new GameChangeListener() {
 						@Override public TreeNode getTreeNode() { return GameNode.this; }
 						@Override public void gameTitleWasChanged() { setTitle(GameNode.this.game.getTitle()); }
@@ -2125,8 +2177,10 @@ class TreeNodes {
 					children.add(new FileSystem.AppManifestNode(this, game.appManifest.file));
 				}
 				if (!game.gameStateInfos.isEmpty()) {
-					Comparator<Map.Entry<Long, GameStateInfo>> sortOrder = Comparator.comparing(Map.Entry<Long,GameStateInfo>::getKey);
-					children.add(GroupingNode.create(this, "Game Status Infos", game.gameStateInfos, sortOrder, GameStateInfoNode::new));
+					children.add(GroupingNode.create(this, "Game Status Infos", game.gameStateInfos, createPlayerIdKeyOrder(), GameStateInfoNode::new));
+				}
+				if (!game.achievementProgress.isEmpty()) {
+					children.add(GroupingNode.create(this, "Achievement Progress", game.achievementProgress, createPlayerIdKeyOrder(), AchievementProgressNode.GameStatusNode::new));
 				}
 				if (game.imageFiles!=null && !game.imageFiles.isEmpty()) {
 					children.add(new FileSystem.FolderNode(this, "Images", game.imageFiles.values(), TreeIcons.ImageFile));
@@ -2237,7 +2291,7 @@ class TreeNodes {
 				Vector<TreeNode> children = new Vector<>();
 				if (data.rawData!=null)
 					children.add( new RawVDFDataNode(this, "Raw VDF Data", data.rawData) );
-				//if (data.values!=null) {
+				if (data.values!=null) {
 				//	children.add(
 				//		GroupingNode.create(
 				//			this, "Values", data.values,
@@ -2245,7 +2299,7 @@ class TreeNodes {
 				//			(parent, id, value) -> new PrimitiveValueNode(parent, id, value)
 				//		)
 				//	);
-				//}
+				}
 				if (data.friends!=null) {
 					Vector<Friend> vector = new Vector<>(data.friends);
 					vector.sort(Comparator.<Friend,Long>comparing(friend->friend.id,Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(friend->friend.idStr));
@@ -2295,7 +2349,7 @@ class TreeNodes {
 			}
 		}
 		
-		static class AchievementProgressNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode {
+		static class AchievementProgressNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, TreeContentSource {
 			
 			private final AchievementProgress data;
 
@@ -2312,6 +2366,12 @@ class TreeNodes {
 				return str;
 			}
 
+			@Override ContentType getContentType() { return data.sourceData!=null ? ContentType.DataTree : null; }
+			@Override public TreeRoot getContentAsTree() {
+				if (data.sourceData!=null) return FileSystem.JSON_File.JSON_TreeNode.create(data.sourceData, false);
+				return null;
+			}
+
 			@Override public LabeledFile getFile() { return new LabeledFile(data.file); }
 			@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.TextEditor; }
 
@@ -2321,41 +2381,48 @@ class TreeNodes {
 				if (data.rawData!=null)
 					children.add( new RawJsonDataNode(this, "Raw JSON Data", data.rawData, data.file) );
 				if (data.gameStates!=null) {
-					Vector<AchievementProgress.GameStatus> vec = new Vector<>(data.gameStates);
-					vec.sort(Comparator.comparing(AchievementProgress.GameStatus::getGameID,createGameIdOrder()));
-					for (AchievementProgress.GameStatus gameStatus:vec)
-						children.add(new GameStatusNode(this,gameStatus));
+					Vector<Integer> vec = new Vector<>(data.gameStates.keySet());
+					vec.sort(createGameIdOrder());
+					for (Integer gameID:vec)
+						children.add(new GameStatusNode(this,gameID,data.gameStates.get(gameID)));
+				}
+				if (data.gameStates_withoutID!=null) {
+					for (AchievementProgress.GameStatus gameStatus:data.gameStates_withoutID)
+						children.add(new GameStatusNode(this,(Integer)null,gameStatus));
+					
 				}
 				return children;
 			}
 			
-			static class GameStatusNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource {
+			static class GameStatusNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource, TreeContentSource {
 
 				private final AchievementProgress.GameStatus gameStatus;
 
-				public GameStatusNode(TreeNode parent, AchievementProgress.GameStatus gameStatus) {
-					super(parent,generateTitle(gameStatus),true,false,getIcon(gameStatus));
+				public GameStatusNode(TreeNode parent, Long playerID, AchievementProgress.GameStatus gameStatus) {
+					super(parent,"by "+getPlayerName(playerID),true,false);
+					this.gameStatus = gameStatus;
+				}
+				public GameStatusNode(TreeNode parent, Integer gameID, AchievementProgress.GameStatus gameStatus) {
+					super(parent,getGameTitle(gameID),true,false,getGameIcon(gameID, TreeIcons.Folder));
 					if (gameStatus!=null) {
-						gameChangeListeners.add(gameStatus.getGameID(), new GameChangeListener() {
+						gameChangeListeners.add(gameID, new GameChangeListener() {
 							@Override public TreeNode getTreeNode() { return GameStatusNode.this; }
-							@Override public void gameTitleWasChanged() { setTitle(generateTitle(gameStatus)); }
+							@Override public void gameTitleWasChanged() { setTitle(getGameTitle(gameID)); }
 						});
 					}
 					this.gameStatus = gameStatus;
 				}
 
-				private static Icon getIcon(AchievementProgress.GameStatus gameStatus) {
-					if (gameStatus==null) return null;
-					return getGameIcon(gameStatus.getGameID(), TreeIcons.Folder);
+				@Override ContentType getContentType() {
+					if (gameStatus!=null) {
+						if (gameStatus.hasParsedData) return ContentType.PlainText;
+						if (gameStatus.rawData!=null) return ContentType.DataTree;
+					}
+					
+					return null;
 				}
-
-				private static String generateTitle(AchievementProgress.GameStatus gameStatus) {
-					if (gameStatus==null) return "(NULL) GameStatus";
-					return getGameTitle(gameStatus.getGameID());
-				}
-
-				@Override ContentType getContentType() { return ContentType.PlainText; }
 				@Override public String getContentAsText() {
+					if (gameStatus==null || !gameStatus.hasParsedData) return null;
 					String str = "";
 					str += String.format(Locale.ENGLISH, "Unlocked: %d/%d (%f%%)%n", gameStatus.unlocked, gameStatus.total, gameStatus.total==0 ? Double.NaN : gameStatus.unlocked/(double)gameStatus.total*100);
 					str += String.format(Locale.ENGLISH, "Percentage: %f%n"  , gameStatus.percentage);
@@ -2363,15 +2430,23 @@ class TreeNodes {
 					str += String.format(Locale.ENGLISH, "Cache Time: %d (%s)%n", gameStatus.cacheTime, getTimeStr(gameStatus.cacheTime*1000));
 					return str;
 				}
+				@Override public TreeRoot getContentAsTree() {
+					if (gameStatus==null || gameStatus.rawData==null) return null;
+					return FileSystem.JSON_File.JSON_TreeNode.create(gameStatus.rawData, false);
+				}
 
 				@Override
 				protected Vector<? extends TreeNode> createChildren() {
 					Vector<TreeNode> children = new Vector<>();
 					if (gameStatus!=null) {
-						children.add(new SimpleTextNode    (this, "Unlocked: %d/%d (%f%%)", gameStatus.unlocked, gameStatus.total, gameStatus.total==0 ? Double.NaN : gameStatus.unlocked/(double)gameStatus.total*100) );
-						children.add(new PrimitiveValueNode(this, "Percentage"  , gameStatus.percentage));
-						children.add(new PrimitiveValueNode(this, "All Unlocked", gameStatus.allUnlocked));
-						children.add(new SimpleTextNode    (this, "Cache Time: %d (%s)", gameStatus.cacheTime, getTimeStr(gameStatus.cacheTime*1000)));
+						if (gameStatus.rawData!=null)
+							children.add(new RawJsonDataNode   (this, "Raw JSON Data", gameStatus.rawData) );
+						if (gameStatus.hasParsedData) {
+							children.add(new SimpleTextNode    (this, "Unlocked: %d/%d (%f%%)", gameStatus.unlocked, gameStatus.total, gameStatus.total==0 ? Double.NaN : gameStatus.unlocked/(double)gameStatus.total*100) );
+							children.add(new PrimitiveValueNode(this, "Percentage"  , gameStatus.percentage));
+							children.add(new PrimitiveValueNode(this, "All Unlocked", gameStatus.allUnlocked));
+							children.add(new SimpleTextNode    (this, "Cache Time: %d (%s)", gameStatus.cacheTime, getTimeStr(gameStatus.cacheTime*1000)));
+						}
 					}
 					return children;
 				}
@@ -2383,7 +2458,7 @@ class TreeNodes {
 			private final GameStateInfo data;
 
 			GameStateInfoNode(TreeNode parent, Long playerID, GameStateInfo gameStateInfo) {
-				super(parent, "by "+getPlayerName(playerID)+generateExtraInfo(gameStateInfo), true, false, generateMergedIcon( TreeIconsIS.getCachedIcon(TreeIcons.Folder), gameStateInfo ));
+				super(parent, "by "+getPlayerName(playerID)+generateExtraInfo(gameStateInfo), true, false);
 				this.data = gameStateInfo;
 			}
 			GameStateInfoNode(TreeNode parent, Integer gameID, GameStateInfo gameStateInfo) {

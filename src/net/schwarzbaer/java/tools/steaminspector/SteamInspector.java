@@ -76,9 +76,6 @@ import javax.swing.tree.TreeSelectionModel;
 import net.schwarzbaer.gui.ImageView;
 import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode.ContentType;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerInfo.AddressType;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.system.ClipboardTools;
 import net.schwarzbaer.system.Settings;
 
@@ -967,9 +964,9 @@ class SteamInspector {
 			miCopyURL  .setEnabled(clickedURL !=null);
 			miExtViewer.setEnabled(
 				clickedExternalViewerInfo!=null && 
-				(  ( clickedExternalViewerInfo.is(AddressType.Folder) &&    clickedFile!=null && clickedFile.file.isDirectory() )
-				|| ( clickedExternalViewerInfo.is(AddressType.File  ) && ( (clickedFile!=null && clickedFile.file.isFile     ()) || clickedFileCreator!=null ) )
-				|| ( clickedExternalViewerInfo.is(AddressType.URL   ) &&    clickedURL !=null )
+				(  ( clickedExternalViewerInfo.is(ExternalViewerInfo.AddressType.Folder) &&    clickedFile!=null && clickedFile.file.isDirectory() )
+				|| ( clickedExternalViewerInfo.is(ExternalViewerInfo.AddressType.File  ) && ( (clickedFile!=null && clickedFile.file.isFile     ()) || clickedFileCreator!=null ) )
+				|| ( clickedExternalViewerInfo.is(ExternalViewerInfo.AddressType.URL   ) &&    clickedURL !=null )
 				)
 			);
 			String pathPrefix = clickedFile!=null ? (clickedFile.file.isFile() ? "File " : clickedFile.file.isDirectory() ? "Folder " : "") : clickedFileCreator!=null ? "File " : "";
@@ -982,7 +979,8 @@ class SteamInspector {
 			if (clickedNode instanceof TreeNode) {
 				TreeNode treeNode = (TreeNode) clickedNode;
 				Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
-				miSetTitle.setEnabled(gameID!=null);
+				TreeNodes.Data.Game game = TreeNodes.PlayersNGames.games.get(gameID);
+				miSetTitle.setEnabled(gameID!=null && (game==null || !game.hasATitle()));
 				if (gameID!=null) {
 					String currentTitle = TreeNodes.Data.knownGameTitles.get(gameID);
 					if (currentTitle==null) miSetTitle.setText(String.format(   "Set Title of Game %d"         , gameID));
@@ -1425,7 +1423,7 @@ class SteamInspector {
 
 	static class CombinedOutput extends MultiOutput {
 		
-		private final ContentType type;
+		private final BaseTreeNode.ContentType type;
 		private final Component mainComp;
 		private ContentLoadWorker runningContentLoadWorker;
 		
@@ -1487,28 +1485,28 @@ class SteamInspector {
 		}
 
 		void setSource(ByteContentSource source) {
-			if (type!=ContentType.Bytes || hexView==null || plainText!=null || dataTree!=null) throw new IllegalStateException();
+			if (type!=BaseTreeNode.ContentType.Bytes || hexView==null || plainText!=null || dataTree!=null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 		}
 
 		void setSource(TextContentSource source) {
-			if (type!=ContentType.PlainText || hexView!=null || plainText==null || dataTree!=null) throw new IllegalStateException();
+			if (type!=BaseTreeNode.ContentType.PlainText || hexView!=null || plainText==null || dataTree!=null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 		}
 
 		void setSource(TreeContentSource source) {
-			if (type!=ContentType.DataTree || hexView!=null || plainText!=null || dataTree==null) throw new IllegalStateException();
+			if (type!=BaseTreeNode.ContentType.DataTree || hexView!=null || plainText!=null || dataTree==null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 		}
 		
 		void setSource(ExtendedTextContentSource source) {
-			if (type!=ContentType.ByteBasedText || hexView==null || plainText==null || dataTree!=null) throw new IllegalStateException();
+			if (type!=BaseTreeNode.ContentType.ByteBasedText || hexView==null || plainText==null || dataTree!=null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 			setActiveTab(1);
 		}
 
 		void setSource(ParsedTextContentSource source) {
-			if (type!=ContentType.ParsedByteBasedText || hexView==null || plainText==null || dataTree==null) throw new IllegalStateException();
+			if (type!=BaseTreeNode.ContentType.ParsedByteBasedText || hexView==null || plainText==null || dataTree==null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 			setActiveTab(2);
 		}
@@ -1765,7 +1763,7 @@ class SteamInspector {
 		protected BaseTreeNode(ParentNodeType parent, String title, boolean allowsChildren, boolean isLeaf) {
 			this(parent, title, allowsChildren, isLeaf, (Icon)null);
 		}
-		protected BaseTreeNode(ParentNodeType parent, String title, boolean allowsChildren, boolean isLeaf, TreeIcons icon) {
+		protected BaseTreeNode(ParentNodeType parent, String title, boolean allowsChildren, boolean isLeaf, TreeNodes.TreeIcons icon) {
 			this(parent, title, allowsChildren, isLeaf, TreeNodes.TreeIconsIS.getCachedIcon(icon));
 		}
 		protected BaseTreeNode(ParentNodeType parent, String title, boolean allowsChildren, boolean isLeaf, Icon icon) {
