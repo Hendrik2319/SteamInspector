@@ -237,6 +237,20 @@ class VDFParser {
 							if (ch=='\\') {
 								ch=textIn.read();
 								if (ch<0) break;
+								switch (ch) {
+								case 'b': ch='\b'; break;
+								case 't': ch='\t'; break;
+								case 'n': ch='\n'; break;
+								case 'r': ch='\r'; break;
+								case 'f': ch='\f'; break;
+								case '\'': break;
+								case '\"': break;
+								case '\\': break;
+								default:
+									sb.append('\\');
+									// unknown escape char --> repair escape sequence
+									//   '\' + '#'  -->  '\#'
+								}
 							}
 							sb.append((char)ch);
 						}

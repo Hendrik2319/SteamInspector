@@ -876,12 +876,15 @@ class SteamInspector {
 		private final JMenuItem miCopyURL;
 		private final JMenuItem miExtViewer;
 		private final JMenuItem miSetTitle;
+		private final JMenuItem miCollapseChildren;
 		
+		private TreePath clickedPath = null;
 		private Object clickedNode = null;
 		private TreeNodes.LabeledFile clickedFile = null;
 		private TreeNodes.FilePromise clickedFileCreator = null;
 		private String clickedURL = null;
 		private ExternalViewerInfo clickedExternalViewerInfo = null;
+
 
 		MainTreeContextMenue(JTree tree, Supplier<DefaultTreeModel> getCurrentTreeModel) {
 			
@@ -940,15 +943,28 @@ class SteamInspector {
 				}
 			}));
 			
+			addSeparator();
+			add(miCollapseChildren = SteamInspector.createMenuItem("Collapse Children", true, e->{
+				if (tree!=null && clickedPath!=null && clickedNode instanceof TreeNodes.TreeNodeII) {
+					TreeNodes.TreeNodeII treeNodeII = (TreeNodes.TreeNodeII) clickedNode;
+					Iterable<? extends TreeNode> children = treeNodeII.getChildren();
+					if (children!=null) {
+						tree.expandPath(clickedPath);
+						for (TreeNode child:children)
+							tree.collapsePath(clickedPath.pathByAddingChild(child));
+					}
+				}
+			}));
+			
 			tree.addMouseListener(new MouseAdapter() {
+
 				@Override public void mouseClicked(MouseEvent e) {
 					if (e.getButton()==MouseEvent.BUTTON3) {
-						TreePath path = tree.getPathForLocation(e.getX(), e.getY());
-						if (path!=null) {
-							clickedNode = path.getLastPathComponent();
-							prepareMenueItems();
-							show(tree, e.getX(), e.getY());
-						}
+						clickedPath = tree.getPathForLocation(e.getX(), e.getY());
+						if (clickedPath!=null)
+							clickedNode = clickedPath.getLastPathComponent();
+						prepareMenueItems();
+						show(tree, e.getX(), e.getY());
 					}
 				}
 			});
@@ -960,6 +976,7 @@ class SteamInspector {
 			clickedFileCreator        = clickedNode instanceof TreeNodes.FileCreatingNode   ? ((TreeNodes.FileCreatingNode  ) clickedNode).getFilePromise()        : null;
 			clickedExternalViewerInfo = clickedNode instanceof TreeNodes.ExternViewableNode ? ((TreeNodes.ExternViewableNode) clickedNode).getExternalViewerInfo() : null;
 			
+			miCollapseChildren.setEnabled(clickedNode!=null);
 			miCopyPath .setEnabled(clickedFile!=null);
 			miCopyURL  .setEnabled(clickedURL !=null);
 			miExtViewer.setEnabled(
@@ -969,6 +986,7 @@ class SteamInspector {
 				|| ( clickedExternalViewerInfo.is(ExternalViewerInfo.AddressType.URL   ) &&    clickedURL !=null )
 				)
 			);
+			
 			String pathPrefix = clickedFile!=null ? (clickedFile.file.isFile() ? "File " : clickedFile.file.isDirectory() ? "Folder " : "") : clickedFileCreator!=null ? "File " : "";
 			String viewerName = clickedExternalViewerInfo==null ? "External Viewer" : clickedExternalViewerInfo.viewerName;
 			String fileLabel  = clickedFile!=null ? clickedFile.label : clickedFileCreator!=null ? clickedFileCreator.label : "";
@@ -1370,8 +1388,8 @@ class SteamInspector {
 				@Override public void mouseClicked(MouseEvent e) {
 					if (e.getButton()==MouseEvent.BUTTON3) {
 						TreePath path = view.getPathForLocation(e.getX(), e.getY());
-						if (path==null || treeRoot==null) return;
-						treeRoot.showContextMenu(view, e.getX(), e.getY(), path.getLastPathComponent());
+						if (treeRoot==null) return;
+						treeRoot.showContextMenu(view, e.getX(), e.getY(), path, path==null ? null : path.getLastPathComponent());
 					}
 				}
 			});
@@ -1669,7 +1687,7 @@ class SteamInspector {
 	interface ParsedTextFileSource extends ParsedTextContentSource, FileBasedSource {}
 	
 	interface TreeContextMenuHandler {
-		void showContextMenu(JTree invoker, int x, int y, Object clickedTreeNode);
+		void showContextMenu(JTree invoker, int x, int y, TreePath clickedTreePath, Object clickedTreeNode);
 	}
 	
 	static abstract class AbstractTreeContextMenu extends JPopupMenu implements TreeContextMenuHandler {
@@ -1691,9 +1709,9 @@ class SteamInspector {
 			this.expandAllRows = expandAllRows;
 			this.tcmh = tcmh;
 		}
-		@Override public void showContextMenu(JTree invoker, int x, int y, Object clickedTreeNode) {
+		@Override public void showContextMenu(JTree invoker, int x, int y, TreePath clickedTreePath, Object clickedTreeNode) {
 			if (tcmh!=null)
-				tcmh.showContextMenu(invoker, x, y, clickedTreeNode);
+				tcmh.showContextMenu(invoker, x, y, clickedTreePath, clickedTreeNode);
 		}
 	}
 	
@@ -1749,7 +1767,7 @@ class SteamInspector {
 		}
 	}
 
-	static abstract class BaseTreeNode<ParentNodeType extends TreeNode, ChildNodeType extends TreeNode> implements TreeNode {
+	static abstract class BaseTreeNode<ParentNodeType extends TreeNode, ChildNodeType extends TreeNode> implements TreeNodes.TreeNodeII {
 		
 		enum ContentType { PlainText, Bytes, ByteBasedText, ParsedByteBasedText, Image, DataTree, ImageNText }
 		
@@ -1807,6 +1825,10 @@ class SteamInspector {
 		@Override public Enumeration children() {
 			checkChildren("children()");
 			return children.elements();
+		}
+		@Override public Iterable<? extends TreeNode> getChildren() {
+			checkChildren("getChildren()");
+			return children;
 		}
 
 		protected void checkChildren(String methodeLabel) {

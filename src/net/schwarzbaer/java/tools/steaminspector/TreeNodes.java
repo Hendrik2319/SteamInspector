@@ -47,6 +47,7 @@ import javax.swing.JTextArea;
 import javax.swing.JTree;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
+import javax.swing.tree.TreePath;
 
 import net.schwarzbaer.gui.IconSource;
 import net.schwarzbaer.gui.IconSource.CachedIcons;
@@ -361,7 +362,11 @@ class TreeNodes {
 		ExternalViewerInfo getExternalViewerInfo();
 	}
 	
-	interface DataTreeNode {
+	interface TreeNodeII extends TreeNode  {
+		Iterable<? extends TreeNode> getChildren();
+	}
+	
+	interface DataTreeNode extends TreeNodeII {
 		default String getFullInfo() {
 			String str = "";
 			str += !hasName()  ? String.format("Name : none%n")  : String.format("Name : \"%s\"%n", getName());
@@ -387,12 +392,17 @@ class TreeNodes {
 		private final JMenuItem miPath;
 		private final JMenuItem miAccessCall;
 		private final JMenuItem miFullInfo;
+		private final JMenuItem miCollapseChildren;
 		private DataTreeNode clickedTreeNode;
-		private JTree invoker;
+		private TreePath clickedTreePath;
+		private JTree tree;
+
+
 		
 		DataTreeNodeContextMenu() {
 			clickedTreeNode = null;
-			invoker = null;
+			clickedTreePath = null;
+			tree = null;
 			add(miName       = SteamInspector.createMenuItem("Copy Name"       , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getName())));
 			add(miValue      = SteamInspector.createMenuItem("Copy Value"      , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getValueStr())));
 			add(miPath       = SteamInspector.createMenuItem("Copy Path"       , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getPath())));
@@ -400,15 +410,26 @@ class TreeNodes {
 			add(miFullInfo   = SteamInspector.createMenuItem("Copy Full Info"  , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getFullInfo())));
 			addSeparator();
 			add(SteamInspector.createMenuItem("Expand Full Tree", true, e->{
-				if (invoker!=null)
-					for (int i=0; i<invoker.getRowCount(); i++)
-						invoker.expandRow(i);
+				if (tree!=null)
+					for (int i=0; i<tree.getRowCount(); i++)
+						tree.expandRow(i);
+			}));
+			add(miCollapseChildren = SteamInspector.createMenuItem("Collapse Children", true, e->{
+				if (tree!=null && clickedTreeNode!=null && clickedTreePath!=null) {
+					Iterable<? extends TreeNode> children = clickedTreeNode.getChildren();
+					if (children!=null) {
+						tree.expandPath(clickedTreePath);
+						for (TreeNode child:children)
+							tree.collapsePath(clickedTreePath.pathByAddingChild(child));
+					}
+				}
 			}));
 		}
 		
 		@Override
-		public void showContextMenu(JTree invoker, int x, int y, Object clickedTreeNode) {
-			this.invoker = invoker;
+		public void showContextMenu(JTree tree, int x, int y, TreePath clickedTreePath, Object clickedTreeNode) {
+			this.tree = tree;
+			this.clickedTreePath = clickedTreePath;
 			this.clickedTreeNode = null;
 			if (clickedTreeNode instanceof DataTreeNode)
 				this.clickedTreeNode = (DataTreeNode) clickedTreeNode;
@@ -418,8 +439,9 @@ class TreeNodes {
 			miPath      .setEnabled(this.clickedTreeNode!=null);
 			miAccessCall.setEnabled(this.clickedTreeNode!=null);
 			miFullInfo  .setEnabled(this.clickedTreeNode!=null);
+			miCollapseChildren.setEnabled(this.clickedTreeNode!=null);
 			
-			show(invoker, x, y);
+			show(tree, x, y);
 		}
 	}
 
