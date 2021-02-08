@@ -54,6 +54,7 @@ import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Array;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Data.TraverseException;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeContextMenu;
@@ -750,8 +751,8 @@ class TreeNodes {
 
 		static void scanJsonStructure_OAO( JSON_Data.Value<NV,V> baseValue, String baseValueLabel, String subArrayName, Vector<String> knownValueNames, Vector<String> knownSubArrayValueNames, String errorPrefix, File file) {
 			JSON_Object<NV,V> object = null;
-			try { object = Data.getJsonValue(baseValue, JSON_Data.Value::castToObjectValue, "ObjectValue", errorPrefix); }
-			catch (ParseException e) { Data.showTreeNodesParseException(e, file); }
+			try { object = JSON_Data.getObjectValue(baseValue, errorPrefix); }
+			catch (TraverseException e) { Data.showException(e, file); }
 			if (object!=null) {
 				for (JSON_Data.NamedValue<NV,V> nvalue:object) {
 					String valueStr = nvalue.value.type+"...";
@@ -759,13 +760,13 @@ class TreeNodes {
 					DevHelper.unknownValues.add(baseValueLabel+"."+nvalue.name+" = "+valueStr);
 					if (subArrayName.equals(nvalue.name)) {
 						JSON_Array<NV,V> array = null;
-						try { array = Data.getJsonValue(nvalue.value, JSON_Data.Value::castToArrayValue, "ArrayValue", errorPrefix+"."+subArrayName); }
-						catch (ParseException e) { Data.showTreeNodesParseException(e, file); }
+						try { array = JSON_Data.getArrayValue(nvalue.value, errorPrefix+"."+subArrayName); }
+						catch (TraverseException e) { Data.showException(e, file); }
 						if (array!=null) {
 							for (int i=0; i<array.size(); i++) {
 								JSON_Object<NV, V> object1 = null;
-								try { object1 = Data.getJsonValue(array.get(i), JSON_Data.Value::castToObjectValue, "ObjectValue", errorPrefix+"."+subArrayName+"["+i+"]"); }
-								catch (ParseException e) { Data.showTreeNodesParseException(e, file); }
+								try { object1 = JSON_Data.getObjectValue(array.get(i), errorPrefix+"."+subArrayName+"["+i+"]"); }
+								catch (TraverseException e) { Data.showException(e, file); }
 								if (object1!=null) {
 									for (JSON_Data.NamedValue<NV, V> nvalue1:object1) {
 										valueStr = nvalue1.value.type+"...";
@@ -787,103 +788,10 @@ class TreeNodes {
 
 	protected static class Data {
 
-		static double getJsonNumber( JSON_Object<NV,V> object, String subValueName, String debugOutputPrefixStr ) throws ParseException {
-			return getJsonNumber(object, subValueName, false, debugOutputPrefixStr);
-		}
-		static Double getJsonNumber( JSON_Object<NV,V> object, String subValueName, boolean optionalValue, String debugOutputPrefixStr ) throws ParseException {
-			if (object==null) throw new ParseException("%s==NULL", debugOutputPrefixStr);
-			JSON_Data.Value<NV, V> value = object.getValue(subValueName);
-			if (value==null) {
-				if (optionalValue) return null;
-				throw new ParseException("%s.%s don't exists", debugOutputPrefixStr, subValueName);
-			}
-			return getJsonNumber(value, debugOutputPrefixStr+"."+subValueName);
-		}
-		
-		static double getJsonNumber(JSON_Data.Value<NV,V> value, String debugOutputPrefixStr) throws ParseException {
-			Long     intValue = getJsonValue(value, JSON_Data.Value::castToIntegerValue, "IntegerValue", true, debugOutputPrefixStr);
-			Double floatValue = getJsonValue(value, JSON_Data.Value::castToFloatValue  , "FloatValue"  , true, debugOutputPrefixStr);
-			if (  intValue!=null) return   intValue.doubleValue();
-			if (floatValue!=null) return floatValue.doubleValue();
-			throw new ParseException("%s isn't wsether an IntegerValue nor a FloatValue", debugOutputPrefixStr);
-		}
-
-		static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getJsonValue(
-				JSON_Object<NV,V> object,
-				String subValueName,
-				Function<JSON_Data.Value<NV,V>,JsonValueType> cast,
-				String jsonValueTypeLabel,
-				String debugOutputPrefixStr
-		) throws ParseException {
-			return getJsonValue(object, subValueName, false, cast, jsonValueTypeLabel, false, debugOutputPrefixStr );
-		}
-
-		static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getJsonValue(
-				JSON_Object<NV,V> object,
-				String subValueName,
-				boolean optionalValue,
-				Function<JSON_Data.Value<NV,V>,JsonValueType> cast,
-				String jsonValueTypeLabel,
-				boolean optionalType,
-				String debugOutputPrefixStr
-		) throws ParseException {
-			if (object==null) throw new ParseException("%s==NULL", debugOutputPrefixStr);
-			JSON_Data.Value<NV, V> value = object.getValue(subValueName);
-			if (value==null) {
-				if (optionalValue) return null;
-				throw new ParseException("%s.%s don't exists", debugOutputPrefixStr, subValueName);
-			}
-			return getJsonValue(value, cast, jsonValueTypeLabel, optionalType, debugOutputPrefixStr+"."+subValueName);
-		}
-		
-		static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getJsonValue(
-				JSON_Data.Value<NV,V> value,
-				Function<JSON_Data.Value<NV,V>,JsonValueType> cast,
-				String jsonValueTypeLabel,
-				String debugOutputPrefixStr
-		) throws ParseException {
-			return getJsonValue(value, cast, jsonValueTypeLabel, false, debugOutputPrefixStr );
-		}
-
-		static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getJsonValue(
-				JSON_Data.Value<NV,V> value,
-				Function<JSON_Data.Value<NV,V>,JsonValueType> cast,
-				String jsonValueTypeLabel,
-				boolean optionalType,
-				String debugOutputPrefixStr
-		) throws ParseException {
-			if (value==null) throw new ParseException("%s==NULL", debugOutputPrefixStr);
-			JsonValueType jsonValue = cast.apply(value);
-			if (jsonValue==null) {
-				if (optionalType) return null;
-				throw new ParseException("%s isn't a %s", debugOutputPrefixStr, jsonValueTypeLabel);
-			}
-			if (jsonValue.value==null) throw new ParseException("%s.value==NULL", debugOutputPrefixStr);
-			return jsonValue.value;
-		}
-
-		static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getJsonValue(
-				JSON_Object<NV,V> object,
-				String subValueName,
-				Function<JSON_Data.Value<NV,V>,JsonValueType> cast
-		) {
-			if (object==null) return null;
-			return getJsonValue(object.getValue(subValueName), cast);
-		}
-
-		static <ResultType, JsonValueType extends JSON_Data.GenericValue<NV,V,ResultType>> ResultType getJsonValue(
-				JSON_Data.Value<NV,V> value,
-				Function<JSON_Data.Value<NV,V>,JsonValueType> cast
-		) {
-			if (value==null) return null;
-			JsonValueType jsonValue = cast.apply(value);
-			if (jsonValue==null) return null;
-			return jsonValue.value;
-		}
-
-		static void showTreeNodesParseException(Throwable e, File file) {
-			showException("(TreeNodes.Data) ParseException", e, file);
-		}
+		static void showException(JSON_Data.TraverseException e, File file) { showException("JSON_Data.TraverseException", e, file); }
+		static void showException(JSON_Parser.ParseException  e, File file) { showException("JSON_Parser.ParseException", e, file); }
+		static void showException(VDFParser.ParseException    e, File file) { showException("VDFParser.ParseException", e, file); }
+		static void showException(TreeNodes.ParseException    e, File file) { showException("TreeNodes.ParseException", e, file); }
 
 		static void showException(String prefix, Throwable e, File file) {
 			String str = String.format("%s: %s%n", prefix, e.getMessage());
@@ -979,7 +887,7 @@ class TreeNodes {
 				VDFParser.Data localconfigData = null;
 				if (localconfigFile!=null && localconfigFile.isFile()) {
 					try { localconfigData = VDFParser.parse(localconfigFile,StandardCharsets.UTF_8); }
-					catch (VDFParser.ParseException e) { showTreeNodesParseException(e, localconfigFile); }
+					catch (VDFParser.ParseException e) { showException(e, localconfigFile); }
 				}
 				if (localconfigData!=null) {
 					this.localconfig = localconfigData.createVDFTreeNode();
@@ -994,7 +902,7 @@ class TreeNodes {
 					VDFTreeNode friendsNode = localconfig.getSubNode("UserLocalConfigStore","friends");
 					if (friendsNode!=null) {
 						try { preFriends = FriendList.parse(friendsNode,playerID); }
-						catch (ParseException e) { showTreeNodesParseException(e, localconfigFile); }
+						catch (ParseException e) { showException(e, localconfigFile); }
 						if (preFriends==null)
 							preFriends = new FriendList(friendsNode);
 					}
@@ -1016,12 +924,12 @@ class TreeNodes {
 									// \config\librarycache\achievement_progress.json
 									JSON_Data.Value<NV, V> result = null;
 									try { result = new JSON_Parser<NV,V>(file,null).parse_withParseException(); }
-									catch (JSON_Parser.ParseException e) { showException("(JSON) ParseException", e, file); }
+									catch (JSON_Parser.ParseException e) { showException(e, file); }
 									if (result!=null) {
 										try {
-											preAchievementProgress = new AchievementProgress(file,getJsonValue(result, JSON_Data.Value::castToObjectValue, "ObjectValue", "AchievementProgress"));
-										} catch (ParseException e) {
-											showTreeNodesParseException(e, file);
+											preAchievementProgress = new AchievementProgress(file,JSON_Data.getObjectValue(result, "AchievementProgress"));
+										} catch (TraverseException e) {
+											showException(e, file);
 											preAchievementProgress = new AchievementProgress(file,result);
 										}
 									}
@@ -1030,12 +938,12 @@ class TreeNodes {
 									// \config\librarycache\1465680.json
 									JSON_Data.Value<NV, V> result = null;
 									try { result = new JSON_Parser<NV,V>(file,null).parse_withParseException(); }
-									catch (JSON_Parser.ParseException e) { showException("(JSON) ParseException", e, file); }
+									catch (JSON_Parser.ParseException e) { showException(e, file); }
 									if (result!=null) {
 										try {
-											gameStateInfos.put(gameID, new GameStateInfo(file,getJsonValue(result, JSON_Data.Value::castToArrayValue, "ArrayValue", "GameStateInfos")));
-										} catch (ParseException e) {
-											showTreeNodesParseException(e, file);
+											gameStateInfos.put(gameID, new GameStateInfo(file,JSON_Data.getArrayValue(result, "GameStateInfos")));
+										} catch (TraverseException e) {
+											showException(e, file);
 											gameStateInfos.put(gameID, new GameStateInfo(file,result));
 										}
 									}
@@ -1167,24 +1075,24 @@ class TreeNodes {
 					gameStates = null;
 					gameStates_withoutID = null;
 				}
-				AchievementProgress(File file, JSON_Object<NV,V> object) throws ParseException {
+				AchievementProgress(File file, JSON_Object<NV,V> object) throws TraverseException {
 					this.file = file;
 					rawData = null;
 					hasParsedData = true;
 					sourceData = object;
 					//DevHelper.scanJsonStructure(object, "AchievementProgress");
 					String prefixStr = "AchievementProgress";
-					if (object==null) throw new ParseException("%s == <NULL>", prefixStr);
-					version                    = getJsonValue(object, "nVersion", JSON_Data.Value::castToIntegerValue, "IntegerValue", prefixStr);
-					JSON_Object<NV,V> mapCache = getJsonValue(object, "mapCache", JSON_Data.Value::castToObjectValue , "ObjectValue", prefixStr );
+					if (object==null) throw new TraverseException("%s == <NULL>", prefixStr);
+					version                    = JSON_Data.getIntegerValue(object, "nVersion", prefixStr);
+					JSON_Object<NV,V> mapCache = JSON_Data.getObjectValue (object, "mapCache", prefixStr);
 					gameStates = new HashMap<>();
 					gameStates_withoutID = new Vector<GameStatus>();
 					for (JSON_Data.NamedValue<NV,V> nv:mapCache) {
 						GameStatus gameStatus;
 						try {
 							gameStatus = new GameStatus(nv.name,nv.value);
-						} catch (ParseException e) {
-							showTreeNodesParseException(e, file);
+						} catch (TraverseException e) {
+							showException(e, file);
 							gameStatus = new GameStatus(nv);
 						}
 						
@@ -1241,19 +1149,19 @@ class TreeNodes {
 						percentage  = Double.NaN;
 					}
 
-					GameStatus(String name, JSON_Data.Value<NV, V> value) throws ParseException {
+					GameStatus(String name, JSON_Data.Value<NV, V> value) throws TraverseException {
 						this.rawData = null;
 						this.name    = name;
 						hasParsedData = true;
 						// DevHelper.scanJsonStructure(value, "AchievementProgress.GameStatus");
 						String prefixStr = "AchievementProgress.GameStatus["+name+"]";
-						JSON_Object<NV,V> object = getJsonValue(value, JSON_Data.Value::castToObjectValue, "ObjectValue", prefixStr);
-						allUnlocked = getJsonValue (object, "all_unlocked", JSON_Data.Value::castToBoolValue   , "BoolValue", prefixStr);
-						appID       = getJsonValue (object, "appid"       , JSON_Data.Value::castToIntegerValue, "IntegerValue", prefixStr);
-						cacheTime   = getJsonValue (object, "cache_time"  , JSON_Data.Value::castToIntegerValue, "IntegerValue", prefixStr);
-						total       = getJsonValue (object, "total"       , JSON_Data.Value::castToIntegerValue, "IntegerValue", prefixStr);
-						unlocked    = getJsonValue (object, "unlocked"    , JSON_Data.Value::castToIntegerValue, "IntegerValue", prefixStr);
-						percentage  = getJsonNumber(object, "percentage"  , prefixStr);
+						JSON_Object<NV,V> object = JSON_Data.getObjectValue(value, prefixStr);
+						allUnlocked = JSON_Data.getBoolValue   (object, "all_unlocked", prefixStr);
+						appID       = JSON_Data.getIntegerValue(object, "appid"       , prefixStr);
+						cacheTime   = JSON_Data.getIntegerValue(object, "cache_time"  , prefixStr);
+						total       = JSON_Data.getIntegerValue(object, "total"       , prefixStr);
+						unlocked    = JSON_Data.getIntegerValue(object, "unlocked"    , prefixStr);
+						percentage  = JSON_Data.getNumber(object, "percentage"  , prefixStr);
 						DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"AchievementProgress.GameStatus");
 					}
 
@@ -1283,20 +1191,20 @@ class TreeNodes {
 					achievements = null;
 				}
 
-				public GameStateInfo(File file, JSON_Array<NV, V> array) throws ParseException {
+				public GameStateInfo(File file, JSON_Array<NV, V> array) throws TraverseException {
 					this.file = file;
 					this.rawData = null;
 					this.sourceData = array;
 					
-					if (array==null) throw new ParseException("GameStateInfo isn't a JSON_Array");
+					if (array==null) throw new TraverseException("GameStateInfo isn't a JSON_Array");
 					
 					blocks = new Vector<>();
 					for (int i=0; i<array.size(); i++) {
 						JSON_Data.Value<NV,V> value = array.get(i);
 						try {
 							blocks.add(new Block(i,value));
-						} catch (ParseException e) {
-							showTreeNodesParseException(e, file);
+						} catch (TraverseException e) {
+							showException(e, file);
 							blocks.add(Block.createRawData(i,value));
 						}
 					}
@@ -1313,10 +1221,10 @@ class TreeNodes {
 						case "achievements":
 							//DevHelper.scanJsonStructure(block.dataValue,String.format("GameStateInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
 							try {
-								object = getJsonValue(block.dataValue, JSON_Data.Value::castToObjectValue, "ObjectValue", dataValueStr);
+								object = JSON_Data.getObjectValue(block.dataValue, dataValueStr);
 								preAchievements = new GameStateInfo.Achievements(object, dataValueStr, file);
-							} catch (ParseException e) {
-								showTreeNodesParseException(e, file);
+							} catch (TraverseException e) {
+								showException(e, file);
 								preAchievements = new GameStateInfo.Achievements(block.dataValue);
 							}
 							break;
@@ -1329,23 +1237,23 @@ class TreeNodes {
 							//	dataValueStr, file
 							//);
 							try {
-								object = getJsonValue(block.dataValue, JSON_Data.Value::castToObjectValue, "ObjectValue", dataValueStr);
+								object = JSON_Data.getObjectValue(block.dataValue, dataValueStr);
 								preBadge = new GameStateInfo.Badge(object, dataValueStr, file);
-							} catch (ParseException e) {
-								showTreeNodesParseException(e, file);
+							} catch (TraverseException e) {
+								showException(e, file);
 								preBadge = new GameStateInfo.Badge(block.dataValue);
 							}
 							break;
 							
 						case "descriptions":
 							object = null;
-							try { object = getJsonValue(block.dataValue, JSON_Data.Value::castToObjectValue, "ObjectValue", dataValueStr); }
-							catch (ParseException e) { showTreeNodesParseException(e, file); }
+							try { object = JSON_Data.getObjectValue(block.dataValue, dataValueStr); }
+							catch (TraverseException e) { showException(e, file); }
 							if (object!=null) {
-								try { preFullDesc  = getJsonValue(object,"strFullDescription",JSON_Data.Value::castToStringValue, "StringValue", dataValueStr); }
-								catch (ParseException e) { showTreeNodesParseException(e, file); }
-								try { preShortDesc = getJsonValue(object,"strSnippet"        ,JSON_Data.Value::castToStringValue, "StringValue", dataValueStr); }
-								catch (ParseException e) { showTreeNodesParseException(e, file); }
+								try { preFullDesc  = JSON_Data.getStringValue(object, "strFullDescription", dataValueStr); }
+								catch (TraverseException e) { showException(e, file); }
+								try { preShortDesc = JSON_Data.getStringValue(object, "strSnippet", dataValueStr); }
+								catch (TraverseException e) { showException(e, file); }
 							}
 							break;
 						}
@@ -1383,15 +1291,15 @@ class TreeNodes {
 						highlight = null;
 					}
 
-					Achievements(JSON_Object<NV, V> object, String dataValueStr, File file) throws ParseException {
+					Achievements(JSON_Object<NV, V> object, String dataValueStr, File file) throws TraverseException {
 						this.rawData = null;
 						hasParsedData = true;
 						
-						achieved                         = getJsonValue(object, "nAchieved"        ,        JSON_Data.Value::castToIntegerValue, "IntegerValue",        dataValueStr);
-						total                            = getJsonValue(object, "nTotal"           ,        JSON_Data.Value::castToIntegerValue, "IntegerValue",        dataValueStr);
-						JSON_Array<NV, V> achievedHidden = getJsonValue(object, "vecAchievedHidden", true , JSON_Data.Value::castToArrayValue  , "ArrayValue"  , false, dataValueStr);
-						JSON_Array<NV, V> unachieved     = getJsonValue(object, "vecUnachieved"    ,        JSON_Data.Value::castToArrayValue  , "ArrayValue"  ,        dataValueStr);
-						JSON_Array<NV, V> highlight      = getJsonValue(object, "vecHighlight"     ,        JSON_Data.Value::castToArrayValue  , "ArrayValue"  ,        dataValueStr);
+						achieved                         = JSON_Data.getIntegerValue(object, "nAchieved"        , dataValueStr);
+						total                            = JSON_Data.getIntegerValue(object, "nTotal"           , dataValueStr);
+						JSON_Array<NV, V> unachieved     = JSON_Data.getArrayValue  (object, "vecUnachieved"    , dataValueStr);
+						JSON_Array<NV, V> highlight      = JSON_Data.getArrayValue  (object, "vecHighlight"     , dataValueStr);
+						JSON_Array<NV, V> achievedHidden = JSON_Data.getValue(object, "vecAchievedHidden", true, JSON_Data.Value.Type.Array, JSON_Data.Value::castToArrayValue, false, dataValueStr);
 						
 						this.achievedHidden = parseArray(achievedHidden, dataValueStr+"."+"vecAchievedHidden"+"[]", file);
 						this.unachieved     = parseArray(unachieved    , dataValueStr+"."+"vecUnachieved"    +"[]", file);
@@ -1406,8 +1314,8 @@ class TreeNodes {
 						for (JSON_Data.Value<NV, V> value:rawArray) {
 							try {
 								array.add(new Achievement(value,debugOutputPrefixStr));
-							} catch (ParseException e) {
-								showTreeNodesParseException(e, file); 
+							} catch (TraverseException e) {
+								showException(e, file); 
 								array.add(new Achievement(value));
 							}
 						}
@@ -1455,19 +1363,19 @@ class TreeNodes {
 							name          = null;
 						}
 
-						public Achievement(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr) throws ParseException {
+						public Achievement(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
 							rawData = null;
 							hasParsedData = true;
 							//DevHelper.scanJsonStructure(value,"GameStateInfo.Achievements.Achievement");
 							
-							JSON_Object<NV, V> object = getJsonValue(value,JSON_Data.Value::castToObjectValue, debugOutputPrefixStr, "ObjectValue");
-							isAchieved    = getJsonValue (object, "bAchieved"     , JSON_Data.Value::castToBoolValue   , "BoolValue"   , debugOutputPrefixStr);
-							achievedRatio = getJsonNumber(object, "flAchieved"    , true, debugOutputPrefixStr);
-							unlocked      = getJsonValue (object, "rtUnlocked"    , JSON_Data.Value::castToIntegerValue, "IntegerValue", debugOutputPrefixStr);
-							description   = getJsonValue (object, "strDescription", JSON_Data.Value::castToStringValue , "StringValue" , debugOutputPrefixStr);
-							id            = getJsonValue (object, "strID"         , JSON_Data.Value::castToStringValue , "StringValue" , debugOutputPrefixStr);
-							image         = getJsonValue (object, "strImage"      , JSON_Data.Value::castToStringValue , "StringValue" , debugOutputPrefixStr);
-							name          = getJsonValue (object, "strName"       , JSON_Data.Value::castToStringValue , "StringValue" , debugOutputPrefixStr);
+							JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, debugOutputPrefixStr);
+							isAchieved    = JSON_Data.getBoolValue   (object, "bAchieved"     , debugOutputPrefixStr);
+							unlocked      = JSON_Data.getIntegerValue(object, "rtUnlocked"    , debugOutputPrefixStr);
+							description   = JSON_Data.getStringValue (object, "strDescription", debugOutputPrefixStr);
+							id            = JSON_Data.getStringValue (object, "strID"         , debugOutputPrefixStr);
+							image         = JSON_Data.getStringValue (object, "strImage"      , debugOutputPrefixStr);
+							name          = JSON_Data.getStringValue (object, "strName"       , debugOutputPrefixStr);
+							achievedRatio = JSON_Data.getNumber(object, "flAchieved", true, debugOutputPrefixStr);
 							
 							DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "GameStateInfo.Achievements.Achievement");
 						}
@@ -1517,29 +1425,29 @@ class TreeNodes {
 						iconURL       = null;
 					}
 
-					Badge(JSON_Object<NV, V> object, String dataValueStr, File file) throws ParseException {
+					Badge(JSON_Object<NV, V> object, String dataValueStr, File file) throws TraverseException {
 						rawData = null;
 						hasParsedData = true;
 						
-						name          = getJsonValue(object, "strName"         , JSON_Data.Value::castToStringValue , "StringValue" , dataValueStr);
-						hasBadgeData  = getJsonValue(object, "bHasBadgeData"   , JSON_Data.Value::castToBoolValue   , "BoolValue"   , dataValueStr);
-						maxLevel      = getJsonValue(object, "nMaxLevel"       , JSON_Data.Value::castToIntegerValue, "IntegerValue", dataValueStr);
-						currentLevel  = getJsonValue(object, "nLevel"          , JSON_Data.Value::castToIntegerValue, "IntegerValue", dataValueStr);
-						currentXP     = getJsonValue(object, "nXP"             , JSON_Data.Value::castToIntegerValue, "IntegerValue", dataValueStr);
-						nextLevelName = getJsonValue(object, "strNextLevelName", JSON_Data.Value::castToStringValue , "StringValue" , dataValueStr);
-						nextLevelXP   = getJsonValue(object, "nNextLevelXP"    , JSON_Data.Value::castToIntegerValue, "IntegerValue", dataValueStr);
-						iconURL       = getJsonValue(object, "strIconURL"      , JSON_Data.Value::castToStringValue , "StringValue" , dataValueStr);
+						name          = JSON_Data.getStringValue (object, "strName"         , dataValueStr);
+						hasBadgeData  = JSON_Data.getBoolValue   (object, "bHasBadgeData"   , dataValueStr);
+						maxLevel      = JSON_Data.getIntegerValue(object, "nMaxLevel"       , dataValueStr);
+						currentLevel  = JSON_Data.getIntegerValue(object, "nLevel"          , dataValueStr);
+						currentXP     = JSON_Data.getIntegerValue(object, "nXP"             , dataValueStr);
+						nextLevelName = JSON_Data.getStringValue (object, "strNextLevelName", dataValueStr);
+						nextLevelXP   = JSON_Data.getIntegerValue(object, "nNextLevelXP"    , dataValueStr);
+						iconURL       = JSON_Data.getStringValue (object, "strIconURL"      , dataValueStr);
 						
-						JSON_Array<NV,V> array = getJsonValue(object, "rgCards", JSON_Data.Value::castToArrayValue, "ArrayValue", dataValueStr);
+						JSON_Array<NV,V> array = JSON_Data.getArrayValue(object, "rgCards", dataValueStr);
 						tradingCards = new Vector<>();
 						for (int i=0; i<array.size(); i++) {
 							try {
 								String prefixStr = dataValueStr+".rgCards["+i+"]";
-								JSON_Object<NV,V> objectTC = getJsonValue(array.get(i), JSON_Data.Value::castToObjectValue, "ObjectValue", prefixStr);
+								JSON_Object<NV,V> objectTC = JSON_Data.getObjectValue(array.get(i), prefixStr);
 								TradingCard tradingCard = new TradingCard(objectTC, prefixStr);
 								tradingCards.add(tradingCard);
-							} catch (ParseException e) {
-								showTreeNodesParseException(e, file);
+							} catch (TraverseException e) {
+								showException(e, file);
 								tradingCards.add(new TradingCard(array.get(i)));
 							}
 						}
@@ -1636,16 +1544,16 @@ class TreeNodes {
 							marketHash = null;
 						}
 
-						public TradingCard(JSON_Object<NV, V> object, String debugOutputPrefixStr) throws ParseException {
+						public TradingCard(JSON_Object<NV, V> object, String debugOutputPrefixStr) throws TraverseException {
 							rawData = null;
 							hasParsedData = true;
 							
-							name       = getJsonValue(object, "strName"      , JSON_Data.Value::castToStringValue , "StringValue", debugOutputPrefixStr );
-							title      = getJsonValue(object, "strTitle"     , JSON_Data.Value::castToStringValue , "StringValue", debugOutputPrefixStr );
-							owned      = getJsonValue(object, "nOwned"       , JSON_Data.Value::castToIntegerValue, "IntegerValue", debugOutputPrefixStr);
-							artworkURL = getJsonValue(object, "strArtworkURL", JSON_Data.Value::castToStringValue , "StringValue", debugOutputPrefixStr );
-							imageURL   = getJsonValue(object, "strImgURL"    , JSON_Data.Value::castToStringValue , "StringValue", debugOutputPrefixStr );
-							marketHash = getJsonValue(object, "strMarketHash", JSON_Data.Value::castToStringValue , "StringValue", debugOutputPrefixStr );
+							name       = JSON_Data.getStringValue (object, "strName"      , debugOutputPrefixStr);
+							title      = JSON_Data.getStringValue (object, "strTitle"     , debugOutputPrefixStr);
+							owned      = JSON_Data.getIntegerValue(object, "nOwned"       , debugOutputPrefixStr);
+							artworkURL = JSON_Data.getStringValue (object, "strArtworkURL", debugOutputPrefixStr);
+							imageURL   = JSON_Data.getStringValue (object, "strImgURL"    , debugOutputPrefixStr);
+							marketHash = JSON_Data.getStringValue (object, "strMarketHash", debugOutputPrefixStr);
 							
 							DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"GameStateInfo.Badge.SteamCard");
 						}
@@ -1663,13 +1571,13 @@ class TreeNodes {
 
 					static Block createRawData(int blockIndex, JSON_Data.Value<NV, V> value) {
 						try { return new Block(blockIndex, value, true); }
-						catch (ParseException e) { return null; }
+						catch (TraverseException e) { return null; }
 					}
 
-					Block(int blockIndex, JSON_Data.Value<NV, V> value) throws ParseException {
+					Block(int blockIndex, JSON_Data.Value<NV, V> value) throws TraverseException {
 						this(blockIndex, value, false);
 					}
-					Block(int blockIndex, JSON_Data.Value<NV, V> value, boolean asRawData) throws ParseException {
+					Block(int blockIndex, JSON_Data.Value<NV, V> value, boolean asRawData) throws TraverseException {
 						if (asRawData) {
 							this.rawData = value;
 							this.hasParsedData = false;
@@ -1687,17 +1595,16 @@ class TreeNodes {
 							String labelStr     = blockStr+".value[0:label]";
 							String blockdataStr = blockStr+".value[1:blockdata]";
 							
-							JSON_Array<NV, V> array = getJsonValue(value,JSON_Data.Value::castToArrayValue, "ArrayValue", blockStr);
-							if (array.size()!=2) throw new ParseException("%s.value.length(==%d) != 2", blockStr, array.size());
+							JSON_Array<NV, V> array = JSON_Data.getArrayValue(value, blockStr);
+							if (array.size()!=2) throw new TraverseException("%s.value.length(==%d) != 2", blockStr, array.size());
 							
-												  label = getJsonValue(array.get(0),JSON_Data.Value::castToStringValue,"StringValue"    ,labelStr);
-							JSON_Object<NV,V> blockdata = getJsonValue(array.get(1),JSON_Data.Value::castToObjectValue,"ObjectValue",blockdataStr);
-							if (blockdata.size()>2)  throw new ParseException("%s JSON_Object.length(==%d) > 2: Too much values", blockdataStr, blockdata.size());
-							if (blockdata.isEmpty()) throw new ParseException("%s JSON_Object is empty: Too few values", blockdataStr);
-							JSON_Data.Value<NV, V> versionValue = blockdata.getValue("version");
-							                          dataValue = blockdata.getValue("data");
-							version = getJsonValue(versionValue,JSON_Data.Value::castToIntegerValue,"IntegerValue",blockdataStr+".version");
-							if (dataValue==null && blockdata.size()>1) throw new ParseException("%s.data not found, but there are other values", blockdataStr);
+												  label = JSON_Data.getStringValue(array.get(0), labelStr);
+							JSON_Object<NV,V> blockdata = JSON_Data.getObjectValue(array.get(1), blockdataStr);
+							if (blockdata.size()>2)  throw new TraverseException("%s JSON_Object.length(==%d) > 2: Too much values", blockdataStr, blockdata.size());
+							if (blockdata.isEmpty()) throw new TraverseException("%s JSON_Object is empty: Too few values", blockdataStr);
+							version   = JSON_Data.getIntegerValue(blockdata,"version", blockdataStr+".version");
+							dataValue = blockdata.getValue("data");
+							if (dataValue==null && blockdata.size()>1) throw new TraverseException("%s.data not found, but there are other values", blockdataStr);
 						}
 					}
 				}
@@ -3365,7 +3272,7 @@ class TreeNodes {
 				JSON_Data.Value<NV,V> getSubNodeValue(Object... path) {
 					try {
 						return JSON_Data.getSubNode(value, path);
-					} catch (JSON_Data.PathIsNotSolvableException e) {
+					} catch (JSON_Data.TraverseException e) {
 						return null;
 					}
 				}
