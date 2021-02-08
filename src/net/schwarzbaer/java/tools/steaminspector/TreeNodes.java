@@ -90,33 +90,171 @@ import net.schwarzbaer.system.ClipboardTools;
 
 class TreeNodes {
 	
-	private static JSON_Data.Value<NV, V> parseJson(JSON_Parser<NV, V> parser) throws JSON_Parser.ParseException {
-		JSON_Data.Value<NV, V> result = parser.parse_withParseException();
-		JSON_Data.traverseAllValues(result, null, (path,v)->v.extra.setHost(v));
-		return result;
+	static class JSONHelper {
+
+		public static class FactoryForExtras implements JSON_Data.FactoryForExtras<NV,V> {
+			@Override public NV createNamedValueExtra(JSON_Data.Value.Type type) { return null; }
+			@Override public V  createValueExtra     (JSON_Data.Value.Type type) { return new V(type); }
+		}
+
+		private static JSON_Data.Value<NV, V> parseJson(JSON_Parser<NV, V> parser) throws JSON_Parser.ParseException {
+			JSON_Data.Value<NV, V> result = parser.parse_withParseException();
+			JSON_Data.traverseAllValues(result, null, (path,v)->v.extra.setHost(v));
+			return result;
+		}
+
+		static JSON_Data.Value<NV, V> parseJsonFile(File   file) throws JSON_Parser.ParseException { return parseJson(new JSON_Parser<>(file,new FactoryForExtras())); }
+
+		static JSON_Data.Value<NV, V> parseJsonText(String text) throws JSON_Parser.ParseException { return parseJson(new JSON_Parser<>(text,new FactoryForExtras())); }
+
+		static ArrayValue<NV, V> createArrayValue(JSON_Array<NV, V> array) {
+			V extra = new V(Type.Array);
+			JSON_Data.ArrayValue<NV, V> host = new JSON_Data.ArrayValue<>(array,extra);
+			extra.setHost(host);
+			return host;
+		}
+
+		static ObjectValue<NV, V> createObjectValue(JSON_Object<NV, V> object) {
+			V extra = new V(Type.Object);
+			JSON_Data.ObjectValue<NV, V> host = new JSON_Data.ObjectValue<>(object,extra);
+			extra.setHost(host);
+			return host;
+		}
+
+		
+		private static TreeRoot createTreeRoot(JSON_Array<NV, V> array, boolean isLarge) {
+			if (array == null) return null;
+			return new TreeRoot(JSON_TreeNode.create(null,null,createArrayValue(array)),true,!isLarge,JSON_TreeNode.contextMenu);
+		}
+		
+		private static TreeRoot createTreeRoot(JSON_Object<NV, V> object, boolean isLarge) {
+			if (object == null) return null;
+			return new TreeRoot(JSON_TreeNode.create(null,null,createObjectValue(object)),true,!isLarge,JSON_TreeNode.contextMenu);
+		}
+		
+		private static TreeRoot createTreeRoot(JSON_Data.Value<NV, V> value, boolean isLarge) {
+			return new TreeRoot(JSON_TreeNode.create(null,null,value),true,!isLarge,JSON_TreeNode.contextMenu);
+		}
+		
+		static class JSON_TreeNode<ChildValueType> extends BaseTreeNode<JSON_TreeNode<?>,JSON_TreeNode<?>> implements DataTreeNode {
+			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
+
+			private final Vector<ChildValueType> childValues;
+			private final Function<ChildValueType, String> getChildName;
+			private final Function<ChildValueType, JSON_Data.Value<NV,V>> getChildValue;
+			final String name;
+			final JSON_Data.Value<NV,V> value;
+
+			private JSON_TreeNode(JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, JSON_Data.Value<NV,V> value, Vector<ChildValueType> childValues, Function<ChildValueType,String> getChildName, Function<ChildValueType,JSON_Data.Value<NV,V>> getChildValue) {
+				super(parent, title, childValues!=null, childValues==null || childValues.isEmpty(), icon==null ? null : JsonTreeIconsIS.getCachedIcon(icon));
+				this.name = name;
+				this.value = value;
+				this.childValues = childValues;
+				this.getChildName = getChildName;
+				this.getChildValue = getChildValue;
+				if (this.value==null) throw new IllegalArgumentException("JSON_TreeNode( ... , value == null, ... ) is not allowed");
+			}
+
+			@Override public String getPath() {
+				if (parent==null) {
+					if (name!=null)
+						return name;
+					return "<Root"+value.type+">";
+				}
+				JSON_Data.Value.Type parentType = parent.getValueType();
+				String indexInParent = parentType==JSON_Data.Value.Type.Array ? "["+parent.getIndex(this)+"]" : "";
+				String nameRef = name!=null ? "."+name : "";
+				return parent.getPath()+indexInParent+nameRef;
+			}
+			
+			JSON_Data.Value<NV,V> getSubNodeValue(Object... path) {
+				try {
+					return JSON_Data.getSubNode(value, path);
+				} catch (JSON_Data.TraverseException e) {
+					return null;
+				}
+			}
+
+			@Override public String getAccessCall() {
+				return String.format("<root>.getSubNode|Value(%s)", getAccessPath());
+			}
+			private String getAccessPath() {
+				if (parent==null) return "";
+				String path = parent.getAccessPath();
+				if (!path.isEmpty()) path += ",";
+				JSON_Data.Value.Type parentType = parent.getValueType();
+				return path + (parentType==JSON_Data.Value.Type.Array ? parent.getIndex(this) : "\""+name+"\"");
+			}
+
+			@Override public String getName    () { return name; }
+			@Override public String getValueStr() { return value.toString(); }
+			private JSON_Data.Value.Type getValueType() { return value.type; }
+			@Override public boolean hasName () { return name !=null; }
+			@Override public boolean hasValue() { return value!=null; }
+
+			@Override
+			protected Vector<? extends JSON_TreeNode<?>> createChildren() {
+				if (childValues==null) return null;
+				Vector<JSON_TreeNode<?>> childNodes = new Vector<>();
+				for (ChildValueType value:childValues) childNodes.add(create(this,getChildName.apply(value),getChildValue.apply(value)));
+				return childNodes;
+			}
+			
+			private static JSON_TreeNode<?> create(JSON_TreeNode<?> parent, String name, JSON_Data.Value<NV,V> value) {
+				String title = getTitle(name,value);
+				JsonTreeIcons icon = getIcon(value.type);
+				switch (value.type) {
+				case Object: return new JSON_TreeNode<>(parent, title, icon, name, value, value.castToObjectValue().value, vt->vt.name, vt->vt.value);
+				case Array : return new JSON_TreeNode<>(parent, title, icon, name, value, value.castToArrayValue ().value, vt->null, vt->vt);
+				default    : return new JSON_TreeNode<>(parent, title, icon, name, value, null, null, null);
+				}
+			}
+			
+			private static final Color COLOR_WAS_PROCESSED           = new Color(0x808080);
+			private static final Color COLOR_WAS_FULLY_PROCESSED     = new Color(0x00C000);
+			
+			@Override
+			Color getTextColor() {
+				boolean wasProcessed = value.extra.wasProcessed;
+				boolean hasUnprocessedChildren = value.extra.hasUnprocessedChildren();
+				return !wasProcessed ? null : hasUnprocessedChildren ? COLOR_WAS_PROCESSED : COLOR_WAS_FULLY_PROCESSED;
+			}
+
+			private static JsonTreeIcons getIcon(JSON_Data.Value.Type type) {
+				if (type==null) return null;
+				switch(type) {
+				case Object: return JsonTreeIcons.Object;
+				case Array : return JsonTreeIcons.Array;
+				case String: return JsonTreeIcons.String;
+				case Bool  : return JsonTreeIcons.Boolean;
+				case Null  : return null;
+				case Float : case Integer:
+					return JsonTreeIcons.Number;
+				}
+				return null;
+			}
+			
+			private static String getTitle(String name, JSON_Data.Value<NV,V> value) {
+				switch (value.type) {
+				case Object : return getTitle(name, "{" , value.castToObjectValue ().value.size(), "}" );
+				case Array  : return getTitle(name, "[" , value.castToArrayValue  ().value.size(), "]" );
+				case String : return getTitle(name, "\"", value.castToStringValue ().value       , "\"");
+				case Bool   : return getTitle(name, ""  , value.castToBoolValue   ().value       , ""  );
+				case Integer: return getTitle(name, ""  , value.castToIntegerValue().value       , ""  );
+				case Float  : return getTitle(name, ""  , value.castToFloatValue  ().value       , ""  );
+				case Null   : return getTitle(name, ""  , value.castToNullValue   ().value       , ""  );
+				}
+				return null;
+			}
+			
+			protected static String getTitle(String name, String openingBracket, Object value, String closingBracket) {
+				if (name==null || name.isEmpty()) return String.format("%s%s%s", openingBracket, value, closingBracket);
+				return String.format("%s : %s%s%s", name, openingBracket, value, closingBracket);
+			}
+		}
+		
 	}
 
-	static JSON_Data.Value<NV, V> parseJsonFile(File   file) throws JSON_Parser.ParseException { return parseJson(new JSON_Parser<>(file,new FactoryForExtras())); }
-	static JSON_Data.Value<NV, V> parseJsonText(String text) throws JSON_Parser.ParseException { return parseJson(new JSON_Parser<>(text,new FactoryForExtras())); }
-
-	static ArrayValue<NV, V> createArrayValue(JSON_Array<NV, V> array) {
-		V extra = new V(Type.Array);
-		JSON_Data.ArrayValue<NV, V> host = new JSON_Data.ArrayValue<>(array,extra);
-		extra.setHost(host);
-		return host;
-	}
-
-	static ObjectValue<NV, V> createObjectValue(JSON_Object<NV, V> object) {
-		V extra = new V(Type.Object);
-		JSON_Data.ObjectValue<NV, V> host = new JSON_Data.ObjectValue<>(object,extra);
-		extra.setHost(host);
-		return host;
-	}
-
-	public static class FactoryForExtras implements JSON_Data.FactoryForExtras<NV,V> {
-		@Override public NV createNamedValueExtra(JSON_Data.Value.Type type) { return null; }
-		@Override public V  createValueExtra     (JSON_Data.Value.Type type) { return new V(type); }
-	}
 	private static class NV extends JSON_Data.NamedValueExtra.Dummy {}
 	private static class V implements JSON_Data.ValueExtra {
 		
@@ -174,7 +312,7 @@ class TreeNodes {
 			return baseValue.extra.hasUnprocessedChildren;
 		}
 	}
-
+	
 	enum TreeIcons { GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Badge, Achievement, Folder, RootFolder_Simple, RootFolder }
 	static CachedIcons<TreeIcons> TreeIconsIS;
 	
@@ -706,7 +844,8 @@ class TreeNodes {
 		@Override ContentType getContentType() { return ContentType.DataTree; }
 		
 		@Override public TreeRoot getContentAsTree() {
-			if (rawValue!=null) return FileSystem.JSON_File.JSON_TreeNode.create(rawValue, false);
+			if (rawValue!=null)
+				return JSONHelper.createTreeRoot(rawValue, false);
 			return SimpleTextNode.createSingleTextLineTree("RawJsonDataNode(<null>)");
 		}
 		
@@ -1015,7 +1154,7 @@ class TreeNodes {
 								if (fileNameNExt.name.equalsIgnoreCase("achievement_progress")) {
 									// \config\librarycache\achievement_progress.json
 									JSON_Data.Value<NV, V> result = null;
-									try { result = parseJsonFile(file); }
+									try { result = JSONHelper.parseJsonFile(file); }
 									catch (JSON_Parser.ParseException e) { showException(e, file); }
 									if (result!=null) {
 										try {
@@ -1029,7 +1168,7 @@ class TreeNodes {
 								} else if ((gameID=parseNumber(fileNameNExt.name))!=null) {
 									// \config\librarycache\1465680.json
 									JSON_Data.Value<NV, V> result = null;
-									try { result = parseJsonFile(file); }
+									try { result = JSONHelper.parseJsonFile(file); }
 									catch (JSON_Parser.ParseException e) { showException(e, file); }
 									if (result!=null) {
 										try {
@@ -2372,7 +2511,8 @@ class TreeNodes {
 
 			@Override ContentType getContentType() { return data.sourceData!=null ? ContentType.DataTree : null; }
 			@Override public TreeRoot getContentAsTree() {
-				if (data.sourceData!=null) return FileSystem.JSON_File.JSON_TreeNode.create(data.sourceData, false);
+				if (data.sourceData!=null)
+					return JSONHelper.createTreeRoot(data.sourceData, false);
 				return null;
 			}
 
@@ -2436,7 +2576,7 @@ class TreeNodes {
 				}
 				@Override public TreeRoot getContentAsTree() {
 					if (gameStatus==null || gameStatus.rawData==null) return null;
-					return FileSystem.JSON_File.JSON_TreeNode.create(gameStatus.rawData, false);
+					return JSONHelper.createTreeRoot(gameStatus.rawData, false);
 				}
 
 				@Override
@@ -2505,7 +2645,7 @@ class TreeNodes {
 			@Override ContentType getContentType() { return ContentType.DataTree; }
 			@Override public TreeRoot getContentAsTree() {
 				if (data.sourceData==null) return null;
-				return FileSystem.JSON_File.JSON_TreeNode.create(data.sourceData, false);
+				return JSONHelper.createTreeRoot(data.sourceData, false);
 			}
 			
 			@Override
@@ -2615,7 +2755,7 @@ class TreeNodes {
 					@Override
 					public TreeRoot getContentAsTree() {
 						if (achievement.rawData==null) return null;
-						return FileSystem.JSON_File.JSON_TreeNode.create(achievement.rawData, false);
+						return JSONHelper.createTreeRoot(achievement.rawData, false);
 					}
 
 					@Override protected Vector<? extends TreeNode> createChildren() {
@@ -3293,7 +3433,6 @@ class TreeNodes {
 		
 		static class JSON_File extends TextFile implements ParsedTextFileSource {
 			
-			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
 			private JSON_Data.Value<NV,V> parseResult;
 
 			JSON_File(TreeNode parent, File file) {
@@ -3314,157 +3453,21 @@ class TreeNodes {
 			
 			@Override
 			public TreeRoot getContentAsTree() {
-				if (parseResult==null) {
-					String text = getContentAsText();
-					if (text==null) return null;
-					try {
-						parseResult = parseJsonText(text);
-					} catch (JSON_Parser.ParseException e) {
-						System.err.printf("ParseException: %s%n", e.getMessage());
-						//e.printStackTrace();
-						return SimpleTextNode.createSingleTextLineTree("Parse Error: %s", e.getMessage());
-					}
-					if (parseResult==null)
-						// return null;
-						return SimpleTextNode.createSingleTextLineTree("Parse Error: Parser returns <null>");
-				}
-				return JSON_TreeNode.create(parseResult,isLarge());
-			}
-			
-			static class JSON_TreeNode<ChildValueType> extends BaseTreeNode<JSON_TreeNode<?>,JSON_TreeNode<?>> implements DataTreeNode {
-
-				private final Vector<ChildValueType> childValues;
-				private final Function<ChildValueType, String> getChildName;
-				private final Function<ChildValueType, JSON_Data.Value<NV,V>> getChildValue;
-				final String name;
-				final JSON_Data.Value<NV,V> value;
-
-				private JSON_TreeNode(JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, JSON_Data.Value<NV,V> value, Vector<ChildValueType> childValues, Function<ChildValueType,String> getChildName, Function<ChildValueType,JSON_Data.Value<NV,V>> getChildValue) {
-					super(parent, title, childValues!=null, childValues==null || childValues.isEmpty(), icon==null ? null : JsonTreeIconsIS.getCachedIcon(icon));
-					this.name = name;
-					this.value = value;
-					this.childValues = childValues;
-					this.getChildName = getChildName;
-					this.getChildValue = getChildValue;
-					if (this.value==null) throw new IllegalArgumentException("JSON_TreeNode( ... , value == null, ... ) is not allowed");
-				}
-
-				@Override public String getPath() {
-					if (parent==null) {
-						if (name!=null)
-							return name;
-						return "<Root"+value.type+">";
-					}
-					JSON_Data.Value.Type parentType = parent.getValueType();
-					String indexInParent = parentType==JSON_Data.Value.Type.Array ? "["+parent.getIndex(this)+"]" : "";
-					String nameRef = name!=null ? "."+name : "";
-					return parent.getPath()+indexInParent+nameRef;
-				}
+				if (parseResult != null)
+					return JSONHelper.createTreeRoot(parseResult, isLarge());
 				
-				JSON_Data.Value<NV,V> getSubNodeValue(Object... path) {
-					try {
-						return JSON_Data.getSubNode(value, path);
-					} catch (JSON_Data.TraverseException e) {
-						return null;
-					}
+				String text = getContentAsText();
+				if (text==null) return null;
+				try {
+					parseResult = JSONHelper.parseJsonText(text);
+				} catch (JSON_Parser.ParseException e) {
+					System.err.printf("ParseException: %s%n", e.getMessage());
+					return SimpleTextNode.createSingleTextLineTree("Parse Error: %s", e.getMessage());
 				}
-
-				@Override public String getAccessCall() {
-					return String.format("<root>.getSubNode|Value(%s)", getAccessPath());
-				}
-				private String getAccessPath() {
-					if (parent==null) return "";
-					String path = parent.getAccessPath();
-					if (!path.isEmpty()) path += ",";
-					JSON_Data.Value.Type parentType = parent.getValueType();
-					return path + (parentType==JSON_Data.Value.Type.Array ? parent.getIndex(this) : "\""+name+"\"");
-				}
-
-				@Override public String getName    () { return name; }
-				@Override public String getValueStr() { return value.toString(); }
-				private JSON_Data.Value.Type getValueType() { return value.type; }
-				@Override public boolean hasName () { return name !=null; }
-				@Override public boolean hasValue() { return value!=null; }
-
-				@Override
-				protected Vector<? extends JSON_TreeNode<?>> createChildren() {
-					if (childValues==null) return null;
-					Vector<JSON_TreeNode<?>> childNodes = new Vector<>();
-					for (ChildValueType value:childValues) childNodes.add(create(this,getChildName.apply(value),getChildValue.apply(value)));
-					return childNodes;
-				}
+				if (parseResult != null)
+					return JSONHelper.createTreeRoot(parseResult, isLarge());
 				
-//				static TreeRoot create(JSON_Parser.Result<NV,V> parseResult, boolean isLarge) {
-//					if (parseResult.object != null) return create(parseResult.object, isLarge);
-//					if (parseResult.array  != null) return create(parseResult.array , isLarge);
-//					return SimpleTextNode.createSingleTextLineTree("Parse Error: Parser returns neither an JSON array nor an JSON object");
-//				}
-
-				static TreeRoot create(JSON_Array<NV, V> array, boolean isLarge) {
-					if (array == null) return null;
-					return new TreeRoot(create(null,null,createArrayValue(array)),true,!isLarge,contextMenu);
-				}
-
-				static TreeRoot create(JSON_Object<NV, V> object, boolean isLarge) {
-					if (object == null) return null;
-					return new TreeRoot(create(null,null,createObjectValue(object)),true,!isLarge,contextMenu);
-				}
-				
-				static TreeRoot create(JSON_Data.Value<NV,V> value, boolean isLarge) {
-					return new TreeRoot(create(null,null,value),true,!isLarge,contextMenu);
-				}
-				
-				private static JSON_TreeNode<?> create(JSON_TreeNode<?> parent, String name, JSON_Data.Value<NV,V> value) {
-					String title = getTitle(name,value);
-					JsonTreeIcons icon = getIcon(value.type);
-					switch (value.type) {
-					case Object: return new JSON_TreeNode<>(parent, title, icon, name, value, value.castToObjectValue().value, vt->vt.name, vt->vt.value);
-					case Array : return new JSON_TreeNode<>(parent, title, icon, name, value, value.castToArrayValue ().value, vt->null, vt->vt);
-					default    : return new JSON_TreeNode<>(parent, title, icon, name, value, null, null, null);
-					}
-				}
-				
-				private static final Color COLOR_WAS_PROCESSED           = new Color(0x808080);
-				private static final Color COLOR_WAS_FULLY_PROCESSED     = new Color(0x00C000);
-				
-				@Override
-				Color getTextColor() {
-					boolean wasProcessed = value.extra.wasProcessed;
-					boolean hasUnprocessedChildren = value.extra.hasUnprocessedChildren();
-					return !wasProcessed ? null : hasUnprocessedChildren ? COLOR_WAS_PROCESSED : COLOR_WAS_FULLY_PROCESSED;
-				}
-
-				private static JsonTreeIcons getIcon(JSON_Data.Value.Type type) {
-					if (type==null) return null;
-					switch(type) {
-					case Object: return JsonTreeIcons.Object;
-					case Array : return JsonTreeIcons.Array;
-					case String: return JsonTreeIcons.String;
-					case Bool  : return JsonTreeIcons.Boolean;
-					case Null  : return null;
-					case Float : case Integer:
-						return JsonTreeIcons.Number;
-					}
-					return null;
-				}
-				
-				private static String getTitle(String name, JSON_Data.Value<NV,V> value) {
-					switch (value.type) {
-					case Object : return getTitle(name, "{" , value.castToObjectValue ().value.size(), "}" );
-					case Array  : return getTitle(name, "[" , value.castToArrayValue  ().value.size(), "]" );
-					case String : return getTitle(name, "\"", value.castToStringValue ().value       , "\"");
-					case Bool   : return getTitle(name, ""  , value.castToBoolValue   ().value       , ""  );
-					case Integer: return getTitle(name, ""  , value.castToIntegerValue().value       , ""  );
-					case Float  : return getTitle(name, ""  , value.castToFloatValue  ().value       , ""  );
-					case Null   : return getTitle(name, ""  , value.castToNullValue   ().value       , ""  );
-					}
-					return null;
-				}
-				
-				protected static String getTitle(String name, String openingBracket, Object value, String closingBracket) {
-					if (name==null || name.isEmpty()) return String.format("%s%s%s", openingBracket, value, closingBracket);
-					return String.format("%s : %s%s%s", name, openingBracket, value, closingBracket);
-				}
+				return SimpleTextNode.createSingleTextLineTree("Parse Error: Parser returns <null>");
 			}
 		}
 
