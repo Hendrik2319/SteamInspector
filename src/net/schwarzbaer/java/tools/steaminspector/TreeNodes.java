@@ -600,24 +600,8 @@ class TreeNodes {
 	private static class RawJsonDataNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
 	
 		private final File file;
-		private final JSON_Parser.Result<NV,V> rawData;
 		private final JSON_Data.Value <NV,V> rawValue;
 	
-		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData) {
-			this(parent, title, rawData, null, null);
-		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData, Icon icon) {
-			this(parent, title, rawData, null, icon);
-		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData, File file) {
-			this(parent, title, rawData, file, null);
-		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Parser.Result<NV,V> rawData, File file, Icon icon) {
-			super(parent, title, false, true, icon!=null ? icon : TreeIconsIS.getCachedIcon(TreeIcons.JSONFile));
-			this.file = file;
-			this.rawData = rawData;
-			this.rawValue = null;
-		}
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue) {
 			this(parent, title, rawValue, null, null);
 		}
@@ -630,7 +614,6 @@ class TreeNodes {
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, File file, Icon icon) {
 			super(parent, title, false, true, icon!=null ? icon : TreeIconsIS.getCachedIcon(TreeIcons.JSONFile));
 			this.file = file;
-			this.rawData = null;
 			this.rawValue = rawValue;
 		}
 		
@@ -638,7 +621,6 @@ class TreeNodes {
 		@Override ContentType getContentType() { return ContentType.DataTree; }
 		
 		@Override public TreeRoot getContentAsTree() {
-			if (rawData !=null) return FileSystem.JSON_File.JSON_TreeNode.create(rawData , false);
 			if (rawValue!=null) return FileSystem.JSON_File.JSON_TreeNode.create(rawValue, false);
 			return SimpleTextNode.createSingleTextLineTree("RawJsonDataNode(<null>)");
 		}
@@ -1032,12 +1014,12 @@ class TreeNodes {
 								Integer gameID;
 								if (fileNameNExt.name.equalsIgnoreCase("achievement_progress")) {
 									// \config\librarycache\achievement_progress.json
-									JSON_Parser.Result<NV, V> result = null;
+									JSON_Data.Value<NV, V> result = null;
 									try { result = new JSON_Parser<NV,V>(file,null).parse_withParseException(); }
 									catch (JSON_Parser.ParseException e) { showException("(JSON) ParseException", e, file); }
 									if (result!=null) {
 										try {
-											preAchievementProgress = new AchievementProgress(file,result.object);
+											preAchievementProgress = new AchievementProgress(file,getJsonValue(result, JSON_Data.Value::castToObjectValue, "ObjectValue", "AchievementProgress"));
 										} catch (ParseException e) {
 											showTreeNodesParseException(e, file);
 											preAchievementProgress = new AchievementProgress(file,result);
@@ -1046,12 +1028,12 @@ class TreeNodes {
 									
 								} else if ((gameID=parseNumber(fileNameNExt.name))!=null) {
 									// \config\librarycache\1465680.json
-									JSON_Parser.Result<NV, V> result = null;
+									JSON_Data.Value<NV, V> result = null;
 									try { result = new JSON_Parser<NV,V>(file,null).parse_withParseException(); }
 									catch (JSON_Parser.ParseException e) { showException("(JSON) ParseException", e, file); }
 									if (result!=null) {
 										try {
-											gameStateInfos.put(gameID, new GameStateInfo(file,result.array));
+											gameStateInfos.put(gameID, new GameStateInfo(file,getJsonValue(result, JSON_Data.Value::castToArrayValue, "ArrayValue", "GameStateInfos")));
 										} catch (ParseException e) {
 											showTreeNodesParseException(e, file);
 											gameStateInfos.put(gameID, new GameStateInfo(file,result));
@@ -1169,14 +1151,14 @@ class TreeNodes {
 						.add("mapCache", JSON_Data.Value.Type.Object);
 
 				final File file;
-				final JSON_Parser.Result<NV, V> rawData;
+				final JSON_Data.Value<NV, V> rawData;
 				final boolean hasParsedData;
 				final JSON_Object<NV, V> sourceData;
 				final Long version;
 				final HashMap<Integer,GameStatus> gameStates;
 				final Vector<GameStatus> gameStates_withoutID;
 
-				AchievementProgress(File file, JSON_Parser.Result<NV, V> rawData) {
+				AchievementProgress(File file, JSON_Data.Value<NV, V> rawData) {
 					this.file = file;
 					this.rawData = rawData;
 					hasParsedData = false;
@@ -1282,7 +1264,7 @@ class TreeNodes {
 			static class GameStateInfo {
 
 				final File file;
-				final JSON_Parser.Result<NV, V> rawData;
+				final JSON_Data.Value<NV, V> rawData;
 				final Vector<Block> blocks;
 				final JSON_Array<NV, V> sourceData;
 				final String fullDesc;
@@ -1290,7 +1272,7 @@ class TreeNodes {
 				final Badge badge;
 				final Achievements achievements;
 
-				public GameStateInfo(File file, JSON_Parser.Result<NV, V> rawData) {
+				public GameStateInfo(File file, JSON_Data.Value<NV, V> rawData) {
 					this.file = file;
 					this.rawData = rawData;
 					sourceData   = null;
@@ -3312,7 +3294,7 @@ class TreeNodes {
 		static class JSON_File extends TextFile implements ParsedTextFileSource {
 			
 			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
-			private JSON_Parser.Result<NV,V> parseResult;
+			private JSON_Data.Value<NV,V> parseResult;
 
 			JSON_File(TreeNode parent, File file) {
 				this(parent, file, TreeIcons.JSONFile);
@@ -3413,11 +3395,11 @@ class TreeNodes {
 					return childNodes;
 				}
 				
-				static TreeRoot create(JSON_Parser.Result<NV,V> parseResult, boolean isLarge) {
-					if (parseResult.object != null) return create(parseResult.object, isLarge);
-					if (parseResult.array  != null) return create(parseResult.array , isLarge);
-					return SimpleTextNode.createSingleTextLineTree("Parse Error: Parser returns neither an JSON array nor an JSON object");
-				}
+//				static TreeRoot create(JSON_Parser.Result<NV,V> parseResult, boolean isLarge) {
+//					if (parseResult.object != null) return create(parseResult.object, isLarge);
+//					if (parseResult.array  != null) return create(parseResult.array , isLarge);
+//					return SimpleTextNode.createSingleTextLineTree("Parse Error: Parser returns neither an JSON array nor an JSON object");
+//				}
 
 				static TreeRoot create(JSON_Array<NV, V> array, boolean isLarge) {
 					if (array == null) return null;
