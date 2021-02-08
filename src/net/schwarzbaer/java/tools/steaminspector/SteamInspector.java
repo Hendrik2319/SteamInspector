@@ -1761,6 +1761,12 @@ class SteamInspector {
 				BaseTreeNode<?,?> baseTreeNode = (BaseTreeNode<?,?>) value;
 				Icon icon = baseTreeNode.getIcon();
 				if (icon!=null) setIcon(icon);
+				if (!isSelected) {
+					Color textColor = baseTreeNode.getTextColor();
+					if (textColor == null) textColor = tree.getForeground();
+					setForeground(textColor);
+				}
+				
 			}
 //			setIcon(icon);
 			return component;
@@ -1795,6 +1801,7 @@ class SteamInspector {
 
 		ContentType getContentType() { return null; }
 		Icon getIcon() { return icon; }
+		Color getTextColor() { return null; }
 
 		protected abstract Vector<? extends ChildNodeType> createChildren();
 
