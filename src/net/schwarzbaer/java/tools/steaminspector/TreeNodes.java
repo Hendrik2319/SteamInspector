@@ -22,9 +22,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -34,6 +36,7 @@ import java.util.TimeZone;
 import java.util.Vector;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
+import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -64,6 +67,13 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextFile
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerInfo;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageNTextContentSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.ExternViewableNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.FileBasedNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.FileCreatingNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.Filter;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.FilterOption;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.FilterableNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.URLBasedNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedTextFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContentSource;
@@ -77,6 +87,8 @@ import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.Achieveme
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.FriendList;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.FriendList.Friend;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameInfos;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameInfos.CommunityItems.CommunityItem;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.Player.GameInfos.GameInfosFilterOptions;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data.ScreenShotLists;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FolderNode;
@@ -482,6 +494,26 @@ class TreeNodes {
 		return ImageIO.read(conn.getInputStream());
 	}
 
+	private static BufferedImage createImageFromBase64(String base64Data) {
+		byte[] bytes;
+		String fixedStr = base64Data.replace('_','/').replace('-','+');
+		//while ( (fixedStr.length()&0x3)!=0 ) fixedStr += '='; // Base64.Decoder does padding
+		try {
+			bytes = Base64.getDecoder().decode(fixedStr);
+		} catch (IllegalArgumentException e) {
+			return createImageOfMessage(e.getMessage(),150,150,Color.RED);
+		}
+		ByteArrayInputStream stream = new ByteArrayInputStream(bytes);
+		try {
+			BufferedImage image = ImageIO.read(stream);
+			if (image==null) 
+				return createImageOfMessage("Base64 data doesn't encode an image.",150,150,Color.RED);
+			return image;
+		} catch (IOException e) {
+			return createImageOfMessage("Can't read image from decoded Base64 data.",150,150,Color.RED);
+		}
+	}
+
 	private static class HashMatrix<KeyType1,KeyType2,ValueType> {
 		
 		private final HashMap<KeyType1,HashMap<KeyType2,ValueType>> matrix;
@@ -571,22 +603,6 @@ class TreeNodes {
 			return this.extension.compareToIgnoreCase(other.extension);
 		}
 	}
-
-	interface URLBasedNode {
-		String getURL();
-	}
-
-	interface FileBasedNode {
-		LabeledFile getFile();
-	}
-
-	interface FileCreatingNode {
-		FilePromise getFilePromise();
-	}
-	
-	interface ExternViewableNode {
-		ExternalViewerInfo getExternalViewerInfo();
-	}
 	
 	interface TreeNodeII extends TreeNode  {
 		Iterable<? extends TreeNode> getChildren();
@@ -671,7 +687,7 @@ class TreeNodes {
 		}
 	}
 
-	private static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, FileCreatingNode, ExternViewableNode {
+	private static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, FileCreatingNode, ExternViewableNode, FilterableNode {
 		
 		private final Collection<ValueType> values;
 		private final Comparator<ValueType> sortOrder;
@@ -679,6 +695,7 @@ class TreeNodes {
 		private ExternalViewerInfo externalViewerInfo;
 		private LabeledFile file;
 		private FilePromise getFile;
+		private GroupingNodeFilter<ValueType,?> filter;
 		
 		static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode) {
 			return create(parent, title, values, sortOrder, createChildNode, null);
@@ -706,18 +723,121 @@ class TreeNodes {
 			file = null;
 			getFile = null;
 			externalViewerInfo = null;
+			filter = null;
 		}
-	
-		public void setFileSource(File file, ExternalViewerInfo externalViewerInfo) {
+		
+		static <IT, VT, FilterOptType extends Enum<FilterOptType> & FilterOption> GroupingNodeFilter<Map.Entry<IT,VT>,FilterOptType> createMapFilter(
+				Class<FilterOptType> filterOptionClass,
+				FilterOptType[] options,
+				Function<FilterOption,FilterOptType> cast,
+				BiPredicate<VT,FilterOptType> valueMeetsOption
+		) {
+			return new GroupingNodeFilter<Map.Entry<IT,VT>,FilterOptType>(filterOptionClass, options) {
+				@Override protected FilterOptType cast(FilterOption opt) {
+					if (opt==null) return null;
+					return cast.apply(opt);
+				}
+				@Override protected boolean valueMeetsOption(Map.Entry<IT,VT> value, FilterOptType option) {
+					if (value==null) return true;
+					VT value2 = value.getValue();
+					if (value2==null) return true;
+					return valueMeetsOption.test(value2, option);
+				}
+			};
+		}
+		
+		static abstract class GroupingNodeFilter<ValueType, FilterOptType extends Enum<FilterOptType> & FilterOption> implements Filter {
+			
+			private final FilterOptType[] options;
+			private final EnumSet<FilterOptType> currentSetting;
+			private GroupingNode<ValueType> host;
+
+			GroupingNodeFilter(Class<FilterOptType> filterOptionClass, FilterOptType[] options) {
+				this.options = options;
+				currentSetting = EnumSet.noneOf(filterOptionClass);
+				host = null;
+			}
+
+			private void setHost(GroupingNode<ValueType> host) {
+				this.host = host;
+			}
+
+			private boolean allows(ValueType value) {
+				//System.out.printf("allows \"%s\" ?%n", value);
+				if (value==null) return true;
+				//System.out.print("   ");
+				for (FilterOptType option:options) {
+					//System.out.print("\""+option+"\"  |  ");
+					if (option!=null && isFilterOptionSet(option) && !valueMeetsOption(value,option)) {
+						//System.out.println("--> false");
+						return false;
+					}
+				}
+				//System.out.println("--> true");
+				return true;
+			}
+
+			protected abstract boolean valueMeetsOption(ValueType value, FilterOptType option);
+
+			@Override public FilterOptType[] getFilterOptions() { return options; }
+			@SuppressWarnings("unlikely-arg-type")
+			@Override public boolean isFilterOptionSet(FilterOption option) { return currentSetting.contains(option); }
+
+			@Override public void setFilterOption(FilterOption option, boolean active, DefaultTreeModel currentTreeModel) {
+				//System.out.printf("setFilterOption( \"%s\", %s )%n", option, active);
+				if (option==null) {
+					//System.out.println("setFilterOption:  option==null --> ABORT");
+					return;
+				}
+				//System.out.printf("setFilterOption:  cast( [%s] \"%s\" )%n", option==null?null:option.getClass(), option);
+				FilterOptType filterOption = cast(option);
+				if (filterOption==null) {
+					//System.out.println("setFilterOption:  cast(option)==null --> ABORT");
+					return;
+				}
+				//System.out.printf("setFilterOption:  active=%s  current=%s%n", active, currentSetting.contains(filterOption));
+				if (active && !currentSetting.contains(filterOption)) {
+					//System.out.println("setFilterOption:  add");
+					currentSetting.add(filterOption);
+					rebuildChildren(currentTreeModel);
+					
+				} else if (!active && currentSetting.contains(filterOption)) {
+					//System.out.println("setFilterOption:  remove");
+					currentSetting.remove(filterOption);
+					rebuildChildren(currentTreeModel);
+				}
+			}
+
+			@Override public void clearFilter(DefaultTreeModel currentTreeModel) {
+				currentSetting.clear();
+				rebuildChildren(currentTreeModel);
+			}
+
+			private void rebuildChildren(DefaultTreeModel currentTreeModel) {
+				if (host==null) throw new IllegalStateException();
+				host.rebuildChildren(currentTreeModel);
+			}
+
+			protected abstract FilterOptType cast(FilterOption option);
+		}
+		
+		@Override public Filter getFilter() { return filter; }
+		void setFilter(GroupingNodeFilter<ValueType,?> filter) {
+			this.filter = filter;
+			if (filter!=null)
+				filter.setHost(this);
+		}
+		
+		void setFileSource(File file, ExternalViewerInfo externalViewerInfo) {
 			setFileSource(new LabeledFile(file), externalViewerInfo);
 		}
-		public void setFileSource(LabeledFile file, ExternalViewerInfo externalViewerInfo) {
+		void setFileSource(LabeledFile file, ExternalViewerInfo externalViewerInfo) {
 			this.file = file;
 			this.externalViewerInfo = externalViewerInfo;
 			if (getFile!=null) throw new IllegalStateException();
 			if (file==null) throw new IllegalArgumentException();
 		}
-		public void setFileSource(FilePromise getFile, ExternalViewerInfo externalViewerInfo) {
+		void setFileSource(FilePromise getFile, ExternalViewerInfo externalViewerInfo) {
 			this.getFile = getFile;
 			this.externalViewerInfo = externalViewerInfo;
 			if (getFile==null) throw new IllegalArgumentException();
@@ -736,8 +856,10 @@ class TreeNodes {
 			if (sortOrder!=null) vector.sort(sortOrder);
 			Vector<TreeNode> children = new Vector<>();
 			vector.forEach(value->{
-				TreeNode treeNode = createChildNode.create(this,value);
-				if (treeNode!=null) children.add(treeNode);
+				if (filter==null || filter.allows(value)) {
+					TreeNode treeNode = createChildNode.create(this,value);
+					if (treeNode!=null) children.add(treeNode);
+				}
 			});
 			return children;
 		}
@@ -751,20 +873,43 @@ class TreeNodes {
 		}
 	}
 	
-	static class ImageUrlNode extends SimpleTextNode implements ImageContentSource, ExternViewableNode, URLBasedNode {
+	static class UrlNode extends SimpleTextNode implements ExternViewableNode, URLBasedNode {
 		
-		private final String url;
+		protected final String url;
 		
-		ImageUrlNode(TreeNode parent, String label, String  url) {
-			super(parent, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile), "%s: "+"\"%s\"", label, url);
+		UrlNode(TreeNode parent, String label, String  url) {
+			this(parent, null, label, url);
+		}
+		UrlNode(TreeNode parent, Icon icon, String label, String  url) {
+			super(parent, icon, "%s: "+"\"%s\"", label, url);
 			this.url = url;
 		}
 
 		@Override public String getURL() { return url; }
 		@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
+	}
+	
+	static class ImageUrlNode extends UrlNode implements ImageContentSource {
+		
+		ImageUrlNode(TreeNode parent, String label, String  url) {
+			super(parent, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile), label, url);
+		}
 
 		@Override ContentType getContentType() { return ContentType.Image; }
 		@Override public BufferedImage getContentAsImage() { return readImageFromURL(url,"image"); }
+	}
+	
+	static class Base64ImageNode extends SimpleTextNode implements ImageContentSource {
+		
+		private final String base64Data;
+
+		Base64ImageNode(TreeNode parent, String label, String base64Data) {
+			super(parent, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile), "%s: <Base64> %d chars", label, base64Data.length());
+			this.base64Data = base64Data;
+		}
+
+		@Override ContentType getContentType() { return ContentType.Image; }
+		@Override public BufferedImage getContentAsImage() { return createImageFromBase64(base64Data); }
 	}
 	
 	static class PrimitiveValueNode extends SimpleTextNode {
@@ -894,16 +1039,66 @@ class TreeNodes {
 			@Override KnownVdfValues add(String name, VDFTreeNode.Type type) { super.add(name, type); return this; }
 		}
 		
+		static final OptionalValues optionalValues = new OptionalValues();
+		static class OptionalValues extends HashMap<String,HashMap<String,HashSet<JSON_Data.Value.Type>>> {
+			private static final long serialVersionUID = 3844179176678445499L;
+
+			void scan(JSON_Object<NV,V> object, String prefixStr) {
+				
+				HashMap<String, HashSet<JSON_Data.Value.Type>> valueMap = get(prefixStr);
+				boolean valueMapIsNew = false;
+				if (valueMap==null) {
+					valueMapIsNew = true;
+					put(prefixStr, valueMap=new HashMap<>());
+				}
+				
+				valueMap.forEach((name,types)->{
+					JSON_Data.Value<NV, V> value = object.getValue(name);
+					if (value==null) types.add(null);
+				});
+				
+				for (JSON_Data.NamedValue<NV,V> nvalue:object) {
+					HashSet<JSON_Data.Value.Type> types = valueMap.get(nvalue.name);
+					if (types==null) {
+						valueMap.put(nvalue.name, types=new HashSet<>());
+						if (!valueMapIsNew) types.add(null);
+					}
+					types.add(nvalue.value.type);
+				}
+			}
+			
+			void show(PrintStream out) {
+				if (isEmpty()) return;
+				Vector<String> prefixStrs = new Vector<>(keySet());
+				prefixStrs.sort(null);
+				out.printf("Optional Values: [%d blocks]%n", prefixStrs.size());
+				for (String prefixStr:prefixStrs) {
+					HashMap<String, HashSet<JSON_Data.Value.Type>> valueMap = get(prefixStr);
+					Vector<String> names = new Vector<>(valueMap.keySet());
+					names.sort(null);
+					out.printf("   Block \"%s\" [%d]%n", prefixStr, names.size());
+					for (String name:names) {
+						HashSet<JSON_Data.Value.Type> typeSet = valueMap.get(name);
+						Vector<JSON_Data.Value.Type> types = new Vector<>(typeSet);
+						types.sort(Comparator.nullsLast(Comparator.naturalOrder()));
+						for (JSON_Data.Value.Type type:types)
+							out.printf("      %s%s%n", name, type==null ? " == <null>" : ":"+type);
+					}
+				}
+					
+			}
+		}
+		
 		static void scanUnexpectedValues(JSON_Object<NV,V> object, KnownJsonValues knownValues, String prefixStr) {
 			for (JSON_Data.NamedValue<NV,V> nvalue:object)
 				if (!knownValues.contains(nvalue.name, nvalue.value.type))
 					//DevHelper.unknownValues.add(prefixStr+"."+nvalue.name+" = "+nvalue.value.type+"...");
-					DevHelper.unknownValues.add(prefixStr,nvalue.name,nvalue.value.type);
+					unknownValues.add(prefixStr,nvalue.name,nvalue.value.type);
 		}
 		static void scanUnexpectedValues(VDFTreeNode node, KnownVdfValues knownValues, String prefixStr) {
 			node.forEach((subNode,t,n,v) -> {
 				if (!knownValues.contains(n,t))
-					DevHelper.unknownValues.add(prefixStr, n, t);
+					unknownValues.add(prefixStr, n, t);
 			});
 		}
 
@@ -991,7 +1186,7 @@ class TreeNodes {
 				for (JSON_Data.NamedValue<NV,V> nvalue:object) {
 					String valueStr = nvalue.value.type+"...";
 					if (!knownValueNames.contains(nvalue.name)) valueStr = nvalue.value.toString();
-					DevHelper.unknownValues.add(baseValueLabel+"."+nvalue.name+" = "+valueStr);
+					unknownValues.add(baseValueLabel+"."+nvalue.name+" = "+valueStr);
 					if (subArrayName.equals(nvalue.name)) {
 						JSON_Array<NV,V> array = null;
 						try { array = JSON_Data.getArrayValue(nvalue.value, errorPrefix+"."+subArrayName); }
@@ -1005,7 +1200,7 @@ class TreeNodes {
 									for (JSON_Data.NamedValue<NV, V> nvalue1:object1) {
 										valueStr = nvalue1.value.type+"...";
 										if (!knownSubArrayValueNames.contains(nvalue1.name)) valueStr = nvalue1.value.toString();
-										DevHelper.unknownValues.add(baseValueLabel+"."+"rgCards."+nvalue1.name+" = "+valueStr);
+										unknownValues.add(baseValueLabel+"."+"rgCards."+nvalue1.name+" = "+valueStr);
 									}
 								}
 							}
@@ -1405,6 +1600,57 @@ class TreeNodes {
 			
 			static class GameInfos {
 
+				static boolean meetsFilterOption(GameInfos gameInfos, GameInfosFilterOptions option) {
+					if (option==null) return true;
+					if (gameInfos==null) return true;
+					switch (option) {
+					case RawData       : return !gameInfos.hasParsedData && gameInfos.rawData       !=null;
+					case Badge         : return  gameInfos.hasParsedData && gameInfos.badge         !=null && !gameInfos.badge         .isEmpty();
+					case Achievements  : return  gameInfos.hasParsedData && gameInfos.achievements  !=null && !gameInfos.achievements  .isEmpty();
+					case UserNews      : return  gameInfos.hasParsedData && gameInfos.userNews      !=null && !gameInfos.userNews      .isEmpty();
+					case GameActivity  : return  gameInfos.hasParsedData && gameInfos.gameActivity  !=null && !gameInfos.gameActivity  .isEmpty();
+					case AchievementMap: return  gameInfos.hasParsedData && gameInfos.achievementMap!=null && !gameInfos.achievementMap.isEmpty();
+					case SocialMedia   : return  gameInfos.hasParsedData && gameInfos.socialMedia   !=null && !gameInfos.socialMedia   .isEmpty();
+					case Associations  : return  gameInfos.hasParsedData && gameInfos.associations  !=null && !gameInfos.associations  .isEmpty();
+					case AppActivity   : return  gameInfos.hasParsedData && gameInfos.appActivity   !=null && !gameInfos.appActivity   .isEmpty();
+					case ReleaseData   : return  gameInfos.hasParsedData && gameInfos.releaseData   !=null && !gameInfos.releaseData   .isEmpty();
+					case Friends       : return  gameInfos.hasParsedData && gameInfos.friends       !=null && !gameInfos.friends       .isEmpty();
+					case CommunityItems: return  gameInfos.hasParsedData && gameInfos.communityItems!=null && !gameInfos.communityItems.isEmpty();
+					}
+					return true;
+				}
+
+				enum GameInfosFilterOptions implements FilterOption {
+					RawData       ("has Raw Data"),
+					Badge         ("has Badge"),
+					Achievements  ("has Achievements"),
+					UserNews      ("has User News"),
+					GameActivity  ("has Game Activity"),
+					AchievementMap("has Achievement Map"),
+					SocialMedia   ("has Social Media"),
+					Associations  ("has Associations"),
+					AppActivity   ("has App Activity"),
+					ReleaseData   ("has Release Data"),
+					Friends       ("has Friends"),
+					CommunityItems("has Community Items"),
+					;
+					private final String label;
+					
+					GameInfosFilterOptions() { this(null); }
+					GameInfosFilterOptions(String label) { this.label = label==null ? name() : label;}
+					
+					@Override public String toString() {
+						return label;
+					}
+
+					static GameInfosFilterOptions cast(FilterOption obj) {
+						//System.out.printf("FilterOptions.cast( [%s] obj=%s )%n", obj==null ? null : obj.getClass(), obj );
+						if (obj instanceof GameInfosFilterOptions)
+							return (GameInfosFilterOptions) obj;
+						return null;
+					}
+				}
+
 				final File file;
 				final JSON_Data.Value<NV, V> rawData;
 				final boolean hasParsedData;
@@ -1421,6 +1667,8 @@ class TreeNodes {
 				final Associations   associations;
 				final AppActivity    appActivity;
 				final ReleaseData    releaseData;
+				final Friends        friends;
+				final CommunityItems communityItems;
 
 				static GameInfos createRawData(File file, JSON_Data.Value<NV, V> rawData) {
 					try { return new GameInfos(file, rawData, true); }
@@ -1449,6 +1697,8 @@ class TreeNodes {
 						associations   = null;
 						appActivity    = null;
 						releaseData    = null;
+						friends        = null;
+						communityItems = null;
 						
 					} else {
 						hasParsedData = true;
@@ -1477,21 +1727,25 @@ class TreeNodes {
 						Associations   preAssociations   = null;
 						AppActivity    preAppActivity    = null;
 						ReleaseData    preReleaseData    = null;
+						Friends        preFriends        = null;
+						CommunityItems preCommunityItems = null;
 						
 						for (Block block:blocks) {
 							String dataValueStr = String.format("GameInfos.Block[%d].dataValue", block.blockIndex);
 							//DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
 							switch (block.label) {
 								
-							case "appactivity"   : preAppActivity    = parseStandardBlock( AppActivity   ::new, AppActivity   ::new, block.dataValue, block.version, dataValueStr, file ); break;
-							case "releasedata"   : preReleaseData    = parseStandardBlock( ReleaseData   ::new, ReleaseData   ::new, block.dataValue, block.version, dataValueStr, file ); break;
-							case "associations"  : preAssociations   = parseStandardBlock( Associations  ::new, Associations  ::new, block.dataValue, block.version, dataValueStr, file ); break;
-							case "socialmedia"   : preSocialMedia    = parseStandardBlock( SocialMedia   ::new, SocialMedia   ::new, block.dataValue, block.version, dataValueStr, file ); break;
-							case "achievementmap": preAchievementMap = parseStandardBlock( AchievementMap::new, AchievementMap::new, block.dataValue, block.version, dataValueStr, file ); break;
-							case "gameactivity"  : preGameActivity   = parseStandardBlock( GameActivity  ::new, GameActivity  ::new, block.dataValue, block.version, dataValueStr, file ); break;
-							case "usernews"      : preUserNews       = parseStandardBlock( UserNews      ::new, UserNews      ::new, block.dataValue, block.version, dataValueStr, file ); break;
-							case "achievements"  : preAchievements   = parseStandardBlock( Achievements  ::new, Achievements  ::new, block.dataValue, block.version, dataValueStr, file ); break;
-							case "badge"         : preBadge          = parseStandardBlock( Badge         ::new, Badge         ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "badge"          : preBadge          = parseStandardBlock( Badge         ::new, Badge         ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "achievements"   : preAchievements   = parseStandardBlock( Achievements  ::new, Achievements  ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "usernews"       : preUserNews       = parseStandardBlock( UserNews      ::new, UserNews      ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "gameactivity"   : preGameActivity   = parseStandardBlock( GameActivity  ::new, GameActivity  ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "achievementmap" : preAchievementMap = parseStandardBlock( AchievementMap::new, AchievementMap::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "socialmedia"    : preSocialMedia    = parseStandardBlock( SocialMedia   ::new, SocialMedia   ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "associations"   : preAssociations   = parseStandardBlock( Associations  ::new, Associations  ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "appactivity"    : preAppActivity    = parseStandardBlock( AppActivity   ::new, AppActivity   ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "releasedata"    : preReleaseData    = parseStandardBlock( ReleaseData   ::new, ReleaseData   ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "friends"        : preFriends        = parseStandardBlock( Friends       ::new, Friends       ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "community_items": preCommunityItems = parseStandardBlock( CommunityItems::new, CommunityItems::new, block.dataValue, block.version, dataValueStr, file ); break;
 								
 							case "descriptions":
 								JSON_Object<NV, V> object = null;
@@ -1509,14 +1763,6 @@ class TreeNodes {
 								//DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
 								break;
 								
-							case "community_items":
-								//DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
-								break;
-								
-							case "friends":
-								DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
-								break;
-								
 							default:
 								DevHelper.unknownValues.add("GameInfos.Block["+block.label+"] - Unknown Block");
 							}
@@ -1532,6 +1778,8 @@ class TreeNodes {
 						associations   = preAssociations  ;
 						appActivity    = preAppActivity   ;
 						releaseData    = preReleaseData   ;
+						friends        = preFriends       ;
+						communityItems = preCommunityItems;
 					}
 				}
 				
@@ -1562,6 +1810,318 @@ class TreeNodes {
 						this.rawData = rawData;
 						this.version = version;
 						this.hasParsedData = hasParsedData;
+					}
+					
+					boolean isEmpty() {
+						return rawData==null;
+					}
+				}
+				// "GameInfo.Block["community_items",V1].dataValue:Array"
+
+				static class CommunityItems extends ParsedBlock {
+					
+					final Vector<CommunityItem> items;
+
+					CommunityItems(JSON_Data.Value<NV, V> rawData, long version) {
+						super(rawData, version, false);
+						items = null;
+					}
+					CommunityItems(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
+						super(null, version, true);
+						
+						JSON_Array<NV, V> array = JSON_Data.getArrayValue(blockDataValue, dataValueStr);
+						items = new Vector<>();
+						for (int i=0; i<array.size(); i++) {
+							try {
+								items.add(new CommunityItem(array.get(i), dataValueStr+"["+i+"]"));
+							} catch (TraverseException e) {
+								showException(e, file);
+								items.add(new CommunityItem(array.get(i)));
+							}
+						}
+						
+					}
+					
+					@Override boolean isEmpty() {
+						return super.isEmpty() && (!hasParsedData || items.isEmpty());
+					}
+
+					static class CommunityItem {
+						
+						// Block "TreeNodes.Data.Player.GameInfos.CommunityItems.CommunityItem" [18]
+						//    active:Bool
+						//    appid:Integer
+						//    item_class:Integer
+						//    item_description:String
+						//    item_image_composed:String
+						//    item_image_composed == <null>
+						//    item_image_composed_foil:String
+						//    item_image_composed_foil == <null>
+						//    item_image_large:String
+						//    item_image_small:String
+						//    item_key_values:String
+						//    item_key_values == <null>
+						//    item_last_changed:Integer
+						//    item_movie_mp4:String
+						//    item_movie_mp4 == <null>
+						//    item_movie_mp4_small:String
+						//    item_movie_mp4_small == <null>
+						//    item_movie_webm:String
+						//    item_movie_webm == <null>
+						//    item_movie_webm_small:String
+						//    item_movie_webm_small == <null>
+						//    item_name:String
+						//    item_series:Integer
+						//    item_title:String
+						//    item_type:Integer
+						
+						private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+								.add("active"                  , JSON_Data.Value.Type.Bool   )
+								.add("appid"                   , JSON_Data.Value.Type.Integer)
+								.add("item_class"              , JSON_Data.Value.Type.Integer)
+								.add("item_description"        , JSON_Data.Value.Type.String )
+								.add("item_image_composed"     , JSON_Data.Value.Type.String ) // optional value
+								.add("item_image_composed_foil", JSON_Data.Value.Type.String ) // optional value
+								.add("item_image_large"        , JSON_Data.Value.Type.String )
+								.add("item_image_small"        , JSON_Data.Value.Type.String )
+								.add("item_key_values"         , JSON_Data.Value.Type.String ) // optional value
+								.add("item_last_changed"       , JSON_Data.Value.Type.Integer)
+								.add("item_movie_mp4"          , JSON_Data.Value.Type.String ) // optional value
+								.add("item_movie_mp4_small"    , JSON_Data.Value.Type.String ) // optional value
+								.add("item_movie_webm"         , JSON_Data.Value.Type.String ) // optional value
+								.add("item_movie_webm_small"   , JSON_Data.Value.Type.String ) // optional value
+								.add("item_name"               , JSON_Data.Value.Type.String )
+								.add("item_series"             , JSON_Data.Value.Type.Integer)
+								.add("item_title"              , JSON_Data.Value.Type.String )
+								.add("item_type"               , JSON_Data.Value.Type.Integer);
+						
+						final JSON_Data.Value<NV, V> rawData;
+						final boolean hasParsedData;
+
+						final boolean isActive;
+						final long    appID;
+						final long    itemClass;
+						final String  itemDescription;
+						final String  itemImageComposed;
+						final String  itemImageComposedFoil;
+						final String  itemImageLarge;
+						final String  itemImageSmall;
+						final String  itemKeyValues;
+						final long    itemLastChanged;
+						final String  itemMovieMp4;
+						final String  itemMovieMp4Small;
+						final String  itemMovieWebm;
+						final String  itemMovieWebmSmall;
+						final String  itemName;
+						final long    itemSeries;
+						final String  itemTitle;
+						final long    itemType;
+						
+						CommunityItem(JSON_Data.Value<NV, V> rawData) {
+							this.rawData = rawData;
+							hasParsedData = false;
+							
+							isActive                   = false;
+							appID                    = -1;
+							itemName                = null;
+							itemTitle               = null;
+							itemDescription         = null;
+							itemClass               = -1;
+							itemSeries              = -1;
+							itemType                = -1;
+							itemLastChanged        = -1;
+							itemImageLarge         = null;
+							itemImageSmall         = null;
+							itemKeyValues          = null;
+							itemImageComposed      = null;
+							itemImageComposedFoil = null;
+							itemMovieMp4           = null;
+							itemMovieMp4Small     = null;
+							itemMovieWebm          = null;
+							itemMovieWebmSmall    = null;
+						}
+						CommunityItem(JSON_Data.Value<NV, V> value, String dataValueStr) throws TraverseException {
+							this.rawData = null;
+							hasParsedData = true;
+							
+							JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, dataValueStr);
+							//DevHelper.optionalValues.scan(object, "TreeNodes.Data.Player.GameInfos.CommunityItems.CommunityItem");
+							
+							isActive                   = JSON_Data.getBoolValue   (object, "active"           , dataValueStr);
+							appID                    = JSON_Data.getIntegerValue(object, "appid"            , dataValueStr);
+							itemName                = JSON_Data.getStringValue (object, "item_name"        , dataValueStr);
+							itemTitle               = JSON_Data.getStringValue (object, "item_title"       , dataValueStr);
+							itemDescription         = JSON_Data.getStringValue (object, "item_description" , dataValueStr);
+							itemClass               = JSON_Data.getIntegerValue(object, "item_class"       , dataValueStr);
+							itemSeries              = JSON_Data.getIntegerValue(object, "item_series"      , dataValueStr);
+							itemType                = JSON_Data.getIntegerValue(object, "item_type"        , dataValueStr);
+							itemLastChanged        = JSON_Data.getIntegerValue(object, "item_last_changed", dataValueStr);
+							itemImageLarge         = JSON_Data.getStringValue (object, "item_image_large" , dataValueStr);
+							itemImageSmall         = JSON_Data.getStringValue (object, "item_image_small" , dataValueStr);
+							
+							itemKeyValues          = JSON_Data.getValue(object, "item_key_values"         , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
+							itemImageComposed      = JSON_Data.getValue(object, "item_image_composed"     , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
+							itemImageComposedFoil = JSON_Data.getValue(object, "item_image_composed_foil", true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
+							itemMovieMp4           = JSON_Data.getValue(object, "item_movie_mp4"          , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
+							itemMovieMp4Small     = JSON_Data.getValue(object, "item_movie_mp4_small"    , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
+							itemMovieWebm          = JSON_Data.getValue(object, "item_movie_webm"         , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
+							itemMovieWebmSmall    = JSON_Data.getValue(object, "item_movie_webm_small"   , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
+							
+							DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Data.Player.GameInfos.CommunityItems.CommunityItem");
+						}
+						
+						String getURL(String urlPart) {
+							if (hasParsedData)
+								return String.format("https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/items/%d/%s", appID, urlPart);
+							return "";
+						}
+						
+						public static String getClassLabel(long itemClass) {
+							switch ((int)itemClass) {
+							case 2: return "Trading Card";
+							case 3: return "Profil Background";
+							case 4: return "Emoticon";
+							default: return null;
+							}
+						}
+					}
+					
+				}
+				static class Friends extends ParsedBlock {
+					
+					// "GameInfo.Block["friends",V1].dataValue.in_game:Array"
+					// "GameInfo.Block["friends",V1].dataValue.in_wishlist:Array"
+					// "GameInfo.Block["friends",V1].dataValue.in_wishlist[].steamid:String"
+					// "GameInfo.Block["friends",V1].dataValue.in_wishlist[]:Object"
+					// "GameInfo.Block["friends",V1].dataValue.owns:Array"
+					// "GameInfo.Block["friends",V1].dataValue.owns[].steamid:String"
+					// "GameInfo.Block["friends",V1].dataValue.owns[]:Object"
+					// "GameInfo.Block["friends",V1].dataValue.played_ever:Array"
+					// "GameInfo.Block["friends",V1].dataValue.played_ever[].minutes_played_forever:Integer"
+					// "GameInfo.Block["friends",V1].dataValue.played_ever[].steamid:String"
+					// "GameInfo.Block["friends",V1].dataValue.played_ever[]:Object"
+					// "GameInfo.Block["friends",V1].dataValue.played_recently:Array"
+					// "GameInfo.Block["friends",V1].dataValue.played_recently[].minutes_played:Integer"
+					// "GameInfo.Block["friends",V1].dataValue.played_recently[].minutes_played_forever:Integer"
+					// "GameInfo.Block["friends",V1].dataValue.played_recently[].steamid:String"
+					// "GameInfo.Block["friends",V1].dataValue.played_recently[]:Object"
+					// "GameInfo.Block["friends",V1].dataValue.your_info.minutes_played:Integer"
+					// "GameInfo.Block["friends",V1].dataValue.your_info.minutes_played_forever:Integer"
+					// "GameInfo.Block["friends",V1].dataValue.your_info.owned:Bool"
+					// "GameInfo.Block["friends",V1].dataValue.your_info:Object"
+					// "GameInfo.Block["friends",V1].dataValue:Object"
+					
+					// "[JSON]TreeNodes.Data.Player.GameInfos.Associations.in_game:Array"
+					// "[JSON]TreeNodes.Data.Player.GameInfos.Associations.in_wishlist:Array"
+					// "[JSON]TreeNodes.Data.Player.GameInfos.Associations.owns:Array"
+					// "[JSON]TreeNodes.Data.Player.GameInfos.Associations.played_ever:Array"
+					// "[JSON]TreeNodes.Data.Player.GameInfos.Associations.played_recently:Array"
+					// "[JSON]TreeNodes.Data.Player.GameInfos.Associations.your_info:Object"
+					
+					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+							.add("in_game"        , JSON_Data.Value.Type.Array)
+							.add("in_wishlist"    , JSON_Data.Value.Type.Array)
+							.add("owns"           , JSON_Data.Value.Type.Array)
+							.add("played_ever"    , JSON_Data.Value.Type.Array)
+							.add("played_recently", JSON_Data.Value.Type.Array)
+							.add("your_info"      , JSON_Data.Value.Type.Object);
+					
+					final Vector<Entry> in_game;
+					final Vector<Entry> in_wishlist;
+					final Vector<Entry> owns;
+					final Vector<Entry> played_ever;
+					final Vector<Entry> played_recently;
+					final Entry your_info;
+					
+					Friends(JSON_Data.Value<NV, V> rawData, long version) {
+						super(rawData, version, false);
+						in_game         = null;
+						in_wishlist     = null;
+						owns            = null;
+						played_ever     = null;
+						played_recently = null;
+						your_info       = null;
+					}
+					Friends(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
+						super(null, version, true);
+						
+						JSON_Object<NV, V> object = JSON_Data.getObjectValue(blockDataValue, dataValueStr);
+						
+						in_game         = parseArray(object, "in_game"        , dataValueStr, file);
+						in_wishlist     = parseArray(object, "in_wishlist"    , dataValueStr, file);
+						owns            = parseArray(object, "owns"           , dataValueStr, file);
+						played_ever     = parseArray(object, "played_ever"    , dataValueStr, file);
+						played_recently = parseArray(object, "played_recently", dataValueStr, file);
+						
+						JSON_Data.Value<NV, V> your_info_value = object.getValue("your_info");
+						if (your_info_value==null) your_info = null;
+						else your_info = parseEntry(your_info_value, dataValueStr+".your_info", file);
+						
+						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Data.Player.GameInfos.Associations");
+					}
+					
+					@Override boolean isEmpty() {
+						return super.isEmpty() && (!hasParsedData || (in_game.isEmpty() && in_wishlist.isEmpty() && owns.isEmpty() && played_ever.isEmpty() && played_recently.isEmpty() && your_info==null));
+					}
+					
+					private Vector<Entry> parseArray(JSON_Object<NV, V> object, String subValueName, String dataValueStr, File file) throws TraverseException {
+						JSON_Array<NV, V> array = JSON_Data.getArrayValue(object, subValueName, dataValueStr);
+						Vector<Entry> values = new Vector<>();
+						for (int i=0; i<array.size(); i++)
+							values.add(parseEntry(array.get(i), dataValueStr+"["+i+"]", file));
+						return values;
+					}
+					
+					private Entry parseEntry(JSON_Data.Value<NV, V> value, String dataValueStr, File file) {
+						try {
+							return new Entry(value, dataValueStr);
+						} catch (TraverseException ex) {
+							showException(ex, file);
+							return new Entry(value);
+						}
+					}
+					
+					static class Entry {
+						
+						// "[JSON]TreeNodes.Data.Player.GameInfos.Friends.Entry.minutes_played:Integer"
+						// "[JSON]TreeNodes.Data.Player.GameInfos.Friends.Entry.minutes_played_forever:Integer"
+						// "[JSON]TreeNodes.Data.Player.GameInfos.Friends.Entry.owned:Bool"
+						// "[JSON]TreeNodes.Data.Player.GameInfos.Friends.Entry.steamid:String"
+						
+						private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+								.add("minutes_played"        , JSON_Data.Value.Type.Integer)
+								.add("minutes_played_forever", JSON_Data.Value.Type.Integer)
+								.add("owned"                 , JSON_Data.Value.Type.Bool   )
+								.add("steamid"               , JSON_Data.Value.Type.String );
+
+						final JSON_Data.Value<NV, V> rawData;
+						final boolean hasParsedData;
+						
+						final Long minutes_played;
+						final Long minutes_played_forever;
+						final Boolean owned;
+						final String steamid;
+						
+						Entry(JSON_Data.Value<NV, V> rawData) {
+							this.rawData = rawData;
+							this.hasParsedData = false;
+							minutes_played         = null;
+							minutes_played_forever = null;
+							owned                  = null;
+							steamid                = null;
+						}
+						Entry(JSON_Data.Value<NV, V> value, String dataValueStr) throws TraverseException {
+							this.rawData = null;
+							this.hasParsedData = true;
+							JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, dataValueStr);
+							//DevHelper.optionalValues.scan(object, "TreeNodes.Data.Player.GameInfos.Friends.Entry");
+							minutes_played         = JSON_Data.getValue(object, "minutes_played"        , true, JSON_Data.Value.Type.Integer, JSON_Data.Value::castToIntegerValue, false, dataValueStr);
+							minutes_played_forever = JSON_Data.getValue(object, "minutes_played_forever", true, JSON_Data.Value.Type.Integer, JSON_Data.Value::castToIntegerValue, false, dataValueStr);
+							owned                  = JSON_Data.getValue(object, "owned"                 , true, JSON_Data.Value.Type.Bool   , JSON_Data.Value::castToBoolValue   , false, dataValueStr);
+							steamid                = JSON_Data.getValue(object, "steamid"               , true, JSON_Data.Value.Type.String , JSON_Data.Value::castToStringValue , false, dataValueStr);
+							DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Data.Player.GameInfos.Friends.Entry");
+						}
+						
 					}
 				}
 
@@ -1609,7 +2169,11 @@ class TreeNodes {
 						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Data.Player.GameInfos.Associations");
 					}
 					
-					Vector<Association> parseArray(JSON_Object<NV, V> object, String subValueName, String dataValueStr, File file) throws TraverseException {
+					@Override boolean isEmpty() {
+						return super.isEmpty() && (!hasParsedData || (developers.isEmpty() && franchises.isEmpty() && publishers.isEmpty())) ;
+					}
+					
+					private Vector<Association> parseArray(JSON_Object<NV, V> object, String subValueName, String dataValueStr, File file) throws TraverseException {
 						JSON_Array<NV, V> array = JSON_Data.getArrayValue(object, subValueName, dataValueStr);
 						Vector<Association> values = new Vector<>();
 						for (int i=0; i<array.size(); i++) {
@@ -1645,9 +2209,10 @@ class TreeNodes {
 						}
 						Association(JSON_Data.Value<NV, V> value, String dataValueStr) throws TraverseException {
 							this.rawData = null;
-							hasParsedData = false;
+							hasParsedData = true;
 							
 							JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, dataValueStr);
+							//DevHelper.optionalValues.scan(object, "TreeNodes.Data.Player.GameInfos.Associations.Association");
 							
 							       JSON_Data.getValue(object, "strName", false, JSON_Data.Value.Type.Null  , JSON_Data.Value::castToNullValue  , true, dataValueStr);
 							       JSON_Data.getValue(object, "strURL" , false, JSON_Data.Value.Type.Null  , JSON_Data.Value::castToNullValue  , true, dataValueStr);
@@ -1667,25 +2232,29 @@ class TreeNodes {
 					// "GameStateInfo.Block["socialmedia",V3].dataValue[].strURL:String"
 					// "GameStateInfo.Block["socialmedia",V3].dataValue[]:Object"
 					
-					final Vector<SocialMediaEntry> values;
+					final Vector<SocialMediaEntry> entries;
 					
 					SocialMedia(JSON_Data.Value<NV, V> rawData, long version) {
 						super(rawData, version, false);
-						values = null;
+						entries = null;
 					}
 					SocialMedia(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 						super(null, version, true);
 						
 						JSON_Array<NV, V> array = JSON_Data.getArrayValue(blockDataValue, dataValueStr);
 						
-						values = new Vector<>();
+						entries = new Vector<>();
 						for (int i=0; i<array.size(); i++)
 							try {
-								values.add(new SocialMediaEntry(array.get(i), dataValueStr+"["+i+"]"));
+								entries.add(new SocialMediaEntry(array.get(i), dataValueStr+"["+i+"]"));
 							} catch (TraverseException e) {
 								showException(e, file);
-								values.add(new SocialMediaEntry(array.get(i)));
+								entries.add(new SocialMediaEntry(array.get(i)));
 							}
+					}
+					
+					@Override boolean isEmpty() {
+						return super.isEmpty() && (!hasParsedData || (entries.isEmpty())) ;
 					}
 					
 					static class SocialMediaEntry {
@@ -1731,6 +2300,10 @@ class TreeNodes {
 						super(null, version, true);
 						if (blockDataValue!=null) throw new TraverseException("%s != <null>. I have not expected any value.", dataValueStr);
 					}
+					
+					@Override boolean isEmpty() {
+						return super.isEmpty() && (!hasParsedData) ;
+					}
 				}
 				
 				static class AppActivity extends ParsedBlock {
@@ -1746,6 +2319,10 @@ class TreeNodes {
 					AppActivity(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 						super(null, version, true);
 						value = JSON_Data.getStringValue(blockDataValue, dataValueStr);
+					}
+					
+					@Override boolean isEmpty() {
+						return super.isEmpty() && (!hasParsedData || (value.isEmpty())) ;
 					}
 				}
 				
@@ -1768,6 +2345,10 @@ class TreeNodes {
 						} catch (JSON_Parser.ParseException e) {
 							throw new TraverseException("%s isn't a well formed JSON text: %s", dataValueStr, e.getMessage());
 						}
+					}
+					
+					@Override boolean isEmpty() {
+						return super.isEmpty() && (!hasParsedData) ;
 					}
 					
 				}
@@ -1806,6 +2387,10 @@ class TreeNodes {
 						throw new TraverseException("%s is neither an ArrayValue nor a StringValue", dataValueStr);
 					}
 					
+					@Override boolean isEmpty() {
+						return super.isEmpty() && (!hasParsedData || (values.isEmpty())) ;
+					}
+					
 				}
 				
 				static class UserNews extends ParsedBlock {
@@ -1824,6 +2409,10 @@ class TreeNodes {
 						values = new Vector<>();
 						for (int i=0; i<array.size(); i++)
 							values.add(JSON_Data.getStringValue(array.get(i), dataValueStr+"["+i+"]"));
+					}
+					
+					@Override boolean isEmpty() {
+						return super.isEmpty() && (!hasParsedData || (values.isEmpty())) ;
 					}
 				}
 				
@@ -1866,6 +2455,10 @@ class TreeNodes {
 						this.highlight      = parseArray(highlight     , dataValueStr+"."+"vecHighlight"     , file);
 						
 						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Data.Player.GameInfos.Achievements");
+					}
+					
+					@Override boolean isEmpty() {
+						return super.isEmpty() && (!hasParsedData || ((achievedHidden==null || achievedHidden.isEmpty()) && unachieved.isEmpty() && highlight.isEmpty() && achieved<=0)) ;
 					}
 
 					private Vector<Achievement> parseArray(JSON_Array<NV, V> rawArray, String debugOutputPrefixStr, File file) {
@@ -2008,6 +2601,10 @@ class TreeNodes {
 						
 						// unexpected values
 						DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"TreeNodes.Data.Player.GameInfos.Badge");
+					}
+					
+					@Override boolean isEmpty() {
+						return super.isEmpty() && (!hasParsedData) ;
 					}
 
 					String getTreeNodeExtraInfo() {
@@ -2492,6 +3089,7 @@ class TreeNodes {
 
 		static void loadData() {
 			DevHelper.unknownValues.clear();
+			DevHelper.optionalValues.clear();
 			Data.knownGameTitles.readFromFile();
 			
 			File folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
@@ -2546,6 +3144,7 @@ class TreeNodes {
 			Data.knownGameTitles.writeToFile();
 			
 			DevHelper.unknownValues.show(System.err);
+			DevHelper.optionalValues.show(System.err);
 		}
 
 		private static String getPlayerName(Long playerID) {
@@ -2711,8 +3310,10 @@ class TreeNodes {
 					children.add(new AchievementProgressNode(this, player.achievementProgress));
 				}
 				if (!player.gameInfos.isEmpty()) {
-					children.add(groupingNode = GroupingNode.create(this, "Game Infos", player.gameInfos, createGameIdKeyOrder(), GameInfosNode::new));
-					groupingNode.setFileSource(player.gameStateFolder, null);
+					GroupingNode<Map.Entry<Integer, GameInfos>> groupingNode1;
+					children.add(groupingNode1 = GroupingNode.create(this, "Game Infos", player.gameInfos, createGameIdKeyOrder(), GameInfosNode::new));
+					groupingNode1.setFileSource(player.gameStateFolder, null);
+					groupingNode1.setFilter(GroupingNode.createMapFilter(GameInfosFilterOptions.class, GameInfosFilterOptions.values(), GameInfosFilterOptions::cast, GameInfos::meetsFilterOption));
 				}
 				
 				return children;
@@ -2963,6 +3564,14 @@ class TreeNodes {
 					if (str1!=null && !str1.isEmpty())
 						str += (str.isEmpty()?"":", ") + str1;
 				}
+				if (gameInfos.communityItems!=null) {
+					if (gameInfos.communityItems.hasParsedData) {
+						if (!gameInfos.communityItems.items.isEmpty())
+							str += (str.isEmpty()?"":", ") + "CI:"+gameInfos.communityItems.items.size();
+					} else
+						if (gameInfos.communityItems.rawData!=null)
+							str += (str.isEmpty()?"":", ") + "CI:R";
+				}
 				return str.isEmpty() ? "" : " ("+str+")";
 			}
 			
@@ -2995,11 +3604,119 @@ class TreeNodes {
 				if (data.achievements!=null) {
 					children.add(new AchievementsNode(this, data.achievements));
 				}
+				if (data.communityItems!=null) {
+					if (data.communityItems.hasParsedData) {
+						if (!data.communityItems.items.isEmpty())
+							children.add(GroupingNode.create(this, "Community Items", data.communityItems.items, null, CommunityItemNode::new));
+					} else
+						if (data.communityItems.rawData!=null)
+							children.add(new RawJsonDataNode(this, "Community Items [Raw Data]", data.communityItems.rawData));
+				}
+				
+				
 				if (data.blocks!=null) {
 					children.add(groupingNode = GroupingNode.create(this, "Raw Blocks", data.blocks, null, BlockNode::new));
 					groupingNode.setFileSource(data.file,ExternalViewerInfo.TextEditor);
 				}
 				return children;
+			}
+
+			static class CommunityItemNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, TextContentSource{
+				
+				private final GameInfos.CommunityItems.CommunityItem communityItem;
+
+				public CommunityItemNode(TreeNode parent, GameInfos.CommunityItems.CommunityItem communityItem) {
+					super(parent, generateTitle(communityItem), hasSubNodes(communityItem), !hasSubNodes(communityItem), getIcon(communityItem));
+					this.communityItem = communityItem;
+				}
+
+				private static Icon getIcon(CommunityItem communityItem) {
+					if (communityItem.hasParsedData)
+						return getGameIcon((int) communityItem.appID, null);
+					return null;
+				}
+
+				private static String generateTitle(CommunityItem communityItem) {
+					String str = "CommunityItem";
+					if (communityItem.hasParsedData) {
+						String classLabel = CommunityItem.getClassLabel(communityItem.itemClass);
+						if (classLabel!=null) str = classLabel;
+						else str = "CommunityItem <Class "+communityItem.itemClass+">";
+						
+						if (communityItem.itemName!=null && !communityItem.itemName.isEmpty())
+							str += " \""+communityItem.itemName+"\"";
+						
+					} else if (communityItem.rawData!=null)
+						str += " [Raw Data]";
+					
+					return str;
+				}
+				
+				private static boolean hasSubNodes(CommunityItem communityItem) {
+					if (!communityItem.hasParsedData) return false;
+					if (communityItem.itemImageLarge       !=null && !communityItem.itemImageLarge       .isEmpty()) return true;
+					if (communityItem.itemImageSmall       !=null && !communityItem.itemImageSmall       .isEmpty()) return true;
+					if (communityItem.itemImageComposed    !=null && !communityItem.itemImageComposed    .isEmpty()) return true;
+					if (communityItem.itemImageComposedFoil!=null && !communityItem.itemImageComposedFoil.isEmpty()) return true;
+					if (communityItem.itemMovieMp4         !=null && !communityItem.itemMovieMp4         .isEmpty()) return true;
+					if (communityItem.itemMovieMp4Small    !=null && !communityItem.itemMovieMp4Small    .isEmpty()) return true;
+					if (communityItem.itemMovieWebm        !=null && !communityItem.itemMovieWebm        .isEmpty()) return true;
+					if (communityItem.itemMovieWebmSmall   !=null && !communityItem.itemMovieWebmSmall   .isEmpty()) return true;
+					return false;
+				}
+
+				@Override ContentType getContentType() {
+					if (communityItem.hasParsedData)
+						return ContentType.PlainText;
+					if (communityItem.rawData!=null)
+						return ContentType.DataTree;
+					return null;
+				}
+
+				@Override public String getContentAsText() {
+					if (!communityItem.hasParsedData) return null;
+					String str = "";
+					str +=                                                String.format("%s: %s%n"    , "Is Active", communityItem.isActive       );
+					str +=                                                String.format("%s: %d%n"    , "App ID   ", communityItem.appID          );
+					str +=                                                String.format("%s: \"%s\"%n", "Name     ", communityItem.itemName       );
+					str +=                                                String.format("%s: \"%s\"%n", "Title    ", communityItem.itemTitle      );
+					str +=                                                String.format("%s: \"%s\"%n", "Descr.   ", communityItem.itemDescription);
+					str +=                                                String.format("%s: %d%n"    , "Class    ", communityItem.itemClass      );
+					str +=                                                String.format("%s: %d%n"    , "Series   ", communityItem.itemSeries     );
+					str +=                                                String.format("%s: %d%n"    , "Type     ", communityItem.itemType       );
+					str +=                                                String.format("%s: %d%n"    , "Last Changed         ", communityItem.itemLastChanged      );
+					if (communityItem.itemKeyValues        !=null) str += String.format("%s: %s%n"    , "Key Values           ", communityItem.itemKeyValues        );
+					if (communityItem.itemImageLarge       !=null) str += String.format("%s: \"%s\"%n", "Image Large          ", communityItem.itemImageLarge       );
+					if (communityItem.itemImageSmall       !=null) str += String.format("%s: \"%s\"%n", "Image Small          ", communityItem.itemImageSmall       );
+					if (communityItem.itemImageComposed    !=null) str += String.format("%s: \"%s\"%n", "Image Composed       ", communityItem.itemImageComposed    );
+					if (communityItem.itemImageComposedFoil!=null) str += String.format("%s: \"%s\"%n", "Image Composed (Foil)", communityItem.itemImageComposedFoil);
+					if (communityItem.itemMovieMp4         !=null) str += String.format("%s: \"%s\"%n", "Movie MP4            ", communityItem.itemMovieMp4         );
+					if (communityItem.itemMovieMp4Small    !=null) str += String.format("%s: \"%s\"%n", "Movie MP4 (Small)    ", communityItem.itemMovieMp4Small    );
+					if (communityItem.itemMovieWebm        !=null) str += String.format("%s: \"%s\"%n", "Movie WEBM           ", communityItem.itemMovieWebm        );
+					if (communityItem.itemMovieWebmSmall   !=null) str += String.format("%s: \"%s\"%n", "Movie WEBM (Small)   ", communityItem.itemMovieWebmSmall   );
+					return str;
+				}
+				
+				@Override public TreeRoot getContentAsTree() {
+					if (!communityItem.hasParsedData && communityItem.rawData!=null)
+						return JSONHelper.createTreeRoot(communityItem.rawData, false);
+					return null;
+				}
+
+				@Override protected Vector<? extends TreeNode> createChildren() {
+					Vector<TreeNode> children = new Vector<>();
+					if (communityItem.hasParsedData) {
+						if (communityItem.itemImageLarge       !=null && !communityItem.itemImageLarge       .isEmpty()) children.add(new    ImageUrlNode(parent, "Image Large"          , communityItem.getURL(communityItem.itemImageLarge       )));
+						if (communityItem.itemImageSmall       !=null && !communityItem.itemImageSmall       .isEmpty()) children.add(new    ImageUrlNode(parent, "Image Small"          , communityItem.getURL(communityItem.itemImageSmall       )));
+						if (communityItem.itemImageComposed    !=null && !communityItem.itemImageComposed    .isEmpty()) children.add(new Base64ImageNode(parent, "Image Composed"       ,                      communityItem.itemImageComposed     ));
+						if (communityItem.itemImageComposedFoil!=null && !communityItem.itemImageComposedFoil.isEmpty()) children.add(new Base64ImageNode(parent, "Image Composed (Foil)",                      communityItem.itemImageComposedFoil ));
+						if (communityItem.itemMovieMp4         !=null && !communityItem.itemMovieMp4         .isEmpty()) children.add(new         UrlNode(parent, "Movie MP4"            , communityItem.getURL(communityItem.itemMovieMp4         )));
+						if (communityItem.itemMovieMp4Small    !=null && !communityItem.itemMovieMp4Small    .isEmpty()) children.add(new         UrlNode(parent, "Movie MP4 (Small)"    , communityItem.getURL(communityItem.itemMovieMp4Small    )));
+						if (communityItem.itemMovieWebm        !=null && !communityItem.itemMovieWebm        .isEmpty()) children.add(new         UrlNode(parent, "Movie WEBM"           , communityItem.getURL(communityItem.itemMovieWebm        )));
+						if (communityItem.itemMovieWebmSmall   !=null && !communityItem.itemMovieWebmSmall   .isEmpty()) children.add(new         UrlNode(parent, "Movie WEBM (Small)"   , communityItem.getURL(communityItem.itemMovieWebmSmall   )));
+					}
+					return children;
+				}
 			}
 
 			static class AchievementsNode extends BaseTreeNode<TreeNode,TreeNode> {

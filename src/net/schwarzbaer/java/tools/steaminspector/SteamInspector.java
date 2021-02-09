@@ -76,6 +76,8 @@ import javax.swing.tree.TreeSelectionModel;
 import net.schwarzbaer.gui.ImageView;
 import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FilePromise;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.LabeledFile;
 import net.schwarzbaer.system.ClipboardTools;
 import net.schwarzbaer.system.Settings;
 
@@ -872,11 +874,42 @@ class SteamInspector {
 	static class MainTreeContextMenue extends JPopupMenu {
 		private static final long serialVersionUID = -3729823093931172004L;
 
+		interface URLBasedNode {
+			String getURL();
+		}
+
+		interface FileBasedNode {
+			LabeledFile getFile();
+		}
+
+		interface FileCreatingNode {
+			FilePromise getFilePromise();
+		}
+		
+		interface ExternViewableNode {
+			ExternalViewerInfo getExternalViewerInfo();
+		}
+		
+		interface FilterOption {}
+		interface Filter {
+			FilterOption[] getFilterOptions();
+			boolean isFilterOptionSet(FilterOption option);
+			void setFilterOption(FilterOption option, boolean active, DefaultTreeModel currentTreeModel);
+			void clearFilter(DefaultTreeModel treeModel);
+		}
+		
+		interface FilterableNode {
+			Filter getFilter();
+		}
+
+		private final Supplier<DefaultTreeModel> getCurrentTreeModel;
+		
 		private final JMenuItem miCopyPath;
 		private final JMenuItem miCopyURL;
 		private final JMenuItem miExtViewer;
 		private final JMenuItem miSetTitle;
 		private final JMenuItem miCollapseChildren;
+		private final JMenu menuFilterChildren;
 		
 		private TreePath clickedPath = null;
 		private Object clickedNode = null;
@@ -884,9 +917,10 @@ class SteamInspector {
 		private TreeNodes.FilePromise clickedFileCreator = null;
 		private String clickedURL = null;
 		private ExternalViewerInfo clickedExternalViewerInfo = null;
-
+		private Filter clickedFilter = null;
 
 		MainTreeContextMenue(JTree tree, Supplier<DefaultTreeModel> getCurrentTreeModel) {
+			this.getCurrentTreeModel = getCurrentTreeModel;
 			
 			add(miCopyPath = createMenuItem("Copy Path to Clipboard", true, e->{
 				ClipboardTools.copyToClipBoard(clickedFile.file.getAbsolutePath());
@@ -925,7 +959,7 @@ class SteamInspector {
 					}
 			}));
 			add(miSetTitle = createMenuItem("Set Title", true, e->{
-				DefaultTreeModel treeModel = getCurrentTreeModel.get();
+				DefaultTreeModel treeModel = this.getCurrentTreeModel.get();
 				if (treeModel==null) return;
 				if (clickedNode instanceof TreeNode) {
 					TreeNode treeNode = (TreeNode) clickedNode;
@@ -944,7 +978,7 @@ class SteamInspector {
 			}));
 			
 			addSeparator();
-			add(miCollapseChildren = SteamInspector.createMenuItem("Collapse Children", true, e->{
+			add(miCollapseChildren = createMenuItem("Collapse Children", true, e->{
 				if (tree!=null && clickedPath!=null && clickedNode instanceof TreeNodes.TreeNodeII) {
 					TreeNodes.TreeNodeII treeNodeII = (TreeNodes.TreeNodeII) clickedNode;
 					Iterable<? extends TreeNode> children = treeNodeII.getChildren();
@@ -955,6 +989,8 @@ class SteamInspector {
 					}
 				}
 			}));
+			addSeparator();
+			add(menuFilterChildren = new JMenu("Filter Children"));
 			
 			tree.addMouseListener(new MouseAdapter() {
 
@@ -971,10 +1007,13 @@ class SteamInspector {
 		}
 
 		protected void prepareMenueItems() {
-			clickedURL                = clickedNode instanceof TreeNodes.URLBasedNode       ? ((TreeNodes.URLBasedNode      ) clickedNode).getURL()                : null;
-			clickedFile               = clickedNode instanceof TreeNodes.FileBasedNode      ? ((TreeNodes.FileBasedNode     ) clickedNode).getFile()               : null;
-			clickedFileCreator        = clickedNode instanceof TreeNodes.FileCreatingNode   ? ((TreeNodes.FileCreatingNode  ) clickedNode).getFilePromise()        : null;
-			clickedExternalViewerInfo = clickedNode instanceof TreeNodes.ExternViewableNode ? ((TreeNodes.ExternViewableNode) clickedNode).getExternalViewerInfo() : null;
+			clickedURL                = clickedNode instanceof URLBasedNode       ? ((URLBasedNode      ) clickedNode).getURL()                : null;
+			clickedFile               = clickedNode instanceof FileBasedNode      ? ((FileBasedNode     ) clickedNode).getFile()               : null;
+			clickedFileCreator        = clickedNode instanceof FileCreatingNode   ? ((FileCreatingNode  ) clickedNode).getFilePromise()        : null;
+			clickedExternalViewerInfo = clickedNode instanceof ExternViewableNode ? ((ExternViewableNode) clickedNode).getExternalViewerInfo() : null;
+			clickedFilter             = clickedNode instanceof FilterableNode     ? ((FilterableNode    ) clickedNode).getFilter()             : null;
+			
+			
 			
 			miCollapseChildren.setEnabled(clickedNode!=null);
 			miCopyPath .setEnabled(clickedFile!=null);
@@ -1001,10 +1040,41 @@ class SteamInspector {
 				miSetTitle.setEnabled(gameID!=null && (game==null || !game.hasATitle()));
 				if (gameID!=null) {
 					String currentTitle = TreeNodes.Data.knownGameTitles.get(gameID);
-					if (currentTitle==null) miSetTitle.setText(String.format(   "Set Title of Game %d"         , gameID));
-					else                    miSetTitle.setText(String.format("Change Title of Game %d (\"%s\")", gameID, currentTitle));
+					String miTitle;
+					if (currentTitle==null) miTitle = String.format("Set Title of Game %d", gameID);
+					else miTitle = String.format("Change Title of Game %d (\"%s\")%s", gameID, currentTitle, game!=null && game.hasATitle() ? " <fixed by AppManifest>" : "");
+					miSetTitle.setText(miTitle);
 				} else
 					miSetTitle.setText("Set Title of Game");
+			}
+			
+			if (clickedFilter!=null) {
+				menuFilterChildren.setEnabled(true);
+				menuFilterChildren.removeAll();
+				DefaultTreeModel treeModel = this.getCurrentTreeModel.get();
+				if (treeModel==null) {
+					menuFilterChildren.setEnabled(false);
+				} else {
+					menuFilterChildren.add(createMenuItem("Clear Filter", true, e->clickedFilter.clearFilter(treeModel)));
+					menuFilterChildren.addSeparator();
+					FilterOption[] filterOptions = clickedFilter.getFilterOptions();
+					//System.out.println("Rebuild FilterMenu:");
+					for (FilterOption opt:filterOptions) {
+						//System.out.printf("   create CheckBoxMenuItem( isSelected=%s, title=\"%s\" )%n", clickedFilter.isFilterOptionSet(opt), opt);
+						menuFilterChildren.add(
+								createCheckBoxMenuItem(
+										opt.toString(),
+										clickedFilter.isFilterOptionSet(opt),
+										true,
+										b->clickedFilter.setFilterOption(opt,b,treeModel)
+								)
+						);
+					}
+				}
+				
+			} else {
+				menuFilterChildren.setEnabled(false);
+				menuFilterChildren.removeAll();
 			}
 		}
 		
@@ -1842,6 +1912,13 @@ class SteamInspector {
 //			if (!allowsChildren) throw new IllegalStateException(String.format("TreeNode.%s from \"not allows children\" TreeNode", methodeLabel));
 			if (!allowsChildren) children=new Vector<>();
 			if (children==null) children=createChildren();
+		}
+		
+		public void rebuildChildren(DefaultTreeModel currentTreeModel) {
+			if (currentTreeModel==null) throw new IllegalArgumentException("rebuildChildren( currentTreeModel == null ) is not allowed");
+			children = null;
+			checkChildren("rebuildChildren()");
+			currentTreeModel.nodeStructureChanged(this);
 		}
 	}
 }
