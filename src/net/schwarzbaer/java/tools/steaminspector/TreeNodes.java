@@ -138,7 +138,7 @@ class TreeNodes {
 		private static final Color COLOR_WAS_FULLY_PROCESSED     = new Color(0x00B000);
 
 		private static Color getTextColor(JSON_Data.Value<NV, V> value) {
-			if (value==null) return null;
+			if (value==null) return COLOR_WAS_FULLY_PROCESSED;
 			boolean wasProcessed = value.extra.wasProcessed;
 			boolean hasUnprocessedChildren = value.extra.hasUnprocessedChildren();
 			return !wasProcessed ? null : hasUnprocessedChildren ? COLOR_WAS_PARTIALLY_PROCESSED : COLOR_WAS_FULLY_PROCESSED;
@@ -1282,7 +1282,7 @@ class TreeNodes {
 						} else
 							nameHistory = null;
 						
-						DevHelper.scanUnexpectedValues(node, KNOWN_VDF_VALUES, "Friend");
+						DevHelper.scanUnexpectedValues(node, KNOWN_VDF_VALUES, "TreeNodes.Data.Player.FriendList.Friend");
 					}
 				}
 			}
@@ -1339,7 +1339,7 @@ class TreeNodes {
 						else
 							gameStates_withoutID.add(progress);
 					}
-					DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,prefixStr+".GameStatus");
+					DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"TreeNodes.Data.Player.AchievementProgress");
 				}
 				
 				static class AchievementProgressInGame {
@@ -1396,7 +1396,7 @@ class TreeNodes {
 						total       = JSON_Data.getIntegerValue(object, "total"       , prefixStr);
 						unlocked    = JSON_Data.getIntegerValue(object, "unlocked"    , prefixStr);
 						percentage  = JSON_Data.getNumber(object, "percentage"  , prefixStr);
-						DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"AchievementProgress.GameStatus");
+						DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"TreeNodes.Data.Player.AchievementProgress.AchievementProgressInGame");
 					}
 
 					int getGameID() { return (int) appID; }
@@ -1418,6 +1418,9 @@ class TreeNodes {
 				final GameActivity   gameActivity;
 				final AchievementMap achievementMap;
 				final SocialMedia    socialMedia;
+				final Associations   associations;
+				final AppActivity    appActivity;
+				final ReleaseData    releaseData;
 
 				static GameInfos createRawData(File file, JSON_Data.Value<NV, V> rawData) {
 					try { return new GameInfos(file, rawData, true); }
@@ -1443,6 +1446,9 @@ class TreeNodes {
 						gameActivity   = null;
 						achievementMap = null;
 						socialMedia    = null;
+						associations   = null;
+						appActivity    = null;
+						releaseData    = null;
 						
 					} else {
 						hasParsedData = true;
@@ -1468,38 +1474,27 @@ class TreeNodes {
 						GameActivity   preGameActivity   = null;
 						AchievementMap preAchievementMap = null;
 						SocialMedia    preSocialMedia    = null;
+						Associations   preAssociations   = null;
+						AppActivity    preAppActivity    = null;
+						ReleaseData    preReleaseData    = null;
 						
 						for (Block block:blocks) {
 							String dataValueStr = String.format("GameInfos.Block[%d].dataValue", block.blockIndex);
-							//DevHelper.scanJsonStructure(block.dataValue,String.format("GameStateInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
-							JSON_Object<NV, V> object;
+							//DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
 							switch (block.label) {
-							case "associations":
-								//DevHelper.scanJsonStructure(block.dataValue,String.format("GameStateInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
-								break;
-							
-							case "workshop":
-								//DevHelper.scanJsonStructure(block.dataValue,String.format("GameStateInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
-								break;
 								
-							case "socialmedia"   : preSocialMedia    = parseStandardBlock( SocialMedia   ::new, SocialMedia   ::new, block.dataValue, dataValueStr, file ); break;
-							case "achievementmap": preAchievementMap = parseStandardBlock( AchievementMap::new, AchievementMap::new, block.dataValue, dataValueStr, file ); break;
-							case "gameactivity"  : preGameActivity   = parseStandardBlock( GameActivity  ::new, GameActivity  ::new, block.dataValue, dataValueStr, file ); break;
-							case "usernews"      : preUserNews       = parseStandardBlock( UserNews      ::new, UserNews      ::new, block.dataValue, dataValueStr, file ); break;
-							case "achievements"  : preAchievements   = parseStandardBlock( Achievements  ::new, Achievements  ::new, block.dataValue, dataValueStr, file ); break;
-								
-							case "badge":
-								//DevHelper.scanJsonStructure_OAO(
-								//	block.dataValue, "GameStateInfo.Block[\"badge\"]", "rgCards",
-								//	DevHelper.strList("strIconURL","strName","strNextLevelName"),
-								//	DevHelper.strList("strTitle","strName","strMarketHash","strImgURL","strArtworkURL"),
-								//	dataValueStr, file
-								//);
-								preBadge = parseStandardBlock( Badge::new, Badge::new, block.dataValue, dataValueStr, file );
-								break;
+							case "appactivity"   : preAppActivity    = parseStandardBlock( AppActivity   ::new, AppActivity   ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "releasedata"   : preReleaseData    = parseStandardBlock( ReleaseData   ::new, ReleaseData   ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "associations"  : preAssociations   = parseStandardBlock( Associations  ::new, Associations  ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "socialmedia"   : preSocialMedia    = parseStandardBlock( SocialMedia   ::new, SocialMedia   ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "achievementmap": preAchievementMap = parseStandardBlock( AchievementMap::new, AchievementMap::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "gameactivity"  : preGameActivity   = parseStandardBlock( GameActivity  ::new, GameActivity  ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "usernews"      : preUserNews       = parseStandardBlock( UserNews      ::new, UserNews      ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "achievements"  : preAchievements   = parseStandardBlock( Achievements  ::new, Achievements  ::new, block.dataValue, block.version, dataValueStr, file ); break;
+							case "badge"         : preBadge          = parseStandardBlock( Badge         ::new, Badge         ::new, block.dataValue, block.version, dataValueStr, file ); break;
 								
 							case "descriptions":
-								object = null;
+								JSON_Object<NV, V> object = null;
 								try { object = JSON_Data.getObjectValue(block.dataValue, dataValueStr); }
 								catch (TraverseException e) { showException(e, file); }
 								if (object!=null) {
@@ -1510,6 +1505,20 @@ class TreeNodes {
 								}
 								break;
 								
+							case "workshop":
+								//DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
+								break;
+								
+							case "community_items":
+								//DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
+								break;
+								
+							case "friends":
+								DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
+								break;
+								
+							default:
+								DevHelper.unknownValues.add("GameInfos.Block["+block.label+"] - Unknown Block");
 							}
 						}
 						fullDesc       = preFullDesc      ;
@@ -1520,69 +1529,163 @@ class TreeNodes {
 						gameActivity   = preGameActivity  ;
 						achievementMap = preAchievementMap;
 						socialMedia    = preSocialMedia   ;
+						associations   = preAssociations  ;
+						appActivity    = preAppActivity   ;
+						releaseData    = preReleaseData   ;
 					}
 				}
 				
 				private static <ClassType> ClassType parseStandardBlock(
 						ParseConstructor<ClassType> parseConstructor,
-						Function<JSON_Data.Value<NV,V>,ClassType> rawDataConstructor,
-						JSON_Data.Value<NV, V> blockDataValue, String dataValueStr, File file
+						BiFunction<JSON_Data.Value<NV,V>,Long,ClassType> rawDataConstructor,
+						JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file
 				) {
 					try {
-						return parseConstructor.parse(blockDataValue, dataValueStr, file);
+						return parseConstructor.parse(blockDataValue, version, dataValueStr, file);
 					} catch (TraverseException e) {
 						showException(e, file);
-						return rawDataConstructor.apply(blockDataValue);
+						return rawDataConstructor.apply(blockDataValue, version);
 					}
 				}
 				
 				interface ParseConstructor<ClassType> {
-					ClassType parse(JSON_Data.Value<NV, V> blockDataValue, String dataValueStr, File file) throws TraverseException;
+					ClassType parse(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException;
 				}
 				
-				// "GameStateInfo.Block["associations",V1].dataValue.rgDevelopers:Array"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgDevelopers[].strName:String"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgDevelopers[].strURL:Null"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgDevelopers[].strURL:String"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgDevelopers[]:Object"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgFranchises:Array"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgFranchises[].strName:String"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgFranchises[].strURL:Null"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgFranchises[].strURL:String"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgFranchises[]:Object"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgPublishers:Array"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgPublishers[].strName:Null"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgPublishers[].strName:String"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgPublishers[].strURL:Null"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgPublishers[].strURL:String"
-				// "GameStateInfo.Block["associations",V1].dataValue.rgPublishers[]:Object"
-				// "GameStateInfo.Block["associations",V1].dataValue:Object"
-				// "GameStateInfo.Block["socialmedia",V3].dataValue:Array"
-				// "GameStateInfo.Block["socialmedia",V3].dataValue[].eType:Integer"
-				// "GameStateInfo.Block["socialmedia",V3].dataValue[].strName:String"
-				// "GameStateInfo.Block["socialmedia",V3].dataValue[].strURL:String"
-				// "GameStateInfo.Block["socialmedia",V3].dataValue[]:Object"
-				
-				static class SocialMedia {
+				static class ParsedBlock {
 					
 					final JSON_Data.Value<NV, V> rawData;
 					final boolean hasParsedData;
+					final long version;
+					
+					ParsedBlock(JSON_Data.Value<NV, V> rawData, long version, boolean hasParsedData) {
+						this.rawData = rawData;
+						this.version = version;
+						this.hasParsedData = hasParsedData;
+					}
+				}
+
+				static class Associations extends ParsedBlock {
+					
+					// "GameStateInfo.Block["associations",V1].dataValue.rgDevelopers:Array"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgDevelopers[].strName:String"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgDevelopers[].strURL:Null"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgDevelopers[].strURL:String"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgDevelopers[]:Object"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgFranchises:Array"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgFranchises[].strName:String"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgFranchises[].strURL:Null"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgFranchises[].strURL:String"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgFranchises[]:Object"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgPublishers:Array"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgPublishers[].strName:Null"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgPublishers[].strName:String"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgPublishers[].strURL:Null"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgPublishers[].strURL:String"
+					// "GameStateInfo.Block["associations",V1].dataValue.rgPublishers[]:Object"
+					// "GameStateInfo.Block["associations",V1].dataValue:Object"
+					
+					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+							.add("rgDevelopers", JSON_Data.Value.Type.Array)
+							.add("rgFranchises", JSON_Data.Value.Type.Array)
+							.add("rgPublishers", JSON_Data.Value.Type.Array);
+					
+					final Vector<Association> developers;
+					final Vector<Association> franchises;
+					final Vector<Association> publishers;
+					
+					Associations(JSON_Data.Value<NV, V> rawData, long version) {
+						super(rawData, version, false);
+						developers = null;
+						franchises = null;
+						publishers = null;
+					}
+					Associations(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
+						super(null, version, true);
+						JSON_Object<NV, V> object = JSON_Data.getObjectValue(blockDataValue, dataValueStr);
+						developers = parseArray(object, "rgDevelopers", dataValueStr, file);
+						franchises = parseArray(object, "rgFranchises", dataValueStr, file);
+						publishers = parseArray(object, "rgPublishers", dataValueStr, file);
+						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Data.Player.GameInfos.Associations");
+					}
+					
+					Vector<Association> parseArray(JSON_Object<NV, V> object, String subValueName, String dataValueStr, File file) throws TraverseException {
+						JSON_Array<NV, V> array = JSON_Data.getArrayValue(object, subValueName, dataValueStr);
+						Vector<Association> values = new Vector<>();
+						for (int i=0; i<array.size(); i++) {
+							try {
+								values.add(new Association(array.get(i), dataValueStr+"["+i+"]"));
+							} catch (TraverseException e) {
+								showException(e, file);
+								values.add(new Association(array.get(i)));
+							}
+						}
+						return values;
+					}
+					
+					static class Association {
+						
+						private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+								.add("strName", JSON_Data.Value.Type.String)
+								.add("strName", JSON_Data.Value.Type.Null  )
+								.add("strURL" , JSON_Data.Value.Type.String)
+								.add("strURL" , JSON_Data.Value.Type.Null  );
+						
+						final JSON_Data.Value<NV, V> rawData;
+						final boolean hasParsedData;
+
+						final String name;
+						final String url;
+						
+						Association(JSON_Data.Value<NV, V> rawData) {
+							this.rawData = rawData;
+							hasParsedData = false;
+							name = null;
+							url  = null;
+						}
+						Association(JSON_Data.Value<NV, V> value, String dataValueStr) throws TraverseException {
+							this.rawData = null;
+							hasParsedData = false;
+							
+							JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, dataValueStr);
+							
+							       JSON_Data.getValue(object, "strName", false, JSON_Data.Value.Type.Null  , JSON_Data.Value::castToNullValue  , true, dataValueStr);
+							       JSON_Data.getValue(object, "strURL" , false, JSON_Data.Value.Type.Null  , JSON_Data.Value::castToNullValue  , true, dataValueStr);
+							name = JSON_Data.getValue(object, "strName", false, JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, true, dataValueStr);
+							url  = JSON_Data.getValue(object, "strURL" , false, JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, true, dataValueStr);
+							
+							DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Data.Player.GameInfos.Associations.Association");
+						}
+						
+					}
+				}
+				static class SocialMedia extends ParsedBlock {
+					
+					// "GameStateInfo.Block["socialmedia",V3].dataValue:Array"
+					// "GameStateInfo.Block["socialmedia",V3].dataValue[].eType:Integer"
+					// "GameStateInfo.Block["socialmedia",V3].dataValue[].strName:String"
+					// "GameStateInfo.Block["socialmedia",V3].dataValue[].strURL:String"
+					// "GameStateInfo.Block["socialmedia",V3].dataValue[]:Object"
+					
 					final Vector<SocialMediaEntry> values;
 					
-					SocialMedia(JSON_Data.Value<NV, V> rawData) {
-						this.rawData = rawData;
-						hasParsedData = false;
+					SocialMedia(JSON_Data.Value<NV, V> rawData, long version) {
+						super(rawData, version, false);
 						values = null;
 					}
-					SocialMedia(JSON_Data.Value<NV, V> blockDataValue, String dataValueStr, File file) throws TraverseException {
-						this.rawData = null;
-						hasParsedData = true;
+					SocialMedia(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
+						super(null, version, true);
 						
 						JSON_Array<NV, V> array = JSON_Data.getArrayValue(blockDataValue, dataValueStr);
 						
 						values = new Vector<>();
 						for (int i=0; i<array.size(); i++)
-							values.add(parseStandardBlock(SocialMediaEntry::new, SocialMediaEntry::new, array.get(i), dataValueStr+"["+i+"]", file));
+							try {
+								values.add(new SocialMediaEntry(array.get(i), dataValueStr+"["+i+"]"));
+							} catch (TraverseException e) {
+								showException(e, file);
+								values.add(new SocialMediaEntry(array.get(i)));
+							}
 					}
 					
 					static class SocialMediaEntry {
@@ -1605,33 +1708,59 @@ class TreeNodes {
 							name = null;
 							url  = null;
 						}
-						SocialMediaEntry(JSON_Data.Value<NV, V> value, String dataValueStr, File file) throws TraverseException {
+						SocialMediaEntry(JSON_Data.Value<NV, V> value, String dataValueStr) throws TraverseException {
 							this.rawData = null;
 							hasParsedData = true;
 							JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, dataValueStr);
 							type = JSON_Data.getIntegerValue(object, "eType"  , dataValueStr);
 							name = JSON_Data.getStringValue (object, "strName", dataValueStr);
 							url  = JSON_Data.getStringValue (object, "strURL" , dataValueStr);
-							DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "GameStateInfo.Achievements");
+							DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Data.Player.GameInfos.SocialMedia.SocialMediaEntry");
 						}
 					}
 				}
-				static class AchievementMap {
+				
+				static class ReleaseData extends ParsedBlock {
+					
+					// "GameInfo.Block["releasedata",V1].dataValue = <null>"
+					
+					ReleaseData(JSON_Data.Value<NV, V> rawData, long version) {
+						super(rawData, version, false);
+					}
+					ReleaseData(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
+						super(null, version, true);
+						if (blockDataValue!=null) throw new TraverseException("%s != <null>. I have not expected any value.", dataValueStr);
+					}
+				}
+				
+				static class AppActivity extends ParsedBlock {
+					
+					// "GameInfo.Block["appactivity",V3].dataValue:String"
+					
+					final String value;
+					
+					AppActivity(JSON_Data.Value<NV, V> rawData, long version) {
+						super(rawData, version, false);
+						value = null;
+					}
+					AppActivity(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
+						super(null, version, true);
+						value = JSON_Data.getStringValue(blockDataValue, dataValueStr);
+					}
+				}
+				
+				static class AchievementMap extends ParsedBlock {
 					
 					// "GameStateInfo.Block["achievementmap",V2].dataValue:String"
 					
-					final JSON_Data.Value<NV, V> rawData;
-					final boolean hasParsedData;
 					final JSON_Data.Value<NV, V> value;
 					
-					AchievementMap(JSON_Data.Value<NV, V> rawData) {
-						this.rawData = rawData;
-						hasParsedData = false;
+					AchievementMap(JSON_Data.Value<NV, V> rawData, long version) {
+						super(rawData, version, false);
 						value = null;
 					}
-					AchievementMap(JSON_Data.Value<NV, V> blockDataValue, String dataValueStr, File file) throws TraverseException {
-						this.rawData = null;
-						hasParsedData = true;
+					AchievementMap(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
+						super(null, version, true);
 						
 						String jsonText = JSON_Data.getStringValue(blockDataValue, dataValueStr);
 						try {
@@ -1643,7 +1772,7 @@ class TreeNodes {
 					
 				}
 				
-				static class GameActivity {
+				static class GameActivity extends ParsedBlock {
 					
 					// "GameStateInfo.Block["gameactivity",V1].dataValue:String"
 					// "GameStateInfo.Block["gameactivity",V2].dataValue:Array"
@@ -1651,18 +1780,14 @@ class TreeNodes {
 					// "GameStateInfo.Block["gameactivity",V3].dataValue:Array"
 					// "GameStateInfo.Block["gameactivity",V3].dataValue[]:String"
 					
-					final JSON_Data.Value<NV, V> rawData;
-					final boolean hasParsedData;
 					final Vector<String> values;
 					
-					GameActivity(JSON_Data.Value<NV, V> rawData) {
-						this.rawData = rawData;
-						hasParsedData = false;
+					GameActivity(JSON_Data.Value<NV, V> rawData, long version) {
+						super(rawData, version, false);
 						values = null;
 					}
-					GameActivity(JSON_Data.Value<NV, V> blockDataValue, String dataValueStr, File file) throws TraverseException {
-						this.rawData = null;
-						hasParsedData = true;
+					GameActivity(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
+						super(null, version, true);
 						values = new Vector<>();
 						
 						JSON_Array<NV, V> array = JSON_Data.getValue(blockDataValue, JSON_Data.Value.Type.Array, JSON_Data.Value::castToArrayValue, true, dataValueStr);
@@ -1683,22 +1808,18 @@ class TreeNodes {
 					
 				}
 				
-				static class UserNews {
+				static class UserNews extends ParsedBlock {
 					// "GameStateInfo.Block["usernews",V2].dataValue:Array"
 					// "GameStateInfo.Block["usernews",V2].dataValue[]:String"
 					
-					final JSON_Data.Value<NV, V> rawData;
-					final boolean hasParsedData;
 					final Vector<String> values;
 					
-					UserNews(JSON_Data.Value<NV, V> rawData) {
-						this.rawData = rawData;
-						hasParsedData = false;
+					UserNews(JSON_Data.Value<NV, V> rawData, long version) {
+						super(rawData, version, false);
 						values = null;
 					}
-					UserNews(JSON_Data.Value<NV, V> blockDataValue, String dataValueStr, File file) throws TraverseException {
-						this.rawData = null;
-						hasParsedData = true;
+					UserNews(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
+						super(null, version, true);
 						JSON_Array<NV, V> array = JSON_Data.getArrayValue(blockDataValue, dataValueStr);
 						values = new Vector<>();
 						for (int i=0; i<array.size(); i++)
@@ -1706,7 +1827,7 @@ class TreeNodes {
 					}
 				}
 				
-				static class Achievements {
+				static class Achievements extends ParsedBlock {
 
 					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
 							.add("nAchieved"        , JSON_Data.Value.Type.Integer)
@@ -1715,17 +1836,14 @@ class TreeNodes {
 							.add("vecUnachieved"    , JSON_Data.Value.Type.Array  )
 							.add("vecHighlight"     , JSON_Data.Value.Type.Array  );
 				
-					final JSON_Data.Value<NV, V> rawData;
-					final boolean hasParsedData;
 					final long achieved;
 					final long total;
 					final Vector<Achievement> achievedHidden;
 					final Vector<Achievement> unachieved;
 					final Vector<Achievement> highlight;
 					
-					Achievements(JSON_Data.Value<NV, V> rawData) {
-						this.rawData = rawData;
-						hasParsedData = false;
+					Achievements(JSON_Data.Value<NV, V> rawData, long version) {
+						super(rawData, version, false);
 						achieved = -1;
 						total    = -1;
 						achievedHidden = null;
@@ -1733,9 +1851,8 @@ class TreeNodes {
 						highlight = null;
 					}
 
-					Achievements(JSON_Data.Value<NV, V> blockDataValue, String dataValueStr, File file) throws TraverseException {
-						this.rawData = null;
-						hasParsedData = true;
+					Achievements(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
+						super(null, version, true);
 						
 						JSON_Object<NV, V> object        = JSON_Data.getObjectValue (blockDataValue, dataValueStr);
 						achieved                         = JSON_Data.getIntegerValue(object, "nAchieved"        , dataValueStr);
@@ -1748,14 +1865,19 @@ class TreeNodes {
 						this.unachieved     = parseArray(unachieved    , dataValueStr+"."+"vecUnachieved"    , file);
 						this.highlight      = parseArray(highlight     , dataValueStr+"."+"vecHighlight"     , file);
 						
-						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "GameStateInfo.Achievements");
+						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Data.Player.GameInfos.Achievements");
 					}
 
 					private Vector<Achievement> parseArray(JSON_Array<NV, V> rawArray, String debugOutputPrefixStr, File file) {
 						if (rawArray==null) return null;
 						Vector<Achievement> array = new Vector<>();
 						for (int i=0; i<rawArray.size(); i++)
-							array.add(parseStandardBlock(Achievement::new, Achievement::new, rawArray.get(i), debugOutputPrefixStr+"["+i+"]", file));
+							try {
+								array.add(new Achievement(rawArray.get(i), debugOutputPrefixStr+"["+i+"]"));
+							} catch (TraverseException e) {
+								showException(e, file);
+								array.add(new Achievement(rawArray.get(i)));
+							}
 						return array;
 					}
 					
@@ -1800,7 +1922,7 @@ class TreeNodes {
 							name          = null;
 						}
 
-						public Achievement(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr, File file) throws TraverseException {
+						public Achievement(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
 							rawData = null;
 							hasParsedData = true;
 							//DevHelper.scanJsonStructure(value,"GameStateInfo.Achievements.Achievement");
@@ -1814,13 +1936,13 @@ class TreeNodes {
 							name          = JSON_Data.getStringValue (object, "strName"       , debugOutputPrefixStr);
 							achievedRatio = JSON_Data.getNumber(object, "flAchieved", true, debugOutputPrefixStr);
 							
-							DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "GameStateInfo.Achievements.Achievement");
+							DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Data.Player.GameInfos.Achievements.Achievement");
 						}
 						
 					}
 				}
 
-				static class Badge {
+				static class Badge extends ParsedBlock {
 					
 					private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues()
 							.add("strName"         , JSON_Data.Value.Type.String)
@@ -1834,8 +1956,6 @@ class TreeNodes {
 							.add("strIconURL"      , JSON_Data.Value.Type.String)
 							.add("rgCards"         , JSON_Data.Value.Type.Array);
 				
-					final JSON_Data.Value<NV, V> rawData;
-					final boolean hasParsedData;
 					final Vector<TradingCard> tradingCards;
 
 					final String  name;
@@ -1848,9 +1968,8 @@ class TreeNodes {
 					final String  iconURL;
 
 
-					Badge(JSON_Data.Value<NV, V> rawData) {
-						this.rawData = rawData;
-						hasParsedData = false;
+					Badge(JSON_Data.Value<NV, V> rawData, long version) {
+						super(rawData, version, false);
 						tradingCards  = null;
 						name          = null;
 						hasBadgeData  = false;
@@ -1862,9 +1981,8 @@ class TreeNodes {
 						iconURL       = null;
 					}
 
-					Badge(JSON_Data.Value<NV, V> blockDataValue, String dataValueStr, File file) throws TraverseException {
-						rawData = null;
-						hasParsedData = true;
+					Badge(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
+						super(null, version, true);
 						
 						JSON_Object<NV, V> object = JSON_Data.getObjectValue (blockDataValue, dataValueStr);
 						name          = JSON_Data.getStringValue (object, "strName"         , dataValueStr);
@@ -1881,10 +1999,7 @@ class TreeNodes {
 						tradingCards = new Vector<>();
 						for (int i=0; i<array.size(); i++) {
 							try {
-								String prefixStr = dataValueStr+".rgCards["+i+"]";
-								JSON_Object<NV,V> objectTC = JSON_Data.getObjectValue(array.get(i), prefixStr);
-								TradingCard tradingCard = new TradingCard(objectTC, prefixStr);
-								tradingCards.add(tradingCard);
+								tradingCards.add(new TradingCard(array.get(i), dataValueStr+".rgCards["+i+"]"));
 							} catch (TraverseException e) {
 								showException(e, file);
 								tradingCards.add(new TradingCard(array.get(i)));
@@ -1892,7 +2007,7 @@ class TreeNodes {
 						}
 						
 						// unexpected values
-						DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"GameStateInfo.Badge");
+						DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"TreeNodes.Data.Player.GameInfos.Badge");
 					}
 
 					String getTreeNodeExtraInfo() {
@@ -1975,6 +2090,7 @@ class TreeNodes {
 						public TradingCard(JSON_Data.Value<NV, V> rawData) {
 							this.rawData = rawData;
 							hasParsedData = false;
+							
 							name  = null;
 							title = null;
 							owned = -1;
@@ -1983,10 +2099,11 @@ class TreeNodes {
 							marketHash = null;
 						}
 
-						public TradingCard(JSON_Object<NV, V> object, String debugOutputPrefixStr) throws TraverseException {
+						public TradingCard(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
 							rawData = null;
 							hasParsedData = true;
 							
+							JSON_Object<NV,V> object = JSON_Data.getObjectValue(value, debugOutputPrefixStr);
 							name       = JSON_Data.getStringValue (object, "strName"      , debugOutputPrefixStr);
 							title      = JSON_Data.getStringValue (object, "strTitle"     , debugOutputPrefixStr);
 							owned      = JSON_Data.getIntegerValue(object, "nOwned"       , debugOutputPrefixStr);
@@ -1994,11 +2111,11 @@ class TreeNodes {
 							imageURL   = JSON_Data.getStringValue (object, "strImgURL"    , debugOutputPrefixStr);
 							marketHash = JSON_Data.getStringValue (object, "strMarketHash", debugOutputPrefixStr);
 							
-							DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"GameStateInfo.Badge.SteamCard");
+							DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"TreeNodes.Data.Player.GameInfos.Badge.TradingCard");
 						}
 					}
 				}
-
+				
 				static class Block {
 
 					final JSON_Data.Value<NV, V> rawData;
@@ -2859,14 +2976,13 @@ class TreeNodes {
 			}
 			
 			@Override Color getTextColor() {
-				if (data.rawData==null) return null;
 				return JSONHelper.getTextColor(data.rawData);
 			}
 			
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
-				GroupingNode<GameInfos.Block> groupingNode;
+				GroupingNode<?> groupingNode;
 				if (data.fullDesc!=null) {
 					children.add(new TextContentNode(this, "Full Game Description", data.fullDesc, TreeIcons.TextFile));
 				}
@@ -3097,7 +3213,6 @@ class TreeNodes {
 				}
 			
 				@Override Color getTextColor() {
-					if (block.dataValue==null) return null;
 					return JSONHelper.getTextColor(block.dataValue);
 				}
 
