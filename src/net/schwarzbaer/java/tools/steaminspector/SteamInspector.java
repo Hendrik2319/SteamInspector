@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Vector;
 import java.util.concurrent.ExecutionException;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -76,12 +77,77 @@ import javax.swing.tree.TreeSelectionModel;
 import net.schwarzbaer.gui.ImageView;
 import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AppSettings.ValueKey;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FilePromise;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.LabeledFile;
 import net.schwarzbaer.system.ClipboardTools;
 import net.schwarzbaer.system.Settings;
 
 class SteamInspector {
+	
+	static final String KNOWN_GAME_TITLES_INI = "SteamInspector.KnownGameTitles.ini";
+	static final File FOLDER_TEST_FILES                  = new File("./test");
+//	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS      = new File("C:\\__Games\\SteamLibrary\\steamapps\\");
+//	private static final File FOLDER_STEAM_USERDATA              = new File("C:\\Program Files (x86)\\Steam\\userdata");
+//	private static final File FOLDER_STEAM_APPCACHE              = new File("C:\\Program Files (x86)\\Steam\\appcache");
+//	private static final File FOLDER_STEAM_APPCACHE_LIBRARYCACHE = new File("C:\\Program Files (x86)\\Steam\\appcache\\librarycache");
+//	private static final File FOLDER_STEAM_STEAM_GAMES           = new File("C:\\Program Files (x86)\\Steam\\steam\\games");
+	// C:\Program Files (x86)\Steam\appcache\librarycache
+	//        425580_icon.jpg 
+	//        425580_header.jpg 
+	//        425580_library_600x900.jpg 
+	//        425580_library_hero.jpg 
+	//        425580_library_hero_blur.jpg 
+	//        425580_logo.png 
+	// eb32e3c266a74c7d51835ebf7c866bf2dbf59b47.ico    ||   C:\Program Files (x86)\Steam\steam\games
+	
+	static class KnownFolders {
+		
+		static String STEAMAPPS_SUBPATH = "steamapps";
+		
+		enum SteamClientSubFolders {
+			USERDATA             ("userdata"),
+			APPCACHE             ("appcache"),
+			APPCACHE_LIBRARYCACHE("appcache\\librarycache"),
+			STEAM_GAMES          ("steam\\games"),
+			;
+			private final String path;
+			SteamClientSubFolders(String path) { this.path = path; }
+		}
+		
+		static void forEachSteamAppsFolder(BiConsumer<Integer,File> action) {
+			if (action==null) return;
+			
+			int inc = 0;
+			File steamClientFolder = getSteamClientFolder();
+			if (steamClientFolder!=null) {
+				action.accept(0, new File(steamClientFolder,STEAMAPPS_SUBPATH));
+				inc = 1;
+			}
+			
+			File[] folders = getSteamLibraryFolders();
+			if (folders!=null)
+				for (int i=0; i<folders.length; i++)
+					action.accept(i+inc, new File(folders[i],STEAMAPPS_SUBPATH));
+		}
+
+		static File getSteamClientSubFolder(SteamClientSubFolders subFolder) {
+			if (subFolder==null) return null;
+			File steamClientFolder = getSteamClientFolder();
+			if (steamClientFolder==null) return null;
+			return new File(steamClientFolder,subFolder.path);
+		}
+
+		static File[] getSteamLibraryFolders() {
+			ValueKey key = SteamInspector.AppSettings.ValueKey.SteamLibraryFolders;
+			return SteamInspector.settings.getFiles(key);
+		}
+
+		static File getSteamClientFolder() {
+			ValueKey folderKey = SteamInspector.AppSettings.ValueKey.SteamClientFolder;
+			return SteamInspector.settings.getFile(folderKey, null);
+		}
+	}
 	
 	public static void main(String[] args) {
 		new SteamInspector().createGUI();
@@ -717,11 +783,11 @@ class SteamInspector {
 			@Override
 			public Component getListCellRendererComponent(JList<? extends File> list, File value, int index, boolean isSelected, boolean cellHasFocus) {
 				boolean exists = value!=null && value.isDirectory();
-				boolean hasSteamApps = value!=null && new File(value,TreeNodes.KnownFolders.STEAMAPPS_SUBPATH).isDirectory();
+				boolean hasSteamApps = value!=null && new File(value,KnownFolders.STEAMAPPS_SUBPATH).isDirectory();
 				
 				pathLabel   .setText(value==null ? "<null>" : value.getAbsolutePath());
 				statusLabel .setText(exists ? "   folder exists" : "   folder not exists");
-				status2Label.setText(exists && !hasSteamApps ? " but has no "+TreeNodes.KnownFolders.STEAMAPPS_SUBPATH+" sub folder" : "");
+				status2Label.setText(exists && !hasSteamApps ? " but has no "+KnownFolders.STEAMAPPS_SUBPATH+" sub folder" : "");
 				rendererComp.setBorder(cellHasFocus ? BORDER_FOCUSED : BORDER_NOT_FOCUSED);
 				
 				if (isSelected) {

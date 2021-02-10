@@ -34,7 +34,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
 import java.util.Vector;
-import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
@@ -60,7 +59,6 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.TraverseException;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeContextMenu;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AppSettings.ValueKey;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextFileSource;
@@ -99,304 +97,12 @@ import net.schwarzbaer.system.ClipboardTools;
 
 class TreeNodes {
 	
-	static class JSONHelper {
-
-		public static class FactoryForExtras implements JSON_Data.FactoryForExtras<NV,V> {
-			@Override public NV createNamedValueExtra(JSON_Data.Value.Type type) { return null; }
-			@Override public V  createValueExtra     (JSON_Data.Value.Type type) { return new V(type); }
-		}
-
-		private static JSON_Data.Value<NV, V> parseJson(JSON_Parser<NV, V> parser) throws JSON_Parser.ParseException {
-			JSON_Data.Value<NV, V> result = parser.parse_withParseException();
-			JSON_Data.traverseAllValues(result, null, (path,v)->v.extra.setHost(v));
-			return result;
-		}
-
-		static JSON_Data.Value<NV, V> parseJsonFile(File   file) throws JSON_Parser.ParseException { return parseJson(new JSON_Parser<>(file,new FactoryForExtras())); }
-
-		static JSON_Data.Value<NV, V> parseJsonText(String text) throws JSON_Parser.ParseException { return parseJson(new JSON_Parser<>(text,new FactoryForExtras())); }
-
-		static JSON_Data.ArrayValue<NV, V> createArrayValue(JSON_Array<NV, V> array) {
-			V extra = new V(JSON_Data.Value.Type.Array);
-			JSON_Data.ArrayValue<NV, V> host = new JSON_Data.ArrayValue<>(array,extra);
-			extra.setHost(host);
-			return host;
-		}
-
-		static JSON_Data.ObjectValue<NV, V> createObjectValue(JSON_Object<NV, V> object) {
-			V extra = new V(JSON_Data.Value.Type.Object);
-			JSON_Data.ObjectValue<NV, V> host = new JSON_Data.ObjectValue<>(object,extra);
-			extra.setHost(host);
-			return host;
-		}
-
-		
-		@SuppressWarnings("unused")
-		private static TreeRoot createTreeRoot(JSON_Array<NV, V> array, boolean isLarge) {
-			if (array == null) return null;
-			return new TreeRoot(JSON_TreeNode.create(null,null,createArrayValue(array)),true,!isLarge,JSON_TreeNode.contextMenu);
-		}
-		
-		private static TreeRoot createTreeRoot(JSON_Object<NV, V> object, boolean isLarge) {
-			if (object == null) return null;
-			return new TreeRoot(JSON_TreeNode.create(null,null,createObjectValue(object)),true,!isLarge,JSON_TreeNode.contextMenu);
-		}
-		
-		private static TreeRoot createTreeRoot(JSON_Data.Value<NV, V> value, boolean isLarge) {
-			return new TreeRoot(JSON_TreeNode.create(null,null,value),true,!isLarge,JSON_TreeNode.contextMenu);
-		}
-		
-		private static final Color COLOR_WAS_PARTIALLY_PROCESSED = new Color(0xC000C0);
-		private static final Color COLOR_WAS_FULLY_PROCESSED     = new Color(0x00B000);
-
-		private static Color getTextColor(JSON_Data.Value<NV, V> value) {
-			if (value==null) return COLOR_WAS_FULLY_PROCESSED;
-			boolean wasProcessed = value.extra.wasProcessed;
-			boolean hasUnprocessedChildren = value.extra.hasUnprocessedChildren();
-			return !wasProcessed ? null : hasUnprocessedChildren ? COLOR_WAS_PARTIALLY_PROCESSED : COLOR_WAS_FULLY_PROCESSED;
-		}
-
-		static class JSON_TreeNode<ChildValueType> extends BaseTreeNode<JSON_TreeNode<?>,JSON_TreeNode<?>> implements DataTreeNode {
-			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
-
-			private final Vector<ChildValueType> childValues;
-			private final Function<ChildValueType, String> getChildName;
-			private final Function<ChildValueType, JSON_Data.Value<NV,V>> getChildValue;
-			final String name;
-			final JSON_Data.Value<NV,V> value;
-
-			private JSON_TreeNode(JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, JSON_Data.Value<NV,V> value, Vector<ChildValueType> childValues, Function<ChildValueType,String> getChildName, Function<ChildValueType,JSON_Data.Value<NV,V>> getChildValue) {
-				super(parent, title, childValues!=null, childValues==null || childValues.isEmpty(), icon==null ? null : JsonTreeIconsIS.getCachedIcon(icon));
-				this.name = name;
-				this.value = value;
-				this.childValues = childValues;
-				this.getChildName = getChildName;
-				this.getChildValue = getChildValue;
-				if (this.value==null) throw new IllegalArgumentException("JSON_TreeNode( ... , value == null, ... ) is not allowed");
-			}
-
-			@Override public String getPath() {
-				if (parent==null) {
-					if (name!=null)
-						return name;
-					return "<Root"+value.type+">";
-				}
-				JSON_Data.Value.Type parentType = parent.getValueType();
-				String indexInParent = parentType==JSON_Data.Value.Type.Array ? "["+parent.getIndex(this)+"]" : "";
-				String nameRef = name!=null ? "."+name : "";
-				return parent.getPath()+indexInParent+nameRef;
-			}
-			
-			JSON_Data.Value<NV,V> getSubNodeValue(Object... path) {
-				try {
-					return JSON_Data.getSubNode(value, path);
-				} catch (JSON_Data.TraverseException e) {
-					return null;
-				}
-			}
-
-			@Override public String getAccessCall() {
-				return String.format("<root>.getSubNode|Value(%s)", getAccessPath());
-			}
-			private String getAccessPath() {
-				if (parent==null) return "";
-				String path = parent.getAccessPath();
-				if (!path.isEmpty()) path += ",";
-				JSON_Data.Value.Type parentType = parent.getValueType();
-				return path + (parentType==JSON_Data.Value.Type.Array ? parent.getIndex(this) : "\""+name+"\"");
-			}
-
-			@Override public String getName    () { return name; }
-			@Override public String getValueStr() { return value.toString(); }
-			private JSON_Data.Value.Type getValueType() { return value.type; }
-			@Override public boolean hasName () { return name !=null; }
-			@Override public boolean hasValue() { return value!=null; }
-
-			@Override
-			protected Vector<? extends JSON_TreeNode<?>> createChildren() {
-				if (childValues==null) return null;
-				Vector<JSON_TreeNode<?>> childNodes = new Vector<>();
-				for (ChildValueType value:childValues) childNodes.add(create(this,getChildName.apply(value),getChildValue.apply(value)));
-				return childNodes;
-			}
-			
-			private static JSON_TreeNode<?> create(JSON_TreeNode<?> parent, String name, JSON_Data.Value<NV,V> value) {
-				String title = getTitle(name,value);
-				JsonTreeIcons icon = getIcon(value.type);
-				switch (value.type) {
-				case Object: return new JSON_TreeNode<>(parent, title, icon, name, value, value.castToObjectValue().value, vt->vt.name, vt->vt.value);
-				case Array : return new JSON_TreeNode<>(parent, title, icon, name, value, value.castToArrayValue ().value, vt->null, vt->vt);
-				default    : return new JSON_TreeNode<>(parent, title, icon, name, value, null, null, null);
-				}
-			}
-			
-			@Override
-			Color getTextColor() {
-				return JSONHelper.getTextColor(value);
-			}
-
-			private static JsonTreeIcons getIcon(JSON_Data.Value.Type type) {
-				if (type==null) return null;
-				switch(type) {
-				case Object: return JsonTreeIcons.Object;
-				case Array : return JsonTreeIcons.Array;
-				case String: return JsonTreeIcons.String;
-				case Bool  : return JsonTreeIcons.Boolean;
-				case Null  : return null;
-				case Float : case Integer:
-					return JsonTreeIcons.Number;
-				}
-				return null;
-			}
-			
-			private static String getTitle(String name, JSON_Data.Value<NV,V> value) {
-				switch (value.type) {
-				case Object : return getTitle(name, "{" , value.castToObjectValue ().value.size(), "}" );
-				case Array  : return getTitle(name, "[" , value.castToArrayValue  ().value.size(), "]" );
-				case String : return getTitle(name, "\"", value.castToStringValue ().value       , "\"");
-				case Bool   : return getTitle(name, ""  , value.castToBoolValue   ().value       , ""  );
-				case Integer: return getTitle(name, ""  , value.castToIntegerValue().value       , ""  );
-				case Float  : return getTitle(name, ""  , value.castToFloatValue  ().value       , ""  );
-				case Null   : return getTitle(name, ""  , value.castToNullValue   ().value       , ""  );
-				}
-				return null;
-			}
-			
-			protected static String getTitle(String name, String openingBracket, Object value, String closingBracket) {
-				if (name==null || name.isEmpty()) return String.format("%s%s%s", openingBracket, value, closingBracket);
-				return String.format("%s : %s%s%s", name, openingBracket, value, closingBracket);
-			}
-		}
-		
-	}
-
-	private static class NV extends JSON_Data.NamedValueExtra.Dummy {}
-	private static class V implements JSON_Data.ValueExtra {
-		
-		public final JSON_Data.Value.Type type;
-		public JSON_Data.Value<NV,V> host;
-		public boolean wasProcessed;
-		public Boolean hasUnprocessedChildren;
-		
-		public V(JSON_Data.Value.Type type) {
-			this.type = type;
-			this.host = null; 
-			wasProcessed = false;
-			hasUnprocessedChildren = type!=null && type.isSimple ? false : null;
-		}
-		void setHost(JSON_Data.Value<NV,V> host) {
-			this.host = host;
-			if (this.host==null) new IllegalArgumentException("Host must not be <null>");
-			if (this.host.type!=type) new IllegalArgumentException("Host has wrong type: "+this.host.type+"!="+type);
-		}
-		
-		@Override public void markAsProcessed() {
-			wasProcessed = true;
-		}
-		
-		public boolean hasUnprocessedChildren() {
-			// ArrayValue   @Override public boolean hasUnprocessedChildren() { return JSON_Data.hasUnprocessedChildren(this,this.value, v-> v      ); }
-			// ObjectValue  @Override public boolean hasUnprocessedChildren() { return JSON_Data.hasUnprocessedChildren(this,this.value,nv->nv.value); }
-			if (type==JSON_Data.Value.Type.Array ) {
-				if (host==null)
-					throw new IllegalStateException();
-				if (host.castToArrayValue()==null)
-					throw new IllegalStateException();
-				return hasUnprocessedChildren(host,host.castToArrayValue ().value, v-> v      );
-			}
-			if (type==JSON_Data.Value.Type.Object) {
-				if (host==null)
-					throw new IllegalStateException();
-				if (host.castToObjectValue()==null)
-					throw new IllegalStateException();
-				return hasUnprocessedChildren(host,host.castToObjectValue().value,nv->nv.value);
-			}
-			return false;
-		}
-		
-		private static <ChildType> boolean hasUnprocessedChildren(JSON_Data.Value<NV,V> baseValue, Vector<ChildType> children, Function<ChildType,JSON_Data.Value<NV,V>> getValue) {
-			if (baseValue.extra.hasUnprocessedChildren!=null) return baseValue.extra.hasUnprocessedChildren;
-			baseValue.extra.hasUnprocessedChildren=false;
-			for (ChildType child:children) {
-				JSON_Data.Value<NV,V> childValue = getValue.apply(child);
-				if (!childValue.extra.wasProcessed || childValue.extra.hasUnprocessedChildren()) {
-					baseValue.extra.hasUnprocessedChildren=true;
-					break;
-				}
-			}
-			return baseValue.extra.hasUnprocessedChildren;
-		}
-	}
 	
 	enum TreeIcons { GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Badge, Achievement, Folder, RootFolder_Simple, RootFolder }
 	static CachedIcons<TreeIcons> TreeIconsIS;
 	
 	enum JsonTreeIcons { Object, Array, String, Number, Boolean }
 	static CachedIcons<JsonTreeIcons> JsonTreeIconsIS;
-	
-	private static final String KNOWN_GAME_TITLES_INI = "SteamInspector.KnownGameTitles.ini";
-	private static final File FOLDER_TEST_FILES                  = new File("./test");
-//	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS      = new File("C:\\__Games\\SteamLibrary\\steamapps\\");
-//	private static final File FOLDER_STEAM_USERDATA              = new File("C:\\Program Files (x86)\\Steam\\userdata");
-//	private static final File FOLDER_STEAM_APPCACHE              = new File("C:\\Program Files (x86)\\Steam\\appcache");
-//	private static final File FOLDER_STEAM_APPCACHE_LIBRARYCACHE = new File("C:\\Program Files (x86)\\Steam\\appcache\\librarycache");
-//	private static final File FOLDER_STEAM_STEAM_GAMES           = new File("C:\\Program Files (x86)\\Steam\\steam\\games");
-	// C:\Program Files (x86)\Steam\appcache\librarycache
-	//        425580_icon.jpg 
-	//        425580_header.jpg 
-	//        425580_library_600x900.jpg 
-	//        425580_library_hero.jpg 
-	//        425580_library_hero_blur.jpg 
-	//        425580_logo.png 
-	// eb32e3c266a74c7d51835ebf7c866bf2dbf59b47.ico    ||   C:\Program Files (x86)\Steam\steam\games
-	
-	static class KnownFolders {
-		
-		static String STEAMAPPS_SUBPATH = "steamapps";
-		
-		enum SteamClientSubFolders {
-			USERDATA             ("userdata"),
-			APPCACHE             ("appcache"),
-			APPCACHE_LIBRARYCACHE("appcache\\librarycache"),
-			STEAM_GAMES          ("steam\\games"),
-			;
-			private final String path;
-			SteamClientSubFolders(String path) { this.path = path; }
-		}
-		
-		static void forEachSteamAppsFolder(BiConsumer<Integer,File> action) {
-			if (action==null) return;
-			
-			int inc = 0;
-			File steamClientFolder = getSteamClientFolder();
-			if (steamClientFolder!=null) {
-				action.accept(0, new File(steamClientFolder,STEAMAPPS_SUBPATH));
-				inc = 1;
-			}
-			
-			File[] folders = getSteamLibraryFolders();
-			if (folders!=null)
-				for (int i=0; i<folders.length; i++)
-					action.accept(i+inc, new File(folders[i],STEAMAPPS_SUBPATH));
-		}
-
-		static File getSteamClientSubFolder(SteamClientSubFolders subFolder) {
-			if (subFolder==null) return null;
-			File steamClientFolder = getSteamClientFolder();
-			if (steamClientFolder==null) return null;
-			return new File(steamClientFolder,subFolder.path);
-		}
-
-		static File[] getSteamLibraryFolders() {
-			ValueKey key = SteamInspector.AppSettings.ValueKey.SteamLibraryFolders;
-			return SteamInspector.settings.getFiles(key);
-		}
-
-		static File getSteamClientFolder() {
-			ValueKey folderKey = SteamInspector.AppSettings.ValueKey.SteamClientFolder;
-			return SteamInspector.settings.getFile(folderKey, null);
-		}
-	}
 	
 	static void loadIcons() {
 		TreeIconsIS     = IconSource.createCachedIcons(16, 16, "/images/TreeIcons.png"    , TreeIcons.values());
@@ -588,7 +294,7 @@ class TreeNodes {
 		
 	}
 
-	private static class DataTreeNodeContextMenu extends AbstractTreeContextMenu {
+	static class DataTreeNodeContextMenu extends AbstractTreeContextMenu {
 		private static final long serialVersionUID = 7620430144231207201L;
 		
 		private final JMenuItem miName;
@@ -933,18 +639,18 @@ class TreeNodes {
 	private static class RawJsonDataNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
 	
 		private final File file;
-		private final JSON_Data.Value <NV,V> rawValue;
+		private final JSON_Data.Value<Data.NV,Data.V> rawValue;
 	
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue) {
 			this(parent, title, rawValue, null, null);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, Icon icon) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, Icon icon) {
 			this(parent, title, rawValue, null, icon);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, File file) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, File file) {
 			this(parent, title, rawValue, file, null);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, File file, Icon icon) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, File file, Icon icon) {
 			super(parent, title, false, true, icon!=null ? icon : TreeIconsIS.getCachedIcon(TreeIcons.JSONFile));
 			this.file = file;
 			this.rawValue = rawValue;
@@ -966,13 +672,6 @@ class TreeNodes {
 		@Override
 		public ExternalViewerInfo getExternalViewerInfo() {
 			return file==null ? null : ExternalViewerInfo.TextEditor;
-		}
-	}
-
-	private static class VDFTraverseException extends Exception {
-		private static final long serialVersionUID = -7150324499542307039L;
-		VDFTraverseException(String format, Object...args) {
-			super(String.format(Locale.ENGLISH, format, args));
 		}
 	}
 
@@ -1178,6 +877,72 @@ class TreeNodes {
 				return new Vector<>(Arrays.asList(strings));
 			}
 		}
+		
+		static class NV extends JSON_Data.NamedValueExtra.Dummy {}
+		static class V implements JSON_Data.ValueExtra {
+			
+			public final JSON_Data.Value.Type type;
+			public JSON_Data.Value<NV,V> host;
+			public boolean wasProcessed;
+			public Boolean hasUnprocessedChildren;
+			
+			public V(JSON_Data.Value.Type type) {
+				this.type = type;
+				this.host = null; 
+				wasProcessed = false;
+				hasUnprocessedChildren = type!=null && type.isSimple ? false : null;
+			}
+			void setHost(JSON_Data.Value<NV,V> host) {
+				this.host = host;
+				if (this.host==null) new IllegalArgumentException("Host must not be <null>");
+				if (this.host.type!=type) new IllegalArgumentException("Host has wrong type: "+this.host.type+"!="+type);
+			}
+			
+			@Override public void markAsProcessed() {
+				wasProcessed = true;
+			}
+			
+			public boolean hasUnprocessedChildren() {
+				// ArrayValue   @Override public boolean hasUnprocessedChildren() { return JSON_Data.hasUnprocessedChildren(this,this.value, v-> v      ); }
+				// ObjectValue  @Override public boolean hasUnprocessedChildren() { return JSON_Data.hasUnprocessedChildren(this,this.value,nv->nv.value); }
+				if (type==JSON_Data.Value.Type.Array ) {
+					if (host==null)
+						throw new IllegalStateException();
+					if (host.castToArrayValue()==null)
+						throw new IllegalStateException();
+					return hasUnprocessedChildren(host,host.castToArrayValue ().value, v-> v      );
+				}
+				if (type==JSON_Data.Value.Type.Object) {
+					if (host==null)
+						throw new IllegalStateException();
+					if (host.castToObjectValue()==null)
+						throw new IllegalStateException();
+					return hasUnprocessedChildren(host,host.castToObjectValue().value,nv->nv.value);
+				}
+				return false;
+			}
+			
+			private static <ChildType> boolean hasUnprocessedChildren(JSON_Data.Value<NV,V> baseValue, Vector<ChildType> children, Function<ChildType,JSON_Data.Value<NV,V>> getValue) {
+				if (baseValue.extra.hasUnprocessedChildren!=null) return baseValue.extra.hasUnprocessedChildren;
+				baseValue.extra.hasUnprocessedChildren=false;
+				for (ChildType child:children) {
+					JSON_Data.Value<NV,V> childValue = getValue.apply(child);
+					if (!childValue.extra.wasProcessed || childValue.extra.hasUnprocessedChildren()) {
+						baseValue.extra.hasUnprocessedChildren=true;
+						break;
+					}
+				}
+				return baseValue.extra.hasUnprocessedChildren;
+			}
+		}
+		
+		private static class VDFTraverseException extends Exception {
+			private static final long serialVersionUID = -7150324499542307039L;
+			VDFTraverseException(String format, Object...args) {
+				super(String.format(Locale.ENGLISH, format, args));
+			}
+		}
+
 		static void showException(JSON_Data.TraverseException e, File file) { showException("JSON_Data.TraverseException", e, file); }
 		static void showException(JSON_Parser.ParseException  e, File file) { showException("JSON_Parser.ParseException", e, file); }
 		static void showException(VDFParser.ParseException    e, File file) { showException("VDFParser.ParseException", e, file); }
@@ -1194,7 +959,7 @@ class TreeNodes {
 			private static final long serialVersionUID = 2599578502526459790L;
 			
 			void readFromFile() {
-				try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(KNOWN_GAME_TITLES_INI), StandardCharsets.UTF_8))) {
+				try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(SteamInspector.KNOWN_GAME_TITLES_INI), StandardCharsets.UTF_8))) {
 					
 					clear();
 					String line;
@@ -1211,12 +976,12 @@ class TreeNodes {
 					
 				} catch (FileNotFoundException e) {
 				} catch (IOException e) {
-					System.err.printf("IOException while reading KnownGameTitles from file: %s%n", KNOWN_GAME_TITLES_INI);
+					System.err.printf("IOException while reading KnownGameTitles from file: %s%n", SteamInspector.KNOWN_GAME_TITLES_INI);
 					e.printStackTrace();
 				}
 			}
 			void writeToFile() {
-				try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(KNOWN_GAME_TITLES_INI), StandardCharsets.UTF_8))) {
+				try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(SteamInspector.KNOWN_GAME_TITLES_INI), StandardCharsets.UTF_8))) {
 					
 					Vector<Integer> gameIDs = new Vector<>(this.keySet());
 					gameIDs.sort(null);
@@ -1237,13 +1002,13 @@ class TreeNodes {
 			DevHelper.optionalValues.clear();
 			Data.knownGameTitles.readFromFile();
 			
-			File folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
+			File folder = SteamInspector.KnownFolders.getSteamClientSubFolder(SteamInspector.KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
 			GameImages gameImages = null;
 			if (folder!=null && folder.isDirectory())
 				gameImages = new GameImages(folder);
 			
 			HashMap<Integer,AppManifest> appManifests = new HashMap<>();
-			KnownFolders.forEachSteamAppsFolder((i,f)->{
+			SteamInspector.KnownFolders.forEachSteamAppsFolder((i,f)->{
 				if (f!=null && f.isDirectory()) {
 					File[] files = f.listFiles(file->AppManifest.getAppIDFromFile(file)!=null);
 					for (File file:files) {
@@ -1254,7 +1019,7 @@ class TreeNodes {
 			});
 			
 			players.clear();
-			folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.USERDATA);
+			folder = SteamInspector.KnownFolders.getSteamClientSubFolder(SteamInspector.KnownFolders.SteamClientSubFolders.USERDATA);
 			if (folder!=null) {
 				File[] files = folder.listFiles(file->file.isDirectory() && parseLongNumber(file.getName())!=null);
 				for (File playerFolder:files) {
@@ -3974,7 +3739,7 @@ class TreeNodes {
 				Vector<TreeNode> children = new Vector<>();
 				
 				Vector<File> steamAppsFolder = new Vector<>(); 
-				KnownFolders.forEachSteamAppsFolder((i,folder)->{
+				SteamInspector.KnownFolders.forEachSteamAppsFolder((i,folder)->{
 					if (folder!=null && folder.isDirectory())
 						steamAppsFolder.add(folder);
 				});
@@ -3985,25 +3750,25 @@ class TreeNodes {
 				
 				File folder;
 				
-				folder = KnownFolders.getSteamClientFolder();
+				folder = SteamInspector.KnownFolders.getSteamClientFolder();
 				if (folder!=null && folder.isDirectory()) children.add(new FolderRoot(this,"SteamClient Folder",folder));
 				
-				folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.USERDATA);
+				folder = SteamInspector.KnownFolders.getSteamClientSubFolder(SteamInspector.KnownFolders.SteamClientSubFolders.USERDATA);
 				if (folder!=null && folder.isDirectory()) children.add(new FolderRoot(this,"<UserData>",folder));
 				
-				folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE);
+				folder = SteamInspector.KnownFolders.getSteamClientSubFolder(SteamInspector.KnownFolders.SteamClientSubFolders.APPCACHE);
 				if (folder!=null && folder.isDirectory()) children.add(new FolderRoot(this,"<AppCache>",folder));
 				
-				folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
+				folder = SteamInspector.KnownFolders.getSteamClientSubFolder(SteamInspector.KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
 				if (folder!=null && folder.isDirectory()) {
 					children.add(new FolderRoot(this,"<LibraryCache>",folder));
 					children.add(new GameImagesRoot(this,folder));
 				}
 				
-				folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.STEAM_GAMES);
+				folder = SteamInspector.KnownFolders.getSteamClientSubFolder(SteamInspector.KnownFolders.SteamClientSubFolders.STEAM_GAMES);
 				if (folder!=null && folder.isDirectory()) children.add(new FolderRoot(this,"Game Icons (as Folder)",folder));
 				
-				folder = FOLDER_TEST_FILES;
+				folder = SteamInspector.FOLDER_TEST_FILES;
 				try { folder = folder.getCanonicalFile(); } catch (IOException e) {}
 				if (folder.isDirectory()) children.add(new FolderRoot(this,"Test Files",folder));
 				
@@ -4418,7 +4183,7 @@ class TreeNodes {
 		
 		static class JSON_File extends TextFile implements ParsedTextFileSource {
 			
-			private JSON_Data.Value<NV,V> parseResult;
+			private JSON_Data.Value<Data.NV,Data.V> parseResult;
 
 			JSON_File(TreeNode parent, File file) {
 				this(parent, file, TreeIcons.JSONFile);
