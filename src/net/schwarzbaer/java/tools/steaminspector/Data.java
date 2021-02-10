@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -160,6 +161,9 @@ class Data {
 		}
 		
 		static void scanJsonStructure(JSON_Data.Value<NV, V> value, String valueLabel) {
+			scanJsonStructure(value, valueLabel, false);
+		}
+		static void scanJsonStructure(JSON_Data.Value<NV, V> value, String valueLabel, boolean scanOptionalValues) {
 			if (value==null) { unknownValues.add(valueLabel+" = <null>"); return; }
 			unknownValues.add(valueLabel+":"+value.type);
 			switch (value.type) {
@@ -169,32 +173,41 @@ class Data {
 				if (objectValue==null)
 					unknownValues.add(valueLabel+":"+value.type+" is not instance of JSON_Data.ObjectValue");
 				else 
-					scanJsonStructure(objectValue.value, valueLabel);
+					scanJsonStructure(objectValue.value, valueLabel, scanOptionalValues);
 				break;
 			case Array:
 				JSON_Data.ArrayValue<NV,V> arrayValue = value.castToArrayValue();
 				if (arrayValue==null)
 					unknownValues.add(valueLabel+":"+value.type+" is not instance of JSON_Data.ArrayValue");
 				else
-					scanJsonStructure(arrayValue.value, valueLabel);
+					scanJsonStructure(arrayValue.value, valueLabel, scanOptionalValues);
 				break;
 			}
 		}
 	
 		static void scanJsonStructure(JSON_Object<NV,V> object, String valueLabel) {
+			scanJsonStructure(object, valueLabel, false);
+		}
+		static void scanJsonStructure(JSON_Object<NV,V> object, String valueLabel, boolean scanOptionalValues) {
 			if (object==null)
 				unknownValues.add(valueLabel+" (JSON_Object == <null>)");
-			else
+			else {
+				if (scanOptionalValues)
+					optionalValues.scan(object, valueLabel);
 				for (JSON_Data.NamedValue<NV, V> nval:object)
-					scanJsonStructure(nval.value, valueLabel+"."+(nval.name==null?"<null>":nval.name));
+					scanJsonStructure(nval.value, valueLabel+"."+(nval.name==null?"<null>":nval.name), scanOptionalValues);
+			}
 		}
 	
 		static void scanJsonStructure(JSON_Array<NV,V> array, String valueLabel) {
+			scanJsonStructure(array, valueLabel, false);
+		}
+		static void scanJsonStructure(JSON_Array<NV,V> array, String valueLabel, boolean scanOptionalValues) {
 			if (array==null)
 				unknownValues.add(valueLabel+" (JSON_Array == <null>)");
 			else
 				for (JSON_Data.Value<NV,V> val:array)
-					scanJsonStructure(val, valueLabel+"[]");
+					scanJsonStructure(val, valueLabel+"[]", scanOptionalValues);
 		}
 	
 		static void scanJsonStructure_OAO(
@@ -311,6 +324,7 @@ class Data {
 	static void showException(JSON_Parser.ParseException  e, File file) { showException("JSON_Parser.ParseException", e, file); }
 	static void showException(VDFParser.ParseException    e, File file) { showException("VDFParser.ParseException", e, file); }
 	static void showException(VDFTraverseException        e, File file) { showException("VDFTraverseException", e, file); }
+	static void showException(Base64Exception             e, File file) { showException("Base64Exception", e, file); }
 
 	static void showException(String prefix, Throwable e, File file) {
 		String str = String.format("%s: %s%n", prefix, e.getMessage());
@@ -422,9 +436,9 @@ class Data {
 	}
 	static String getPlayerName(Long playerID) {
 		if (playerID==null) return "Player ???";
-		Player game = players.get(playerID);
-		if (game==null) return "Player "+playerID;
-		return game.getName();
+		Player player = players.get(playerID);
+		if (player==null) return "Player "+playerID;
+		return player.getName();
 	}
 	static Icon getGameIcon(Integer gameID, TreeIcons defaultIcon) {
 		if (gameID==null) return defaultIcon==null ? null : defaultIcon.getIcon();
@@ -477,6 +491,47 @@ class Data {
 		return null;
 	}
 	
+	static class Base64String {
+		final String string;
+		final byte[] bytes;
+		
+		private Base64String(String string, byte[] bytes) {
+			this.string = string;
+			this.bytes = bytes;
+		}
+
+		static Base64String parse(String string, File file) {
+			byte[] bytes_;
+			try {
+				bytes_ = parseBase64(string);
+			} catch (Base64Exception e) {
+				showException(e, file);
+				bytes_ = null;
+			}
+			return new Base64String(string,bytes_);
+		}
+
+		boolean isEmpty() {
+			return (string==null || string.isEmpty()) && (bytes==null || bytes.length==0);
+		}
+	}
+	
+	static class Base64Exception extends Exception {
+		private static final long serialVersionUID = 8633426460640897788L;
+
+		public Base64Exception(IllegalArgumentException e) {
+			super(e);
+		}
+	}
+	
+	static byte[] parseBase64(String str) throws Base64Exception {
+		try {
+			return Base64.getDecoder().decode(str);
+		} catch (IllegalArgumentException e) {
+			throw new Base64Exception(e);
+		}
+	}
+	
 	static class Player {
 		
 		final long playerID;
@@ -487,9 +542,9 @@ class Data {
 		final HashMap<Integer, File> steamCloudFolders;
 		final ScreenShotLists screenShots;
 		final VDFTreeNode localconfig;
-		final HashMap<Integer,Player.GameInfos> gameInfos;
-		final Player.AchievementProgress achievementProgress;
-		final Player.FriendList friends;
+		final HashMap<Integer,GameInfos> gameInfos;
+		final AchievementProgress achievementProgress;
+		final FriendList friends;
 
 		Player(long playerID, File folder) {
 			this.playerID = playerID;
@@ -534,7 +589,7 @@ class Data {
 				this.localconfigFile = null;
 			}
 			
-			Player.FriendList preFriends = null;
+			FriendList preFriends = null;
 			if (localconfig!=null) {
 				VDFTreeNode friendsNode = localconfig.getSubNode("UserLocalConfigStore","friends");
 				if (friendsNode!=null) {
@@ -547,7 +602,7 @@ class Data {
 			friends = preFriends;
 			
 			gameInfos = new HashMap<>();
-			Player.AchievementProgress preAchievementProgress = null;
+			AchievementProgress preAchievementProgress = null;
 			if (configFolder!=null) {
 				File gameStateFolder = new File(configFolder,"librarycache");
 				if (gameStateFolder.isDirectory()) {
@@ -624,10 +679,10 @@ class Data {
 				values = null;
 			}
 
-			public static Player.FriendList parse(VDFTreeNode friendsNode, long playerID) throws VDFTraverseException {
+			public static FriendList parse(VDFTreeNode friendsNode, long playerID) throws VDFTraverseException {
 				if (friendsNode==null) throw new VDFTraverseException("FriendList: base VDFTreeNode is NULL");
 				if (friendsNode.type!=VDFTreeNode.Type.Array) throw new VDFTraverseException("FriendList: base VDFTreeNode is not an Array");
-				Player.FriendList friendList = new FriendList();
+				FriendList friendList = new FriendList();
 				friendsNode.forEach((subNode, type, name, value)->{
 					switch (type) {
 					case Root: System.err.printf("FriendList[Player %d]: Root node as sub node of base VDFTreeNode%n", playerID); break;
@@ -808,7 +863,7 @@ class Data {
 		
 		static class GameInfos {
 
-			static boolean meetsFilterOption(Player.GameInfos gameInfos, GameInfos.GameInfosFilterOptions option) {
+			static boolean meetsFilterOption(GameInfos gameInfos, GameInfosFilterOptions option) {
 				if (option==null) return true;
 				if (gameInfos==null) return true;
 				switch (option) {
@@ -851,10 +906,10 @@ class Data {
 					return label;
 				}
 
-				static GameInfos.GameInfosFilterOptions cast(FilterOption obj) {
+				static GameInfosFilterOptions cast(FilterOption obj) {
 					//System.out.printf("FilterOptions.cast( [%s] obj=%s )%n", obj==null ? null : obj.getClass(), obj );
-					if (obj instanceof GameInfos.GameInfosFilterOptions)
-						return (GameInfos.GameInfosFilterOptions) obj;
+					if (obj instanceof GameInfosFilterOptions)
+						return (GameInfosFilterOptions) obj;
 					return null;
 				}
 			}
@@ -862,23 +917,23 @@ class Data {
 			final File file;
 			final JSON_Data.Value<NV, V> rawData;
 			final boolean hasParsedData;
-			final Vector<GameInfos.Block> blocks;
+			final Vector<Block> blocks;
 			
 			final String         fullDesc;
 			final String         shortDesc;
-			final GameInfos.Badge          badge;
-			final GameInfos.Achievements   achievements;
-			final GameInfos.UserNews       userNews;
-			final GameInfos.GameActivity   gameActivity;
-			final GameInfos.AchievementMap achievementMap;
-			final GameInfos.SocialMedia    socialMedia;
-			final GameInfos.Associations   associations;
-			final GameInfos.AppActivity    appActivity;
-			final GameInfos.ReleaseData    releaseData;
-			final GameInfos.Friends        friends;
-			final GameInfos.CommunityItems communityItems;
+			final Badge          badge;
+			final Achievements   achievements;
+			final UserNews       userNews;
+			final GameActivity   gameActivity;
+			final AchievementMap achievementMap;
+			final SocialMedia    socialMedia;
+			final Associations   associations;
+			final AppActivity    appActivity;
+			final ReleaseData    releaseData;
+			final Friends        friends;
+			final CommunityItems communityItems;
 
-			static Player.GameInfos createRawData(File file, JSON_Data.Value<NV, V> rawData) {
+			static GameInfos createRawData(File file, JSON_Data.Value<NV, V> rawData) {
 				try { return new GameInfos(file, rawData, true); }
 				catch (TraverseException e) { return null; }
 			}
@@ -886,7 +941,7 @@ class Data {
 			GameInfos(File file, JSON_Data.Value<NV, V> fileContent) throws TraverseException {
 				this(file, fileContent, false);
 			}
-			private GameInfos(File file, JSON_Data.Value<NV, V> fileContent, boolean asRawData) throws TraverseException {
+			GameInfos(File file, JSON_Data.Value<NV, V> fileContent, boolean asRawData) throws TraverseException {
 				this.file = file;
 				this.rawData = fileContent;
 				
@@ -926,34 +981,34 @@ class Data {
 					
 					String         preFullDesc       = null;
 					String         preShortDesc      = null;
-					GameInfos.Badge          preBadge          = null;
-					GameInfos.Achievements   preAchievements   = null;
-					GameInfos.UserNews       preUserNews       = null;
-					GameInfos.GameActivity   preGameActivity   = null;
-					GameInfos.AchievementMap preAchievementMap = null;
-					GameInfos.SocialMedia    preSocialMedia    = null;
-					GameInfos.Associations   preAssociations   = null;
-					GameInfos.AppActivity    preAppActivity    = null;
-					GameInfos.ReleaseData    preReleaseData    = null;
-					GameInfos.Friends        preFriends        = null;
-					GameInfos.CommunityItems preCommunityItems = null;
+					Badge          preBadge          = null;
+					Achievements   preAchievements   = null;
+					UserNews       preUserNews       = null;
+					GameActivity   preGameActivity   = null;
+					AchievementMap preAchievementMap = null;
+					SocialMedia    preSocialMedia    = null;
+					Associations   preAssociations   = null;
+					AppActivity    preAppActivity    = null;
+					ReleaseData    preReleaseData    = null;
+					Friends        preFriends        = null;
+					CommunityItems preCommunityItems = null;
 					
-					for (GameInfos.Block block:blocks) {
+					for (Block block:blocks) {
 						String dataValueStr = String.format("GameInfos.Block[%d].dataValue", block.blockIndex);
 						//DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
 						switch (block.label) {
 							
-						case "badge"          : preBadge          = parseStandardBlock( GameInfos.Badge         ::new, GameInfos.Badge         ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "achievements"   : preAchievements   = parseStandardBlock( GameInfos.Achievements  ::new, GameInfos.Achievements  ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "usernews"       : preUserNews       = parseStandardBlock( GameInfos.UserNews      ::new, GameInfos.UserNews      ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "gameactivity"   : preGameActivity   = parseStandardBlock( GameInfos.GameActivity  ::new, GameInfos.GameActivity  ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "achievementmap" : preAchievementMap = parseStandardBlock( GameInfos.AchievementMap::new, GameInfos.AchievementMap::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "socialmedia"    : preSocialMedia    = parseStandardBlock( GameInfos.SocialMedia   ::new, GameInfos.SocialMedia   ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "associations"   : preAssociations   = parseStandardBlock( GameInfos.Associations  ::new, GameInfos.Associations  ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "appactivity"    : preAppActivity    = parseStandardBlock( GameInfos.AppActivity   ::new, GameInfos.AppActivity   ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "releasedata"    : preReleaseData    = parseStandardBlock( GameInfos.ReleaseData   ::new, GameInfos.ReleaseData   ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "friends"        : preFriends        = parseStandardBlock( GameInfos.Friends       ::new, GameInfos.Friends       ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "community_items": preCommunityItems = parseStandardBlock( GameInfos.CommunityItems::new, GameInfos.CommunityItems::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "badge"          : preBadge          = parseStandardBlock( Badge         ::new, Badge         ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "achievements"   : preAchievements   = parseStandardBlock( Achievements  ::new, Achievements  ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "usernews"       : preUserNews       = parseStandardBlock( UserNews      ::new, UserNews      ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "gameactivity"   : preGameActivity   = parseStandardBlock( GameActivity  ::new, GameActivity  ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "achievementmap" : preAchievementMap = parseStandardBlock( AchievementMap::new, AchievementMap::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "socialmedia"    : preSocialMedia    = parseStandardBlock( SocialMedia   ::new, SocialMedia   ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "associations"   : preAssociations   = parseStandardBlock( Associations  ::new, Associations  ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "appactivity"    : preAppActivity    = parseStandardBlock( AppActivity   ::new, AppActivity   ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "releasedata"    : preReleaseData    = parseStandardBlock( ReleaseData   ::new, ReleaseData   ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "friends"        : preFriends        = parseStandardBlock( Friends       ::new, Friends       ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "community_items": preCommunityItems = parseStandardBlock( CommunityItems::new, CommunityItems::new, block.dataValue, block.version, dataValueStr, file ); break;
 							
 						case "descriptions":
 							JSON_Object<NV, V> object = null;
@@ -968,7 +1023,8 @@ class Data {
 							break;
 							
 						case "workshop":
-							//DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
+							// DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version),false);
+							// TODO: GameInfo.Block["workshop"]
 							break;
 							
 						default:
@@ -992,7 +1048,7 @@ class Data {
 			}
 			
 			private static <ClassType> ClassType parseStandardBlock(
-					GameInfos.ParseConstructor<ClassType> parseConstructor,
+					ParseConstructor<ClassType> parseConstructor,
 					BiFunction<JSON_Data.Value<NV,V>,Long,ClassType> rawDataConstructor,
 					JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file
 			) {
@@ -1026,9 +1082,9 @@ class Data {
 			}
 			// "GameInfo.Block["community_items",V1].dataValue:Array"
 
-			static class CommunityItems extends GameInfos.ParsedBlock {
+			static class CommunityItems extends ParsedBlock {
 				
-				final Vector<CommunityItems.CommunityItem> items;
+				final Vector<CommunityItem> items;
 
 				CommunityItems(JSON_Data.Value<NV, V> rawData, long version) {
 					super(rawData, version, false);
@@ -1041,7 +1097,7 @@ class Data {
 					items = new Vector<>();
 					for (int i=0; i<array.size(); i++) {
 						try {
-							items.add(new CommunityItem(array.get(i), dataValueStr+"["+i+"]"));
+							items.add(new CommunityItem(array.get(i), dataValueStr+"["+i+"]", file));
 						} catch (TraverseException e) {
 							showException(e, file);
 							items.add(new CommunityItem(array.get(i)));
@@ -1082,7 +1138,7 @@ class Data {
 					//    item_series:Integer
 					//    item_title:String
 					//    item_type:Integer
-					
+
 					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
 							.add("active"                  , JSON_Data.Value.Type.Bool   )
 							.add("appid"                   , JSON_Data.Value.Type.Integer)
@@ -1106,75 +1162,101 @@ class Data {
 					final JSON_Data.Value<NV, V> rawData;
 					final boolean hasParsedData;
 
-					final boolean isActive;
-					final long    appID;
-					final long    itemClass;
-					final String  itemDescription;
-					final String  itemImageComposed;
-					final String  itemImageComposedFoil;
-					final String  itemImageLarge;
-					final String  itemImageSmall;
-					final String  itemKeyValues;
-					final long    itemLastChanged;
-					final String  itemMovieMp4;
-					final String  itemMovieMp4Small;
-					final String  itemMovieWebm;
-					final String  itemMovieWebmSmall;
-					final String  itemName;
-					final long    itemSeries;
-					final String  itemTitle;
-					final long    itemType;
-					
+					final boolean   isActive;
+					final long      appID;
+					final long      itemClass;
+					final String    itemDescription;
+					final String    itemImageComposed;
+					final String    itemImageComposedFoil;
+					final String    itemImageLarge;
+					final String    itemImageSmall;
+					final String    itemKeyValues_str;
+					final KeyValues itemKeyValues;
+					final long      itemLastChanged;
+					final String    itemMovieMp4;
+					final String    itemMovieMp4Small;
+					final String    itemMovieWebm;
+					final String    itemMovieWebmSmall;
+					final String    itemName;
+					final long      itemSeries;
+					final String    itemTitle;
+					final long      itemType;
+
 					CommunityItem(JSON_Data.Value<NV, V> rawData) {
 						this.rawData = rawData;
 						hasParsedData = false;
 						
-						isActive                   = false;
-						appID                    = -1;
-						itemName                = null;
-						itemTitle               = null;
-						itemDescription         = null;
-						itemClass               = -1;
-						itemSeries              = -1;
-						itemType                = -1;
-						itemLastChanged        = -1;
-						itemImageLarge         = null;
-						itemImageSmall         = null;
-						itemKeyValues          = null;
-						itemImageComposed      = null;
+						isActive              = false;
+						appID                 = -1;
+						itemName              = null;
+						itemTitle             = null;
+						itemDescription       = null;
+						itemClass             = -1;
+						itemSeries            = -1;
+						itemType              = -1;
+						itemLastChanged       = -1;
+						itemImageLarge        = null;
+						itemImageSmall        = null;
+						itemKeyValues         = null;
+						itemKeyValues_str     = null;
+						itemImageComposed     = null;
 						itemImageComposedFoil = null;
-						itemMovieMp4           = null;
+						itemMovieMp4          = null;
 						itemMovieMp4Small     = null;
-						itemMovieWebm          = null;
+						itemMovieWebm         = null;
 						itemMovieWebmSmall    = null;
 					}
-					CommunityItem(JSON_Data.Value<NV, V> value, String dataValueStr) throws TraverseException {
+					CommunityItem(JSON_Data.Value<NV, V> value, String dataValueStr, File file) throws TraverseException {
 						this.rawData = null;
 						hasParsedData = true;
 						
 						JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, dataValueStr);
 						//DevHelper.optionalValues.scan(object, "TreeNodes.Player.GameInfos.CommunityItems.CommunityItem");
 						
-						isActive                   = JSON_Data.getBoolValue   (object, "active"           , dataValueStr);
-						appID                    = JSON_Data.getIntegerValue(object, "appid"            , dataValueStr);
-						itemName                = JSON_Data.getStringValue (object, "item_name"        , dataValueStr);
-						itemTitle               = JSON_Data.getStringValue (object, "item_title"       , dataValueStr);
-						itemDescription         = JSON_Data.getStringValue (object, "item_description" , dataValueStr);
-						itemClass               = JSON_Data.getIntegerValue(object, "item_class"       , dataValueStr);
-						itemSeries              = JSON_Data.getIntegerValue(object, "item_series"      , dataValueStr);
-						itemType                = JSON_Data.getIntegerValue(object, "item_type"        , dataValueStr);
-						itemLastChanged        = JSON_Data.getIntegerValue(object, "item_last_changed", dataValueStr);
-						itemImageLarge         = JSON_Data.getStringValue (object, "item_image_large" , dataValueStr);
-						itemImageSmall         = JSON_Data.getStringValue (object, "item_image_small" , dataValueStr);
+						isActive        = JSON_Data.getBoolValue   (object, "active"           , dataValueStr);
+						appID           = JSON_Data.getIntegerValue(object, "appid"            , dataValueStr);
+						itemName        = JSON_Data.getStringValue (object, "item_name"        , dataValueStr);
+						itemTitle       = JSON_Data.getStringValue (object, "item_title"       , dataValueStr);
+						itemDescription = JSON_Data.getStringValue (object, "item_description" , dataValueStr);
+						itemClass       = JSON_Data.getIntegerValue(object, "item_class"       , dataValueStr);
+						itemSeries      = JSON_Data.getIntegerValue(object, "item_series"      , dataValueStr);
+						itemType        = JSON_Data.getIntegerValue(object, "item_type"        , dataValueStr);
+						itemLastChanged = JSON_Data.getIntegerValue(object, "item_last_changed", dataValueStr);
+						itemImageLarge  = JSON_Data.getStringValue (object, "item_image_large" , dataValueStr);
+						itemImageSmall  = JSON_Data.getStringValue (object, "item_image_small" , dataValueStr);
 						
-						itemKeyValues          = JSON_Data.getValue(object, "item_key_values"         , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
-						itemImageComposed      = JSON_Data.getValue(object, "item_image_composed"     , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
+						itemKeyValues_str     = JSON_Data.getValue(object, "item_key_values"         , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
+						itemImageComposed     = JSON_Data.getValue(object, "item_image_composed"     , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
 						itemImageComposedFoil = JSON_Data.getValue(object, "item_image_composed_foil", true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
-						itemMovieMp4           = JSON_Data.getValue(object, "item_movie_mp4"          , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
+						itemMovieMp4          = JSON_Data.getValue(object, "item_movie_mp4"          , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
 						itemMovieMp4Small     = JSON_Data.getValue(object, "item_movie_mp4_small"    , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
-						itemMovieWebm          = JSON_Data.getValue(object, "item_movie_webm"         , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
+						itemMovieWebm         = JSON_Data.getValue(object, "item_movie_webm"         , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
 						itemMovieWebmSmall    = JSON_Data.getValue(object, "item_movie_webm_small"   , true , JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, dataValueStr);
 						
+						if (itemKeyValues_str == null)
+							itemKeyValues = null;
+						else {
+							String keyValuesLabel = dataValueStr+".item_type";
+							JSON_Data.Value<NV, V> parsedKeyValues;
+							try {
+								parsedKeyValues = JSONHelper.parseJsonText(itemKeyValues_str);
+							} catch (JSON_Parser.ParseException e) {
+								throw new TraverseException("%s isn't a well formed JSON text: %s", keyValuesLabel, e.getMessage());
+							}
+							KeyValues itemKeyValues_;
+							try {
+								itemKeyValues_ = new KeyValues(parsedKeyValues, keyValuesLabel);
+							} catch (TraverseException e) {
+								showException(e, file);
+								itemKeyValues_ = new KeyValues(parsedKeyValues);
+							}
+							itemKeyValues = itemKeyValues_;
+						}
+						
+						//DevHelper.unknownValues.add("CommunityItem.itemMovieMp4       = "+(itemMovieMp4      ==null ? "<null>" : "\""+itemMovieMp4      +"\""));
+						//DevHelper.unknownValues.add("CommunityItem.itemMovieMp4Small  = "+(itemMovieMp4Small ==null ? "<null>" : "\""+itemMovieMp4Small +"\""));
+						//DevHelper.unknownValues.add("CommunityItem.itemMovieWebm      = "+(itemMovieWebm     ==null ? "<null>" : "\""+itemMovieWebm     +"\""));
+						//DevHelper.unknownValues.add("CommunityItem.itemMovieWebmSmall = "+(itemMovieWebmSmall==null ? "<null>" : "\""+itemMovieWebmSmall+"\""));
 						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Player.GameInfos.CommunityItems.CommunityItem");
 					}
 					
@@ -1192,10 +1274,30 @@ class Data {
 						default: return null;
 						}
 					}
+
+					static class KeyValues {
+
+						final JSON_Data.Value<NV, V> rawData;
+						final boolean hasParsedData;
+
+						public KeyValues(JSON_Data.Value<NV, V> rawData) {
+							this.rawData = rawData;
+							hasParsedData = false;
+						}
+
+						public KeyValues(JSON_Data.Value<NV, V> value, String dataValueStr) throws TraverseException {
+							this.rawData = null;
+							hasParsedData = true;
+							
+							//DevHelper.scanJsonStructure(value,"CommunityItem.KeyValues",true);
+							// TODO: CommunityItem.KeyValues
+						}
+
+					}
 				}
 				
 			}
-			static class Friends extends GameInfos.ParsedBlock {
+			static class Friends extends ParsedBlock {
 				
 				// "GameInfo.Block["friends",V1].dataValue.in_game:Array"
 				// "GameInfo.Block["friends",V1].dataValue.in_wishlist:Array"
@@ -1333,7 +1435,7 @@ class Data {
 				}
 			}
 
-			static class Associations extends GameInfos.ParsedBlock {
+			static class Associations extends ParsedBlock {
 				
 				// "GameStateInfo.Block["associations",V1].dataValue.rgDevelopers:Array"
 				// "GameStateInfo.Block["associations",V1].dataValue.rgDevelopers[].strName:String"
@@ -1432,7 +1534,7 @@ class Data {
 					
 				}
 			}
-			static class SocialMedia extends GameInfos.ParsedBlock {
+			static class SocialMedia extends ParsedBlock {
 				
 				// "GameStateInfo.Block["socialmedia",V3].dataValue:Array"
 				// "GameStateInfo.Block["socialmedia",V3].dataValue[].eType:Integer"
@@ -1492,12 +1594,23 @@ class Data {
 						type = JSON_Data.getIntegerValue(object, "eType"  , dataValueStr);
 						name = JSON_Data.getStringValue (object, "strName", dataValueStr);
 						url  = JSON_Data.getStringValue (object, "strURL" , dataValueStr);
+						//DevHelper.unknownValues.add("GameInfos.SocialMedia.SocialMediaEntry.type = "+type);
 						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Player.GameInfos.SocialMedia.SocialMediaEntry");
+					}
+					
+					static String getTypeStr(long type) {
+						switch ((int)type) {
+						case 4: return "Twitter";
+						case 5: return "Twitch";
+						case 6: return "YouTube";
+						case 7: return "Facebook";
+						default: return "SocialMedia (Type "+type+")";
+						}
 					}
 				}
 			}
 			
-			static class ReleaseData extends GameInfos.ParsedBlock {
+			static class ReleaseData extends ParsedBlock {
 				
 				// "GameInfo.Block["releasedata",V1].dataValue = <null>"
 				
@@ -1514,11 +1627,11 @@ class Data {
 				}
 			}
 			
-			static class AppActivity extends GameInfos.ParsedBlock {
+			static class AppActivity extends ParsedBlock {
 				
 				// "GameInfo.Block["appactivity",V3].dataValue:String"
 				
-				final String value;
+				final Base64String value;
 				
 				AppActivity(JSON_Data.Value<NV, V> rawData, long version) {
 					super(rawData, version, false);
@@ -1526,7 +1639,21 @@ class Data {
 				}
 				AppActivity(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 					super(null, version, true);
-					value = JSON_Data.getStringValue(blockDataValue, dataValueStr);
+					String str = JSON_Data.getStringValue(blockDataValue, dataValueStr);
+					value = Base64String.parse(str, file);
+					//DevHelper.unknownValues.add("GameInfos.AppActivity.value = "+toString(bytes)+"");
+				}
+				
+				@SuppressWarnings("unused")
+				private static String toString(byte[] bytes) {
+					int min = Integer.MAX_VALUE;
+					int max = 0;
+					for (byte b:bytes) {
+						int i = b<0 ? 256+(int)b : (int)b;
+						min = Math.min(min, i);
+						max = Math.max(max, i);
+					}
+					return String.format("<%d..%d> %s", min, max, Arrays.toString(bytes));
 				}
 				
 				@Override boolean isEmpty() {
@@ -1534,7 +1661,7 @@ class Data {
 				}
 			}
 			
-			static class AchievementMap extends GameInfos.ParsedBlock {
+			static class AchievementMap extends ParsedBlock {
 				
 				// "GameStateInfo.Block["achievementmap",V2].dataValue:String"
 				
@@ -1561,7 +1688,7 @@ class Data {
 				
 			}
 			
-			static class GameActivity extends GameInfos.ParsedBlock {
+			static class GameActivity extends ParsedBlock {
 				
 				// "GameStateInfo.Block["gameactivity",V1].dataValue:String"
 				// "GameStateInfo.Block["gameactivity",V2].dataValue:Array"
@@ -1569,7 +1696,7 @@ class Data {
 				// "GameStateInfo.Block["gameactivity",V3].dataValue:Array"
 				// "GameStateInfo.Block["gameactivity",V3].dataValue[]:String"
 				
-				final Vector<String> values;
+				final Vector<Base64String> values;
 				
 				GameActivity(JSON_Data.Value<NV, V> rawData, long version) {
 					super(rawData, version, false);
@@ -1582,13 +1709,13 @@ class Data {
 					JSON_Array<NV, V> array = JSON_Data.getValue(blockDataValue, JSON_Data.Value.Type.Array, JSON_Data.Value::castToArrayValue, true, dataValueStr);
 					if (array!=null) {
 						for (int i=0; i<array.size(); i++)
-							values.add(JSON_Data.getStringValue(array.get(i), dataValueStr+"["+i+"]"));
+							values.add(Base64String.parse(JSON_Data.getStringValue(array.get(i), dataValueStr+"["+i+"]"),file));
 						return;
 					}
 					
 					String string = JSON_Data.getValue(blockDataValue, JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, true, dataValueStr);
 					if (string!=null) {
-						values.add(string);
+						values.add(Base64String.parse(string,file));
 						return;
 					}
 					
@@ -1601,11 +1728,11 @@ class Data {
 				
 			}
 			
-			static class UserNews extends GameInfos.ParsedBlock {
+			static class UserNews extends ParsedBlock {
 				// "GameStateInfo.Block["usernews",V2].dataValue:Array"
 				// "GameStateInfo.Block["usernews",V2].dataValue[]:String"
 				
-				final Vector<String> values;
+				final Vector<Base64String> values;
 				
 				UserNews(JSON_Data.Value<NV, V> rawData, long version) {
 					super(rawData, version, false);
@@ -1616,7 +1743,7 @@ class Data {
 					JSON_Array<NV, V> array = JSON_Data.getArrayValue(blockDataValue, dataValueStr);
 					values = new Vector<>();
 					for (int i=0; i<array.size(); i++)
-						values.add(JSON_Data.getStringValue(array.get(i), dataValueStr+"["+i+"]"));
+						values.add(Base64String.parse(JSON_Data.getStringValue(array.get(i), dataValueStr+"["+i+"]"),file));
 				}
 				
 				@Override boolean isEmpty() {
@@ -1624,7 +1751,7 @@ class Data {
 				}
 			}
 			
-			static class Achievements extends GameInfos.ParsedBlock {
+			static class Achievements extends ParsedBlock {
 
 				private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
 						.add("nAchieved"        , JSON_Data.Value.Type.Integer)
@@ -1635,9 +1762,9 @@ class Data {
 			
 				final long achieved;
 				final long total;
-				final Vector<Achievements.Achievement> achievedHidden;
-				final Vector<Achievements.Achievement> unachieved;
-				final Vector<Achievements.Achievement> highlight;
+				final Vector<Achievement> achievedHidden;
+				final Vector<Achievement> unachieved;
+				final Vector<Achievement> highlight;
 				
 				Achievements(JSON_Data.Value<NV, V> rawData, long version) {
 					super(rawData, version, false);
@@ -1743,7 +1870,7 @@ class Data {
 				}
 			}
 
-			static class Badge extends GameInfos.ParsedBlock {
+			static class Badge extends ParsedBlock {
 				
 				private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues()
 						.add("strName"         , JSON_Data.Value.Type.String)
@@ -1757,7 +1884,7 @@ class Data {
 						.add("strIconURL"      , JSON_Data.Value.Type.String)
 						.add("rgCards"         , JSON_Data.Value.Type.Array);
 			
-				final Vector<Badge.TradingCard> tradingCards;
+				final Vector<TradingCard> tradingCards;
 
 				final String  name;
 				final boolean hasBadgeData;
@@ -1823,7 +1950,7 @@ class Data {
 						str += (str.isEmpty()?"":", ") + "B:"+currentLevel;
 					
 					int tcCount = 0;
-					for (Badge.TradingCard tc:tradingCards) tcCount += tc.owned;
+					for (TradingCard tc:tradingCards) tcCount += tc.owned;
 					if (tcCount>0)
 						str += (str.isEmpty()?"":", ") + "TC:"+tcCount;
 					
@@ -1862,7 +1989,7 @@ class Data {
 
 				private void writeTradingCardsOverviewHTML(PrintWriter htmlOut) {
 					if (hasParsedData)
-						for (Badge.TradingCard tc:tradingCards) {
+						for (TradingCard tc:tradingCards) {
 							htmlOut.printf("		new TradingCard(%s,%s,%s,%s),%n", toString(tc.name), tc.owned, toString(tc.imageURL), toString(tc.artworkURL));
 						}
 				}
@@ -1930,7 +2057,7 @@ class Data {
 				final long version;
 				final JSON_Data.Value<NV, V> dataValue;
 
-				static GameInfos.Block createRawData(int blockIndex, JSON_Data.Value<NV, V> value) {
+				static Block createRawData(int blockIndex, JSON_Data.Value<NV, V> value) {
 					try { return new Block(blockIndex, value, true); }
 					catch (TraverseException e) { return null; }
 				}
@@ -1952,7 +2079,7 @@ class Data {
 						this.hasParsedData = true;
 						this.blockIndex = blockIndex;
 						
-						String blockStr     = "GameStateInfo.Block["+blockIndex+"]";
+						String blockStr     = "GameInfos.Block["+blockIndex+"]";
 						String labelStr     = blockStr+".value[0:label]";
 						String blockdataStr = blockStr+".value[1:blockdata]";
 						
@@ -2105,7 +2232,7 @@ class Data {
 		private final File folder;
 		final Vector<File> otherFiles;
 		final Vector<File> imageFiles;
-		private final GameImages.HashMatrix<Integer, String, File> appImages;
+		private final HashMatrix<Integer, String, File> appImages;
 	
 		GameImages(File folder) {
 			this.folder = folder;
@@ -2113,14 +2240,14 @@ class Data {
 			
 			otherFiles = new Vector<>();
 			imageFiles = new Vector<>();
-			appImages = new GameImages.HashMatrix<>();
+			appImages = new HashMatrix<>();
 			
 			for (File file:files) {
 				if (file.isDirectory()) {
 					otherFiles.add(file);
 					
 				} else if (TreeNodes.isImageFile(file)) {
-					GameImages.ImageFileName ifn = ImageFileName.parse(file.getName());
+					ImageFileName ifn = ImageFileName.parse(file.getName());
 					if (ifn==null || ifn.label==null || ifn.number==null)
 						imageFiles.add(file);
 					else
@@ -2207,7 +2334,7 @@ class Data {
 				this.label = label;
 			}
 		
-			static GameImages.ImageFileName parse(String name) {
+			static ImageFileName parse(String name) {
 				// 1000410_library_600x900.jpg
 				int pos = name.lastIndexOf('.');
 				if (pos>=0) name = name.substring(0, pos);

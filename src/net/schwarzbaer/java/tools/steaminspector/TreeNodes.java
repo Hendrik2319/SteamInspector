@@ -1199,7 +1199,7 @@ class TreeNodes {
 					str +=                                                String.format("%s: %d%n"    , "Series   ", communityItem.itemSeries     );
 					str +=                                                String.format("%s: %d%n"    , "Type     ", communityItem.itemType       );
 					str +=                                                String.format("%s: %d%n"    , "Last Changed         ", communityItem.itemLastChanged      );
-					if (communityItem.itemKeyValues        !=null) str += String.format("%s: %s%n"    , "Key Values           ", communityItem.itemKeyValues        );
+					if (communityItem.itemKeyValues_str        !=null) str += String.format("%s: %s%n"    , "Key Values           ", communityItem.itemKeyValues_str        );
 					if (communityItem.itemImageLarge       !=null) str += String.format("%s: \"%s\"%n", "Image Large          ", communityItem.itemImageLarge       );
 					if (communityItem.itemImageSmall       !=null) str += String.format("%s: \"%s\"%n", "Image Small          ", communityItem.itemImageSmall       );
 					if (communityItem.itemImageComposed    !=null) str += String.format("%s: \"%s\"%n", "Image Composed       ", communityItem.itemImageComposed    );
