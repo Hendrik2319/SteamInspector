@@ -84,6 +84,26 @@ import net.schwarzbaer.system.Settings;
 
 class SteamInspector {
 	
+	public static void main(String[] args) {
+		new SteamInspector().createGUI();
+	}
+
+	private static final AppSettings settings;
+	private static final JFileChooser executableFileChooser;
+	
+	static {
+		try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
+		catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {}
+		
+		TreeNodes.loadIcons();
+		
+		settings = new AppSettings();
+		executableFileChooser = new JFileChooser("./");
+		executableFileChooser.setMultiSelectionEnabled(false);
+		executableFileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+		executableFileChooser.addChoosableFileFilter(new FileNameExtensionFilter("Executables (*.exe)", "exe"));
+	}
+
 	static final String KNOWN_GAME_TITLES_INI = "SteamInspector.KnownGameTitles.ini";
 	static final File FOLDER_TEST_FILES                  = new File("./test");
 //	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS      = new File("C:\\__Games\\SteamLibrary\\steamapps\\");
@@ -146,26 +166,6 @@ class SteamInspector {
 			AppSettings.ValueKey folderKey = AppSettings.ValueKey.SteamClientFolder;
 			return settings.getFile(folderKey, null);
 		}
-	}
-	
-	public static void main(String[] args) {
-		new SteamInspector().createGUI();
-	}
-	
-	static final AppSettings settings;
-	static final JFileChooser executableFileChooser;
-	
-	static {
-		try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
-		catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {}
-		
-		TreeNodes.loadIcons();
-		
-		settings = new AppSettings();
-		executableFileChooser = new JFileChooser("./");
-		executableFileChooser.setMultiSelectionEnabled(false);
-		executableFileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-		executableFileChooser.addChoosableFileFilter(new FileNameExtensionFilter("Executables (*.exe)", "exe"));
 	}
 	
 	private StandardMainWindow mainWindow = null;
@@ -1897,7 +1897,7 @@ class SteamInspector {
 			this(parent, title, allowsChildren, isLeaf, (Icon)null);
 		}
 		protected BaseTreeNode(ParentNodeType parent, String title, boolean allowsChildren, boolean isLeaf, TreeNodes.TreeIcons icon) {
-			this(parent, title, allowsChildren, isLeaf, TreeNodes.TreeIconsIS.getCachedIcon(icon));
+			this(parent, title, allowsChildren, isLeaf, icon==null ? null : icon.getIcon());
 		}
 		protected BaseTreeNode(ParentNodeType parent, String title, boolean allowsChildren, boolean isLeaf, Icon icon) {
 			this.parent = parent;

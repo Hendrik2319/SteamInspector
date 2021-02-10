@@ -427,9 +427,9 @@ class Data {
 		return game.getName();
 	}
 	static Icon getGameIcon(Integer gameID, TreeIcons defaultIcon) {
-		if (gameID==null) return TreeNodes.TreeIconsIS.getCachedIcon(defaultIcon);
+		if (gameID==null) return defaultIcon==null ? null : defaultIcon.getIcon();
 		Data.Game game = games.get(gameID);
-		if (game==null) return TreeNodes.TreeIconsIS.getCachedIcon(defaultIcon);
+		if (game==null) return defaultIcon==null ? null : defaultIcon.getIcon();
 		return game.getIcon();
 	}
 	static String getGameTitle(Integer gameID) {

@@ -82,7 +82,7 @@ class JSONHelper {
 		final JSON_Data.Value<Data.NV,Data.V> value;
 
 		private JSON_TreeNode(JSONHelper.JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, JSON_Data.Value<Data.NV,Data.V> value, Vector<ChildValueType> childValues, Function<ChildValueType,String> getChildName, Function<ChildValueType,JSON_Data.Value<Data.NV,Data.V>> getChildValue) {
-			super(parent, title, childValues!=null, childValues==null || childValues.isEmpty(), icon==null ? null : TreeNodes.JsonTreeIconsIS.getCachedIcon(icon));
+			super(parent, title, childValues!=null, childValues==null || childValues.isEmpty(), icon==null ? null : icon.getIcon());
 			this.name = name;
 			this.value = value;
 			this.childValues = childValues;

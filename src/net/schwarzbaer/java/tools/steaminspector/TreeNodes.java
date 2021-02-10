@@ -42,7 +42,6 @@ import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
 import net.schwarzbaer.gui.IconSource;
-import net.schwarzbaer.gui.IconSource.CachedIcons;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.Data.AppManifest;
@@ -59,8 +58,8 @@ import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShot;
 import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShotLists;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteBasedTextFileSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerInfo;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageNTextContentSource;
@@ -83,11 +82,17 @@ import net.schwarzbaer.system.ClipboardTools;
 class TreeNodes {
 	
 	
-	enum TreeIcons { GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Badge, Achievement, Folder, RootFolder_Simple, RootFolder }
-	static CachedIcons<TreeIcons> TreeIconsIS;
+	private static IconSource.CachedIcons<TreeIcons> TreeIconsIS;
+	enum TreeIcons {
+		GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Badge, Achievement, Folder, RootFolder_Simple, RootFolder;
+		Icon getIcon() { return TreeIconsIS.getCachedIcon(this); }
+	}
 	
-	enum JsonTreeIcons { Object, Array, String, Number, Boolean }
-	static CachedIcons<JsonTreeIcons> JsonTreeIconsIS;
+	private static IconSource.CachedIcons<JsonTreeIcons> JsonTreeIconsIS;
+	enum JsonTreeIcons {
+		Object, Array, String, Number, Boolean;
+		Icon getIcon() { return JsonTreeIconsIS.getCachedIcon(this); }
+	}
 	
 	static void loadIcons() {
 		TreeIconsIS     = IconSource.createCachedIcons(16, 16, "/images/TreeIcons.png"    , TreeIcons.values());
@@ -332,25 +337,32 @@ class TreeNodes {
 		private FilePromise getFile;
 		private GroupingNodeFilter<ValueType,?> filter;
 		
-		static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode) {
+		private static <IT,VT> Comparator<Map.Entry<IT,VT>> createMapKeyOrder(Comparator<IT> keyOrder) {
+			return Comparator.comparing(Map.Entry<IT,VT>::getKey,keyOrder);
+		}
+		private static <IT,VT> Comparator<Map.Entry<IT,VT>> createMapValueOrder(Comparator<VT> keyOrder) {
+			return Comparator.comparing(Map.Entry<IT,VT>::getValue,keyOrder);
+		}
+		
+		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode) {
 			return create(parent, title, values, sortOrder, createChildNode, null);
 		}
-		static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode, Icon icon) {
-			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), Comparator.comparing(Map.Entry<IT, VT>::getValue,sortOrder), (p,e)->createChildNode.create(p,e.getValue()), icon);
+		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode, Icon icon) {
+			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), createMapValueOrder(sortOrder), (p,e)->createChildNode.create(p,e.getValue()), icon);
 		}
-		static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<Map.Entry<IT,VT>> sortOrder, NodeCreator2<IT,VT> createChildNode) {
+		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<Map.Entry<IT,VT>> sortOrder, NodeCreator2<IT,VT> createChildNode) {
 			return create(parent, title, values, sortOrder, createChildNode, null);
 		}
-		static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<Map.Entry<IT,VT>> sortOrder, NodeCreator2<IT,VT> createChildNode, Icon icon) {
+		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<Map.Entry<IT,VT>> sortOrder, NodeCreator2<IT,VT> createChildNode, Icon icon) {
 			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), sortOrder, (p,e)->createChildNode.create(p,e.getKey(),e.getValue()), icon);
 		}
-		static <VT> GroupingNode<VT> create(TreeNode parent, String title, Collection<VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode) {
+		private static <VT> GroupingNode<VT> create(TreeNode parent, String title, Collection<VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode) {
 			return new GroupingNode<>(parent, title, values, sortOrder, createChildNode, null);
 		}
-		static <VT> GroupingNode<VT> create(TreeNode parent, String title, Collection<VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode, Icon icon) {
+		private static <VT> GroupingNode<VT> create(TreeNode parent, String title, Collection<VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode, Icon icon) {
 			return new GroupingNode<>(parent, title, values, sortOrder, createChildNode, icon);
 		}
-		GroupingNode(TreeNode parent, String title, Collection<ValueType> values, Comparator<ValueType> sortOrder, NodeCreator1<ValueType> createChildNode, Icon icon) {
+		private GroupingNode(TreeNode parent, String title, Collection<ValueType> values, Comparator<ValueType> sortOrder, NodeCreator1<ValueType> createChildNode, Icon icon) {
 			super(parent, title, true, false, icon);
 			this.values = values;
 			this.sortOrder = sortOrder;
@@ -361,7 +373,7 @@ class TreeNodes {
 			filter = null;
 		}
 		
-		static <IT, VT, FilterOptType extends Enum<FilterOptType> & FilterOption> GroupingNodeFilter<Map.Entry<IT,VT>,FilterOptType> createMapFilter(
+		private static <IT, VT, FilterOptType extends Enum<FilterOptType> & FilterOption> GroupingNodeFilter<Map.Entry<IT,VT>,FilterOptType> createMapFilter(
 				Class<FilterOptType> filterOptionClass,
 				FilterOptType[] options,
 				Function<FilterOption,FilterOptType> cast,
@@ -381,7 +393,7 @@ class TreeNodes {
 			};
 		}
 		
-		static abstract class GroupingNodeFilter<ValueType, FilterOptType extends Enum<FilterOptType> & FilterOption> implements Filter {
+		private static abstract class GroupingNodeFilter<ValueType, FilterOptType extends Enum<FilterOptType> & FilterOption> implements Filter {
 			
 			private final FilterOptType[] options;
 			private final EnumSet<FilterOptType> currentSetting;
@@ -457,22 +469,22 @@ class TreeNodes {
 		}
 		
 		@Override public Filter getFilter() { return filter; }
-		void setFilter(GroupingNodeFilter<ValueType,?> filter) {
+		private void setFilter(GroupingNodeFilter<ValueType,?> filter) {
 			this.filter = filter;
 			if (filter!=null)
 				filter.setHost(this);
 		}
 		
-		void setFileSource(File file, ExternalViewerInfo externalViewerInfo) {
+		private void setFileSource(File file, ExternalViewerInfo externalViewerInfo) {
 			setFileSource(new LabeledFile(file), externalViewerInfo);
 		}
-		void setFileSource(LabeledFile file, ExternalViewerInfo externalViewerInfo) {
+		private void setFileSource(LabeledFile file, ExternalViewerInfo externalViewerInfo) {
 			this.file = file;
 			this.externalViewerInfo = externalViewerInfo;
 			if (getFile!=null) throw new IllegalStateException();
 			if (file==null) throw new IllegalArgumentException();
 		}
-		void setFileSource(FilePromise getFile, ExternalViewerInfo externalViewerInfo) {
+		private void setFileSource(FilePromise getFile, ExternalViewerInfo externalViewerInfo) {
 			this.getFile = getFile;
 			this.externalViewerInfo = externalViewerInfo;
 			if (getFile==null) throw new IllegalArgumentException();
@@ -527,7 +539,7 @@ class TreeNodes {
 	private static class ImageUrlNode extends UrlNode implements ImageContentSource {
 		
 		ImageUrlNode(TreeNode parent, String label, String  url) {
-			super(parent, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile), label, url);
+			super(parent, TreeIcons.ImageFile.getIcon(), label, url);
 		}
 
 		@Override ContentType getContentType() { return ContentType.Image; }
@@ -539,7 +551,7 @@ class TreeNodes {
 		private final String base64Data;
 
 		Base64ImageNode(TreeNode parent, String label, String base64Data) {
-			super(parent, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile), "%s: <Base64> %d chars", label, base64Data.length());
+			super(parent, TreeIcons.ImageFile.getIcon(), "%s: <Base64> %d chars", label, base64Data.length());
 			this.base64Data = base64Data;
 		}
 
@@ -618,7 +630,7 @@ class TreeNodes {
 			this(parent, title, rawValue, file, null);
 		}
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, File file, Icon icon) {
-			super(parent, title, false, true, icon!=null ? icon : TreeIconsIS.getCachedIcon(TreeIcons.JSONFile));
+			super(parent, title, false, true, icon!=null ? icon : TreeIcons.JSONFile.getIcon());
 			this.file = file;
 			this.rawValue = rawValue;
 		}
@@ -750,10 +762,11 @@ class TreeNodes {
 					children.add(GroupingNode.create(this, "Achievement Progress", game.achievementProgress, Data.createPlayerIdKeyOrder(), AchievementProgressNode.AchievementProgressInGameNode::new));
 				}
 				if (game.imageFiles!=null && !game.imageFiles.isEmpty()) {
+					children.add(GroupingNode.create(this, "Images", game.imageFiles, GroupingNode.createMapKeyOrder(Comparator.<String>naturalOrder()), (p,i,v)->FileSystem.FolderNode.createNode(p,v,null,null), TreeIcons.ImageFile.getIcon()));
 					children.add(new FileSystem.FolderNode(this, "Images", game.imageFiles.values(), TreeIcons.ImageFile));
 				}
 				if (game.screenShots!=null && !game.screenShots.isEmpty()) {
-					children.add(GroupingNode.create(this, "ScreenShots", game.screenShots, Data.createPlayerIdKeyOrder(), PlayersNGames::createGameScreenShotsNode, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile)));
+					children.add(GroupingNode.create(this, "ScreenShots", game.screenShots, Data.createPlayerIdKeyOrder(), PlayersNGames::createGameScreenShotsNode, TreeIcons.ImageFile.getIcon()));
 					//children.add(new ScreenShotsNode<>(this,game.screenShots,id->String.format("by %s", getPlayerName(id)),Comparator.<Long>naturalOrder()));
 				}
 				if (game.steamCloudFolders!=null && !game.steamCloudFolders.isEmpty()) {
@@ -797,7 +810,7 @@ class TreeNodes {
 					groupingNode.setFileSource(player.folder, null);
 				}
 				if (player.screenShots!=null && !player.screenShots.isEmpty()) {
-					children.add(groupingNode = GroupingNode.create(this, "ScreenShots", player.screenShots, Data.createGameIdKeyOrder(), PlayersNGames::createGameScreenShotsNode, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile)));
+					children.add(groupingNode = GroupingNode.create(this, "ScreenShots", player.screenShots, Data.createGameIdKeyOrder(), PlayersNGames::createGameScreenShotsNode, TreeIcons.ImageFile.getIcon()));
 					groupingNode.setFileSource(player.screenShots.folder, null);
 					//children.add(new ScreenShotsNode<Integer>(this,player.screenShots,id->getGameTitle(id),id->getGameIcon(id,TreeIcons.ImageFile),gameIdOrder));
 				}
@@ -1044,12 +1057,12 @@ class TreeNodes {
 			}
 
 			private static Icon generateMergedIcon(Icon baseIcon, GameInfos gameInfos) {
-				if (baseIcon==null) baseIcon = TreeIconsIS.getCachedIcon(TreeIcons.Folder);
+				if (baseIcon==null) baseIcon = TreeIcons.Folder.getIcon();
 				return IconSource.setSideBySide(
 					true, 1, baseIcon,
-					gameInfos.fullDesc    ==null ? IconSource.createEmptyIcon(16,16) : TreeIconsIS.getCachedIcon(TreeIcons.TextFile),
-					gameInfos.badge       ==null ? IconSource.createEmptyIcon(16,16) : TreeIconsIS.getCachedIcon(TreeIcons.Badge),
-					gameInfos.achievements==null ? IconSource.createEmptyIcon(16,16) : TreeIconsIS.getCachedIcon(TreeIcons.Achievement)
+					gameInfos.fullDesc    ==null ? IconSource.createEmptyIcon(16,16) : TreeIcons.TextFile   .getIcon(),
+					gameInfos.badge       ==null ? IconSource.createEmptyIcon(16,16) : TreeIcons.Badge      .getIcon(),
+					gameInfos.achievements==null ? IconSource.createEmptyIcon(16,16) : TreeIcons.Achievement.getIcon()
 				);
 			}
 			
@@ -1711,7 +1724,7 @@ class TreeNodes {
 				this(parent, null, folder, icon);
 			}
 			FolderNode(TreeNode parent, String title, File folder, TreeIcons icon) {
-				this(parent, title, folder, TreeIconsIS.getCachedIcon(icon));
+				this(parent, title, folder, icon==null ? null : icon.getIcon());
 			}
 			FolderNode(TreeNode parent, String title, File folder, Icon icon) {
 				super(parent, folder, title==null ? folder.getName() : title, true, false, icon);
@@ -1733,13 +1746,13 @@ class TreeNodes {
 				this(parent, title, files, false, null, icon);
 			}
 			FolderNode(TreeNode parent, String title, File[] files, boolean keepFileOrder, Function<File,String> getNodeTitle, TreeIcons icon) {
-				this(parent, title, files, keepFileOrder, getNodeTitle, TreeIconsIS.getCachedIcon(icon));
+				this(parent, title, files, keepFileOrder, getNodeTitle, icon==null ? null : icon.getIcon());
 			}
 			FolderNode(TreeNode parent, String title, File[] files, boolean keepFileOrder, Function<File,String> getNodeTitle, Icon icon) {
 				this(parent, title, files, keepFileOrder, getNodeTitle, null, icon);
 			}
 			FolderNode(TreeNode parent, String title, File[] files, boolean keepFileOrder, Function<File,String> getNodeTitle, Function<File,Icon> getNodeIcon, TreeIcons icon) {
-				this(parent, title, files, keepFileOrder, getNodeTitle, getNodeIcon, TreeIconsIS.getCachedIcon(icon));
+				this(parent, title, files, keepFileOrder, getNodeTitle, getNodeIcon, icon==null ? null : icon.getIcon());
 			}
 			FolderNode(TreeNode parent, String title, File[] files, boolean keepFileOrder, Function<File,String> getNodeTitle, Function<File,Icon> getNodeIcon, Icon icon) {
 				super(parent, null, title, true, files==null || files.length==0, icon);
@@ -1793,7 +1806,7 @@ class TreeNodes {
 					String title = getNodeTitle!=null ? getNodeTitle.apply(file) : null;
 					
 					Icon icon = getNodeIcon!=null ? getNodeIcon.apply(file) : null;
-					if (icon==null) icon = TreeIconsIS.getCachedIcon(TreeIcons.Folder);
+					if (icon==null) icon = TreeIcons.Folder.getIcon();
 					
 					node = new FolderNode(parent, title, file, icon);
 					
