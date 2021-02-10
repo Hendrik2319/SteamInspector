@@ -514,44 +514,6 @@ class TreeNodes {
 		}
 	}
 
-	private static class HashMatrix<KeyType1,KeyType2,ValueType> {
-		
-		private final HashMap<KeyType1,HashMap<KeyType2,ValueType>> matrix;
-		private final HashSet<KeyType1> keySet1;
-		private final HashSet<KeyType2> keySet2;
-		
-		HashMatrix() {
-			matrix = new HashMap<>();
-			keySet1 = new HashSet<>();
-			keySet2 = new HashSet<>();
-		}
-		
-		void put(KeyType1 key1, KeyType2 key2, ValueType value) {
-			HashMap<KeyType2, ValueType> map = matrix.get(key1);
-			if (map==null) matrix.put(key1, map = new HashMap<>());
-			map.put(key2, value);
-			keySet1.add(key1);
-			keySet2.add(key2);
-		}
-		
-		HashMap<KeyType2, ValueType> getMapCopy(KeyType1 key1) {
-			HashMap<KeyType2, ValueType> map = matrix.get(key1);
-			if (map==null) return null;
-			return new HashMap<>(map);
-		}
-		
-		Collection<ValueType> getCollection(KeyType1 key1) {
-			HashMap<KeyType2, ValueType> map = matrix.get(key1);
-			return map.values();
-		}
-		
-		ValueType get(KeyType1 key1, KeyType2 key2) {
-			HashMap<KeyType2, ValueType> map = matrix.get(key1);
-			if (map==null) return null;
-			return map.get(key2);
-		}
-	}
-
 	static class FilePromise {
 		final String label;
 		final Supplier<File> createFile;
@@ -1007,200 +969,203 @@ class TreeNodes {
 		}
 	}
 
-	private static class ParseException extends Exception {
+	private static class VDFTraverseException extends Exception {
 		private static final long serialVersionUID = -7150324499542307039L;
-		ParseException(String format, Object...args) {
+		VDFTraverseException(String format, Object...args) {
 			super(String.format(Locale.ENGLISH, format, args));
 		}
 	}
 
-	@SuppressWarnings("unused")
-	private static class DevHelper {
-		
-		static class ExtHashMap<TypeType> extends HashMap<String,HashSet<TypeType>> {
-			private static final long serialVersionUID = -3042424737957471534L;
-			ExtHashMap<TypeType> add(String name, TypeType type) {
-				HashSet<TypeType> hashSet = get(name);
-				if (hashSet==null) put(name,hashSet = new HashSet<>());
-				hashSet.add(type);
-				return this;
-			}
-			boolean contains(String name, TypeType type) {
-				HashSet<TypeType> hashSet = get(name);
-				return hashSet!=null && hashSet.contains(type);
-			}
-		}
-		static class KnownJsonValues extends ExtHashMap<JSON_Data.Value.Type> {
-			private static final long serialVersionUID = 875837641187739890L;
-			@Override KnownJsonValues add(String name, JSON_Data.Value.Type type) { super.add(name, type); return this; }
-		}
-		static class KnownVdfValues extends ExtHashMap<VDFTreeNode.Type> {
-			private static final long serialVersionUID = -8137083046811709725L;
-			@Override KnownVdfValues add(String name, VDFTreeNode.Type type) { super.add(name, type); return this; }
-		}
-		
-		static final OptionalValues optionalValues = new OptionalValues();
-		static class OptionalValues extends HashMap<String,HashMap<String,HashSet<JSON_Data.Value.Type>>> {
-			private static final long serialVersionUID = 3844179176678445499L;
+	protected static class Data {
 
-			void scan(JSON_Object<NV,V> object, String prefixStr) {
-				
-				HashMap<String, HashSet<JSON_Data.Value.Type>> valueMap = get(prefixStr);
-				boolean valueMapIsNew = false;
-				if (valueMap==null) {
-					valueMapIsNew = true;
-					put(prefixStr, valueMap=new HashMap<>());
+		@SuppressWarnings("unused")
+		private static class DevHelper {
+			
+			static class ExtHashMap<TypeType> extends HashMap<String,HashSet<TypeType>> {
+				private static final long serialVersionUID = -3042424737957471534L;
+				ExtHashMap<TypeType> add(String name, TypeType type) {
+					HashSet<TypeType> hashSet = get(name);
+					if (hashSet==null) put(name,hashSet = new HashSet<>());
+					hashSet.add(type);
+					return this;
 				}
-				
-				valueMap.forEach((name,types)->{
-					JSON_Data.Value<NV, V> value = object.getValue(name);
-					if (value==null) types.add(null);
-				});
-				
-				for (JSON_Data.NamedValue<NV,V> nvalue:object) {
-					HashSet<JSON_Data.Value.Type> types = valueMap.get(nvalue.name);
-					if (types==null) {
-						valueMap.put(nvalue.name, types=new HashSet<>());
-						if (!valueMapIsNew) types.add(null);
-					}
-					types.add(nvalue.value.type);
+				boolean contains(String name, TypeType type) {
+					HashSet<TypeType> hashSet = get(name);
+					return hashSet!=null && hashSet.contains(type);
 				}
+			}
+			static class KnownJsonValues extends ExtHashMap<JSON_Data.Value.Type> {
+				private static final long serialVersionUID = 875837641187739890L;
+				@Override KnownJsonValues add(String name, JSON_Data.Value.Type type) { super.add(name, type); return this; }
+			}
+			static class KnownVdfValues extends ExtHashMap<VDFTreeNode.Type> {
+				private static final long serialVersionUID = -8137083046811709725L;
+				@Override KnownVdfValues add(String name, VDFTreeNode.Type type) { super.add(name, type); return this; }
 			}
 			
-			void show(PrintStream out) {
-				if (isEmpty()) return;
-				Vector<String> prefixStrs = new Vector<>(keySet());
-				prefixStrs.sort(null);
-				out.printf("Optional Values: [%d blocks]%n", prefixStrs.size());
-				for (String prefixStr:prefixStrs) {
-					HashMap<String, HashSet<JSON_Data.Value.Type>> valueMap = get(prefixStr);
-					Vector<String> names = new Vector<>(valueMap.keySet());
-					names.sort(null);
-					out.printf("   Block \"%s\" [%d]%n", prefixStr, names.size());
-					for (String name:names) {
-						HashSet<JSON_Data.Value.Type> typeSet = valueMap.get(name);
-						Vector<JSON_Data.Value.Type> types = new Vector<>(typeSet);
-						types.sort(Comparator.nullsLast(Comparator.naturalOrder()));
-						for (JSON_Data.Value.Type type:types)
-							out.printf("      %s%s%n", name, type==null ? " == <null>" : ":"+type);
-					}
-				}
+			static final OptionalValues optionalValues = new OptionalValues();
+			static class OptionalValues extends HashMap<String,HashMap<String,HashSet<JSON_Data.Value.Type>>> {
+				private static final long serialVersionUID = 3844179176678445499L;
+		
+				void scan(JSON_Object<NV,V> object, String prefixStr) {
 					
+					HashMap<String, HashSet<JSON_Data.Value.Type>> valueMap = get(prefixStr);
+					boolean valueMapIsNew = false;
+					if (valueMap==null) {
+						valueMapIsNew = true;
+						put(prefixStr, valueMap=new HashMap<>());
+					}
+					
+					valueMap.forEach((name,types)->{
+						JSON_Data.Value<NV, V> value = object.getValue(name);
+						if (value==null) types.add(null);
+					});
+					
+					for (JSON_Data.NamedValue<NV,V> nvalue:object) {
+						HashSet<JSON_Data.Value.Type> types = valueMap.get(nvalue.name);
+						if (types==null) {
+							valueMap.put(nvalue.name, types=new HashSet<>());
+							if (!valueMapIsNew) types.add(null);
+						}
+						types.add(nvalue.value.type);
+					}
+				}
+				
+				void show(PrintStream out) {
+					if (isEmpty()) return;
+					Vector<String> prefixStrs = new Vector<>(keySet());
+					prefixStrs.sort(null);
+					out.printf("Optional Values: [%d blocks]%n", prefixStrs.size());
+					for (String prefixStr:prefixStrs) {
+						HashMap<String, HashSet<JSON_Data.Value.Type>> valueMap = get(prefixStr);
+						Vector<String> names = new Vector<>(valueMap.keySet());
+						names.sort(null);
+						out.printf("   Block \"%s\" [%d]%n", prefixStr, names.size());
+						for (String name:names) {
+							HashSet<JSON_Data.Value.Type> typeSet = valueMap.get(name);
+							Vector<JSON_Data.Value.Type> types = new Vector<>(typeSet);
+							types.sort(Comparator.nullsLast(Comparator.naturalOrder()));
+							for (JSON_Data.Value.Type type:types)
+								out.printf("      %s%s%n", name, type==null ? " == <null>" : ":"+type);
+						}
+					}
+						
+				}
 			}
-		}
-		
-		static void scanUnexpectedValues(JSON_Object<NV,V> object, KnownJsonValues knownValues, String prefixStr) {
-			for (JSON_Data.NamedValue<NV,V> nvalue:object)
-				if (!knownValues.contains(nvalue.name, nvalue.value.type))
-					//DevHelper.unknownValues.add(prefixStr+"."+nvalue.name+" = "+nvalue.value.type+"...");
-					unknownValues.add(prefixStr,nvalue.name,nvalue.value.type);
-		}
-		static void scanUnexpectedValues(VDFTreeNode node, KnownVdfValues knownValues, String prefixStr) {
-			node.forEach((subNode,t,n,v) -> {
-				if (!knownValues.contains(n,t))
-					unknownValues.add(prefixStr, n, t);
-			});
-		}
-
-		static final UnknownValues unknownValues = new UnknownValues();
-		static class UnknownValues extends HashSet<String> {
-			private static final long serialVersionUID = 7229990445347378652L;
 			
-			void add(String baseLabel, String name, VDFTreeNode.Type type) {
-				if (name==null) add(String.format("[VDF]%s:%s"   , baseLabel,       type==null?"<null>":type));
-				else            add(String.format("[VDF]%s.%s:%s", baseLabel, name, type==null?"<null>":type));
+			static void scanUnexpectedValues(JSON_Object<NV,V> object, KnownJsonValues knownValues, String prefixStr) {
+				for (JSON_Data.NamedValue<NV,V> nvalue:object)
+					if (!knownValues.contains(nvalue.name, nvalue.value.type))
+						//DevHelper.unknownValues.add(prefixStr+"."+nvalue.name+" = "+nvalue.value.type+"...");
+						unknownValues.add(prefixStr,nvalue.name,nvalue.value.type);
 			}
-			void add(String baseLabel, String name, JSON_Data.Value.Type type) {
-				if (name==null) add(String.format("[JSON]%s:%s"   , baseLabel,       type==null?"<null>":type));
-				else            add(String.format("[JSON]%s.%s:%s", baseLabel, name, type==null?"<null>":type));
+			static void scanUnexpectedValues(VDFTreeNode node, KnownVdfValues knownValues, String prefixStr) {
+				node.forEach((subNode,t,n,v) -> {
+					if (!knownValues.contains(n,t))
+						unknownValues.add(prefixStr, n, t);
+				});
 			}
-			void show(PrintStream out) {
-				if (isEmpty()) return;
-				Vector<String> vec = new Vector<>(this);
-				out.printf("Unknown Labels: [%d]%n", vec.size());
-				vec.sort(null);
-				for (String str:vec)
-					out.printf("   \"%s\"%n", str);
-			}
-		}
 		
-		static void scanVdfStructure(VDFTreeNode node, String nodeLabel) {
-			node.forEach((node1,t,n,v) -> {
-				unknownValues.add(nodeLabel, n, t);
-				if (t==VDFTreeNode.Type.Array)
-					scanVdfStructure(node1, nodeLabel+"."+n);
-			});
-		}
+			static final UnknownValues unknownValues = new UnknownValues();
+			static class UnknownValues extends HashSet<String> {
+				private static final long serialVersionUID = 7229990445347378652L;
+				
+				void add(String baseLabel, String name, VDFTreeNode.Type type) {
+					if (name==null) add(String.format("[VDF]%s:%s"   , baseLabel,       type==null?"<null>":type));
+					else            add(String.format("[VDF]%s.%s:%s", baseLabel, name, type==null?"<null>":type));
+				}
+				void add(String baseLabel, String name, JSON_Data.Value.Type type) {
+					if (name==null) add(String.format("[JSON]%s:%s"   , baseLabel,       type==null?"<null>":type));
+					else            add(String.format("[JSON]%s.%s:%s", baseLabel, name, type==null?"<null>":type));
+				}
+				void show(PrintStream out) {
+					if (isEmpty()) return;
+					Vector<String> vec = new Vector<>(this);
+					out.printf("Unknown Labels: [%d]%n", vec.size());
+					vec.sort(null);
+					for (String str:vec)
+						out.printf("   \"%s\"%n", str);
+				}
+			}
+			
+			static void scanVdfStructure(VDFTreeNode node, String nodeLabel) {
+				node.forEach((node1,t,n,v) -> {
+					unknownValues.add(nodeLabel, n, t);
+					if (t==VDFTreeNode.Type.Array)
+						scanVdfStructure(node1, nodeLabel+"."+n);
+				});
+			}
+			
+			static void scanJsonStructure(JSON_Data.Value<NV, V> value, String valueLabel) {
+				if (value==null) { unknownValues.add(valueLabel+" = <null>"); return; }
+				unknownValues.add(valueLabel+":"+value.type);
+				switch (value.type) {
+				case Bool: case Float: case Integer: case Null: case String: break;
+				case Object:
+					JSON_Data.ObjectValue<NV,V> objectValue = value.castToObjectValue();
+					if (objectValue==null)
+						unknownValues.add(valueLabel+":"+value.type+" is not instance of JSON_Data.ObjectValue");
+					else 
+						scanJsonStructure(objectValue.value, valueLabel);
+					break;
+				case Array:
+					JSON_Data.ArrayValue<NV,V> arrayValue = value.castToArrayValue();
+					if (arrayValue==null)
+						unknownValues.add(valueLabel+":"+value.type+" is not instance of JSON_Data.ArrayValue");
+					else
+						scanJsonStructure(arrayValue.value, valueLabel);
+					break;
+				}
+			}
 		
-		static void scanJsonStructure(JSON_Data.Value<NV, V> value, String valueLabel) {
-			if (value==null) { unknownValues.add(valueLabel+" = <null>"); return; }
-			unknownValues.add(valueLabel+":"+value.type);
-			switch (value.type) {
-			case Bool: case Float: case Integer: case Null: case String: break;
-			case Object:
-				JSON_Data.ObjectValue<NV,V> objectValue = value.castToObjectValue();
-				if (objectValue==null)
-					unknownValues.add(valueLabel+":"+value.type+" is not instance of JSON_Data.ObjectValue");
-				else 
-					scanJsonStructure(objectValue.value, valueLabel);
-				break;
-			case Array:
-				JSON_Data.ArrayValue<NV,V> arrayValue = value.castToArrayValue();
-				if (arrayValue==null)
-					unknownValues.add(valueLabel+":"+value.type+" is not instance of JSON_Data.ArrayValue");
+			static void scanJsonStructure(JSON_Object<NV,V> object, String valueLabel) {
+				if (object==null)
+					unknownValues.add(valueLabel+" (JSON_Object == <null>)");
 				else
-					scanJsonStructure(arrayValue.value, valueLabel);
-				break;
+					for (JSON_Data.NamedValue<NV, V> nval:object)
+						scanJsonStructure(nval.value, valueLabel+"."+(nval.name==null?"<null>":nval.name));
 			}
-		}
-
-		static void scanJsonStructure(JSON_Object<NV,V> object, String valueLabel) {
-			if (object==null)
-				unknownValues.add(valueLabel+" (JSON_Object == <null>)");
-			else
-				for (JSON_Data.NamedValue<NV, V> nval:object)
-					scanJsonStructure(nval.value, valueLabel+"."+(nval.name==null?"<null>":nval.name));
-		}
-
-		static void scanJsonStructure(JSON_Array<NV,V> array, String valueLabel) {
-			if (array==null)
-				unknownValues.add(valueLabel+" (JSON_Array == <null>)");
-			else
-				for (JSON_Data.Value<NV,V> val:array)
-					scanJsonStructure(val, valueLabel+"[]");
-		}
-
-		static void scanJsonStructure_OAO(
-				JSON_Data.Value<NV,V> baseValue,
-				String baseValueLabel,
-				String subArrayName,
-				Vector<String> knownValueNames,
-				Vector<String> knownSubArrayValueNames,
-				String errorPrefix,
-				File file
-		) {
-			JSON_Object<NV,V> object = null;
-			try { object = JSON_Data.getObjectValue(baseValue, errorPrefix); }
-			catch (TraverseException e) { Data.showException(e, file); }
-			if (object!=null) {
-				for (JSON_Data.NamedValue<NV,V> nvalue:object) {
-					String valueStr = nvalue.value.type+"...";
-					if (!knownValueNames.contains(nvalue.name)) valueStr = nvalue.value.toString();
-					unknownValues.add(baseValueLabel+"."+nvalue.name+" = "+valueStr);
-					if (subArrayName.equals(nvalue.name)) {
-						JSON_Array<NV,V> array = null;
-						try { array = JSON_Data.getArrayValue(nvalue.value, errorPrefix+"."+subArrayName); }
-						catch (TraverseException e) { Data.showException(e, file); }
-						if (array!=null) {
-							for (int i=0; i<array.size(); i++) {
-								JSON_Object<NV, V> object1 = null;
-								try { object1 = JSON_Data.getObjectValue(array.get(i), errorPrefix+"."+subArrayName+"["+i+"]"); }
-								catch (TraverseException e) { Data.showException(e, file); }
-								if (object1!=null) {
-									for (JSON_Data.NamedValue<NV, V> nvalue1:object1) {
-										valueStr = nvalue1.value.type+"...";
-										if (!knownSubArrayValueNames.contains(nvalue1.name)) valueStr = nvalue1.value.toString();
-										unknownValues.add(baseValueLabel+"."+"rgCards."+nvalue1.name+" = "+valueStr);
+		
+			static void scanJsonStructure(JSON_Array<NV,V> array, String valueLabel) {
+				if (array==null)
+					unknownValues.add(valueLabel+" (JSON_Array == <null>)");
+				else
+					for (JSON_Data.Value<NV,V> val:array)
+						scanJsonStructure(val, valueLabel+"[]");
+			}
+		
+			static void scanJsonStructure_OAO(
+					JSON_Data.Value<NV,V> baseValue,
+					String baseValueLabel,
+					String subArrayName,
+					Vector<String> knownValueNames,
+					Vector<String> knownSubArrayValueNames,
+					String errorPrefix,
+					File file
+			) {
+				JSON_Object<NV,V> object = null;
+				try { object = JSON_Data.getObjectValue(baseValue, errorPrefix); }
+				catch (TraverseException e) { Data.showException(e, file); }
+				if (object!=null) {
+					for (JSON_Data.NamedValue<NV,V> nvalue:object) {
+						String valueStr = nvalue.value.type+"...";
+						if (!knownValueNames.contains(nvalue.name)) valueStr = nvalue.value.toString();
+						unknownValues.add(baseValueLabel+"."+nvalue.name+" = "+valueStr);
+						if (subArrayName.equals(nvalue.name)) {
+							JSON_Array<NV,V> array = null;
+							try { array = JSON_Data.getArrayValue(nvalue.value, errorPrefix+"."+subArrayName); }
+							catch (TraverseException e) { Data.showException(e, file); }
+							if (array!=null) {
+								for (int i=0; i<array.size(); i++) {
+									JSON_Object<NV, V> object1 = null;
+									try { object1 = JSON_Data.getObjectValue(array.get(i), errorPrefix+"."+subArrayName+"["+i+"]"); }
+									catch (TraverseException e) { Data.showException(e, file); }
+									if (object1!=null) {
+										for (JSON_Data.NamedValue<NV, V> nvalue1:object1) {
+											valueStr = nvalue1.value.type+"...";
+											if (!knownSubArrayValueNames.contains(nvalue1.name)) valueStr = nvalue1.value.toString();
+											unknownValues.add(baseValueLabel+"."+"rgCards."+nvalue1.name+" = "+valueStr);
+										}
 									}
 								}
 							}
@@ -1208,19 +1173,15 @@ class TreeNodes {
 					}
 				}
 			}
+		
+			static Vector<String> strList(String...strings) {
+				return new Vector<>(Arrays.asList(strings));
+			}
 		}
-
-		static Vector<String> strList(String...strings) {
-			return new Vector<>(Arrays.asList(strings));
-		}
-	}
-
-	protected static class Data {
-
 		static void showException(JSON_Data.TraverseException e, File file) { showException("JSON_Data.TraverseException", e, file); }
 		static void showException(JSON_Parser.ParseException  e, File file) { showException("JSON_Parser.ParseException", e, file); }
 		static void showException(VDFParser.ParseException    e, File file) { showException("VDFParser.ParseException", e, file); }
-		static void showException(TreeNodes.ParseException    e, File file) { showException("TreeNodes.ParseException", e, file); }
+		static void showException(VDFTraverseException        e, File file) { showException("VDFTraverseException", e, file); }
 
 		static void showException(String prefix, Throwable e, File file) {
 			String str = String.format("%s: %s%n", prefix, e.getMessage());
@@ -1269,6 +1230,105 @@ class TreeNodes {
 			}
 		}
 
+		static final HashMap<Integer,Game> games = new HashMap<>();
+		static final HashMap<Long,Player> players = new HashMap<>();
+		static void loadData() {
+			DevHelper.unknownValues.clear();
+			DevHelper.optionalValues.clear();
+			Data.knownGameTitles.readFromFile();
+			
+			File folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
+			GameImages gameImages = null;
+			if (folder!=null && folder.isDirectory())
+				gameImages = new GameImages(folder);
+			
+			HashMap<Integer,AppManifest> appManifests = new HashMap<>();
+			KnownFolders.forEachSteamAppsFolder((i,f)->{
+				if (f!=null && f.isDirectory()) {
+					File[] files = f.listFiles(file->AppManifest.getAppIDFromFile(file)!=null);
+					for (File file:files) {
+						Integer appID = AppManifest.getAppIDFromFile(file);
+						appManifests.put(appID, new AppManifest(appID,file));
+					}
+				}
+			});
+			
+			players.clear();
+			folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.USERDATA);
+			if (folder!=null) {
+				File[] files = folder.listFiles(file->file.isDirectory() && parseLongNumber(file.getName())!=null);
+				for (File playerFolder:files) {
+					Long playerID = parseLongNumber(playerFolder.getName());
+					if (playerID==null) throw new IllegalStateException();
+					players.put(playerID, new Player(playerID,playerFolder));
+				}
+			}
+			
+			// collect all AppIDs
+			HashSet<Integer> idSet = new HashSet<>();
+			idSet.addAll(appManifests.keySet());
+			if (gameImages!=null)
+				idSet.addAll(gameImages.getGameIDs());
+			players.forEach((playerID,player)->{
+				idSet.addAll(player.steamCloudFolders.keySet());
+				if (player.screenShots!=null)
+					idSet.addAll(player.screenShots.keySet());
+			});
+			
+			
+			games.clear();
+			for (Integer appID:idSet) {
+				HashMap<String, File> imageFiles = gameImages==null ? null : gameImages.getImageFileMap(appID);
+				AppManifest appManifest = appManifests.get(appID);
+				games.put(appID, new Game(appID, appManifest, imageFiles, players));
+			}
+			
+			for (Game game:games.values())
+				if (game.title!=null)
+					Data.knownGameTitles.put(game.appID, game.title);
+			Data.knownGameTitles.writeToFile();
+			
+			DevHelper.unknownValues.show(System.err);
+			DevHelper.optionalValues.show(System.err);
+		}
+		static String getPlayerName(Long playerID) {
+			if (playerID==null) return "Player ???";
+			Player game = players.get(playerID);
+			if (game==null) return "Player "+playerID;
+			return game.getName();
+		}
+		static Icon getGameIcon(Integer gameID, TreeIcons defaultIcon) {
+			if (gameID==null) return TreeIconsIS.getCachedIcon(defaultIcon);
+			Game game = games.get(gameID);
+			if (game==null) return TreeIconsIS.getCachedIcon(defaultIcon);
+			return game.getIcon();
+		}
+		static String getGameTitle(Integer gameID) {
+			if (gameID==null) return "Game ???";
+			Game game = games.get(gameID);
+			if (game==null) return "Game "+gameID;
+			return game.getTitle();
+		}
+		static boolean hasGameATitle(Integer gameID) {
+			if (gameID==null) return false;
+			Game game = games.get(gameID);
+			if (game==null) return false;
+			return game.hasATitle();
+		}
+		static Comparator<Integer> createGameIdOrder() {
+			//return Comparator.<Integer,Game>comparing(games::get,Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
+			
+			Function<Integer,String> getTitle = gameID->{ Game game = games.get(gameID); return game==null ? null : game.title; };
+			return Comparator.<Integer,String>comparing(getTitle,Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
+			
+			//return Comparator.<Integer,Boolean>comparing(id->!hasGameATitle(id)).thenComparing(Comparator.naturalOrder());
+		}
+		static <ValueType> Comparator<Map.Entry<Integer,ValueType>> createGameIdKeyOrder() {
+			return Comparator.comparing(Map.Entry<Integer,ValueType>::getKey, createGameIdOrder());
+		}
+		static <ValueType> Comparator<Map.Entry<Long,ValueType>> createPlayerIdKeyOrder() {
+			return Comparator.comparing(Map.Entry<Long,ValueType>::getKey);
+		}
 		static class Player {
 			
 			final long playerID;
@@ -1331,7 +1391,7 @@ class TreeNodes {
 					VDFTreeNode friendsNode = localconfig.getSubNode("UserLocalConfigStore","friends");
 					if (friendsNode!=null) {
 						try { preFriends = FriendList.parse(friendsNode,playerID); }
-						catch (ParseException e) { showException(e, localconfigFile); }
+						catch (VDFTraverseException e) { showException(e, localconfigFile); }
 						if (preFriends==null)
 							preFriends = new FriendList(friendsNode);
 					}
@@ -1416,9 +1476,9 @@ class TreeNodes {
 					values = null;
 				}
 
-				public static FriendList parse(VDFTreeNode friendsNode, long playerID) throws ParseException {
-					if (friendsNode==null) throw new ParseException("FriendList: base VDFTreeNode is NULL");
-					if (friendsNode.type!=VDFTreeNode.Type.Array) throw new ParseException("FriendList: base VDFTreeNode is not an Array");
+				public static FriendList parse(VDFTreeNode friendsNode, long playerID) throws VDFTraverseException {
+					if (friendsNode==null) throw new VDFTraverseException("FriendList: base VDFTreeNode is NULL");
+					if (friendsNode.type!=VDFTreeNode.Type.Array) throw new VDFTraverseException("FriendList: base VDFTreeNode is not an Array");
 					FriendList friendList = new FriendList();
 					friendsNode.forEach((subNode, type, name, value)->{
 						switch (type) {
@@ -2951,6 +3011,44 @@ class TreeNodes {
 				return files.toArray(new File[files.size()]);
 			}
 
+			static class HashMatrix<KeyType1,KeyType2,ValueType> {
+				
+				private final HashMap<KeyType1,HashMap<KeyType2,ValueType>> matrix;
+				private final HashSet<KeyType1> keySet1;
+				private final HashSet<KeyType2> keySet2;
+				
+				HashMatrix() {
+					matrix = new HashMap<>();
+					keySet1 = new HashSet<>();
+					keySet2 = new HashSet<>();
+				}
+				
+				void put(KeyType1 key1, KeyType2 key2, ValueType value) {
+					HashMap<KeyType2, ValueType> map = matrix.get(key1);
+					if (map==null) matrix.put(key1, map = new HashMap<>());
+					map.put(key2, value);
+					keySet1.add(key1);
+					keySet2.add(key2);
+				}
+				
+				HashMap<KeyType2, ValueType> getMapCopy(KeyType1 key1) {
+					HashMap<KeyType2, ValueType> map = matrix.get(key1);
+					if (map==null) return null;
+					return new HashMap<>(map);
+				}
+				
+				Collection<ValueType> getCollection(KeyType1 key1) {
+					HashMap<KeyType2, ValueType> map = matrix.get(key1);
+					return map.values();
+				}
+				
+				ValueType get(KeyType1 key1, KeyType2 key2) {
+					HashMap<KeyType2, ValueType> map = matrix.get(key1);
+					if (map==null) return null;
+					return map.get(key2);
+				}
+			}
+
 			static class ImageFileName {
 			
 				private final Integer number;
@@ -3084,121 +3182,14 @@ class TreeNodes {
 			}
 		}
 		
-		static final HashMap<Integer,Game> games = new HashMap<>();
-		static final HashMap<Long,Player> players = new HashMap<>();
-
-		static void loadData() {
-			DevHelper.unknownValues.clear();
-			DevHelper.optionalValues.clear();
-			Data.knownGameTitles.readFromFile();
-			
-			File folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
-			GameImages gameImages = null;
-			if (folder!=null && folder.isDirectory())
-				gameImages = new GameImages(folder);
-			
-			HashMap<Integer,AppManifest> appManifests = new HashMap<>();
-			KnownFolders.forEachSteamAppsFolder((i,f)->{
-				if (f!=null && f.isDirectory()) {
-					File[] files = f.listFiles(file->AppManifest.getAppIDFromFile(file)!=null);
-					for (File file:files) {
-						Integer appID = AppManifest.getAppIDFromFile(file);
-						appManifests.put(appID, new AppManifest(appID,file));
-					}
-				}
-			});
-			
-			players.clear();
-			folder = KnownFolders.getSteamClientSubFolder(KnownFolders.SteamClientSubFolders.USERDATA);
-			if (folder!=null) {
-				File[] files = folder.listFiles(file->file.isDirectory() && parseLongNumber(file.getName())!=null);
-				for (File playerFolder:files) {
-					Long playerID = parseLongNumber(playerFolder.getName());
-					if (playerID==null) throw new IllegalStateException();
-					players.put(playerID, new Player(playerID,playerFolder));
-				}
-			}
-			
-			// collect all AppIDs
-			HashSet<Integer> idSet = new HashSet<>();
-			idSet.addAll(appManifests.keySet());
-			if (gameImages!=null)
-				idSet.addAll(gameImages.getGameIDs());
-			players.forEach((playerID,player)->{
-				idSet.addAll(player.steamCloudFolders.keySet());
-				if (player.screenShots!=null)
-					idSet.addAll(player.screenShots.keySet());
-			});
-			
-			
-			games.clear();
-			for (Integer appID:idSet) {
-				HashMap<String, File> imageFiles = gameImages==null ? null : gameImages.getImageFileMap(appID);
-				AppManifest appManifest = appManifests.get(appID);
-				games.put(appID, new Game(appID, appManifest, imageFiles, players));
-			}
-			
-			for (Game game:games.values())
-				if (game.title!=null)
-					Data.knownGameTitles.put(game.appID, game.title);
-			Data.knownGameTitles.writeToFile();
-			
-			DevHelper.unknownValues.show(System.err);
-			DevHelper.optionalValues.show(System.err);
-		}
-
-		private static String getPlayerName(Long playerID) {
-			if (playerID==null) return "Player ???";
-			Player game = players.get(playerID);
-			if (game==null) return "Player "+playerID;
-			return game.getName();
-		}
-
-		private static Icon getGameIcon(Integer gameID, TreeIcons defaultIcon) {
-			if (gameID==null) return TreeIconsIS.getCachedIcon(defaultIcon);
-			Game game = games.get(gameID);
-			if (game==null) return TreeIconsIS.getCachedIcon(defaultIcon);
-			return game.getIcon();
-		}
-
-		private static String getGameTitle(Integer gameID) {
-			if (gameID==null) return "Game ???";
-			Game game = games.get(gameID);
-			if (game==null) return "Game "+gameID;
-			return game.getTitle();
-		}
-
-		@SuppressWarnings("unused")
-		private static boolean hasGameATitle(Integer gameID) {
-			if (gameID==null) return false;
-			Game game = games.get(gameID);
-			if (game==null) return false;
-			return game.hasATitle();
-		}
-		
-		private static Comparator<Integer> createGameIdOrder() {
-			//return Comparator.<Integer,Game>comparing(games::get,Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
-			
-			Function<Integer,String> getTitle = gameID->{ Game game = games.get(gameID); return game==null ? null : game.title; };
-			return Comparator.<Integer,String>comparing(getTitle,Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
-			
-			//return Comparator.<Integer,Boolean>comparing(id->!hasGameATitle(id)).thenComparing(Comparator.naturalOrder());
-		}
-		private static <ValueType> Comparator<Map.Entry<Integer,ValueType>> createGameIdKeyOrder() {
-			return Comparator.comparing(Map.Entry<Integer,ValueType>::getKey, createGameIdOrder());
-		}
-		private static <ValueType> Comparator<Map.Entry<Long,ValueType>> createPlayerIdKeyOrder() {
-			return Comparator.comparing(Map.Entry<Long,ValueType>::getKey);
-		}
-
 		private static TreeNode createGameScreenShotsNode(TreeNode parent, Long id, ScreenShotLists.ScreenShotList screenShots) {
-			return createGameScreenShotsNode(parent, "by "+getPlayerName(id), screenShots, null);
+			return createGameScreenShotsNode(parent, "by "+Data.getPlayerName(id), screenShots, null);
 		}
 		private static TreeNode createGameScreenShotsNode(TreeNode parent, Integer gameID, ScreenShotLists.ScreenShotList screenShots) {
-			GroupingNode<ScreenShot> node = createGameScreenShotsNode(parent, getGameTitle(gameID), screenShots, getGameIcon(gameID,TreeIcons.ImageFile));
+			GroupingNode<ScreenShot> node = createGameScreenShotsNode(parent, Data.getGameTitle(gameID), screenShots, Data.getGameIcon(gameID,TreeIcons.ImageFile));
 			gameChangeListeners.add(gameID, new GameChangeListener() {
 				@Override public TreeNode getTreeNode() { return node; }
-				@Override public void gameTitleWasChanged() { node.setTitle(getGameTitle(gameID)); }
+				@Override public void gameTitleWasChanged() { node.setTitle(Data.getGameTitle(gameID)); }
 			});
 			return node;
 		}
@@ -3215,8 +3206,8 @@ class TreeNodes {
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
-				children.add(GroupingNode.create(this, "Games"  , games  , Comparator.<Game>naturalOrder()                      , GameNode  ::new));
-				children.add(GroupingNode.create(this, "Players", players, Comparator.comparing(Map.Entry<Long, Player>::getKey), PlayerNode::new));
+				children.add(GroupingNode.create(this, "Games"  , Data.games  , Comparator.<Game>naturalOrder()                      , GameNode  ::new));
+				children.add(GroupingNode.create(this, "Players", Data.players, Comparator.comparing(Map.Entry<Long, Player>::getKey), PlayerNode::new));
 				return children;
 			}
 		}
@@ -3243,23 +3234,23 @@ class TreeNodes {
 					children.add(new FileSystem.AppManifestNode(this, game.appManifest.file));
 				}
 				if (!game.gameInfos.isEmpty()) {
-					children.add(GroupingNode.create(this, "Game Infos", game.gameInfos, createPlayerIdKeyOrder(), GameInfosNode::new));
+					children.add(GroupingNode.create(this, "Game Infos", game.gameInfos, Data.createPlayerIdKeyOrder(), GameInfosNode::new));
 				}
 				if (!game.achievementProgress.isEmpty()) {
-					children.add(GroupingNode.create(this, "Achievement Progress", game.achievementProgress, createPlayerIdKeyOrder(), AchievementProgressNode.AchievementProgressInGameNode::new));
+					children.add(GroupingNode.create(this, "Achievement Progress", game.achievementProgress, Data.createPlayerIdKeyOrder(), AchievementProgressNode.AchievementProgressInGameNode::new));
 				}
 				if (game.imageFiles!=null && !game.imageFiles.isEmpty()) {
 					children.add(new FileSystem.FolderNode(this, "Images", game.imageFiles.values(), TreeIcons.ImageFile));
 				}
 				if (game.screenShots!=null && !game.screenShots.isEmpty()) {
-					children.add(GroupingNode.create(this, "ScreenShots", game.screenShots, createPlayerIdKeyOrder(), PlayersNGames::createGameScreenShotsNode, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile)));
+					children.add(GroupingNode.create(this, "ScreenShots", game.screenShots, Data.createPlayerIdKeyOrder(), PlayersNGames::createGameScreenShotsNode, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile)));
 					//children.add(new ScreenShotsNode<>(this,game.screenShots,id->String.format("by %s", getPlayerName(id)),Comparator.<Long>naturalOrder()));
 				}
 				if (game.steamCloudFolders!=null && !game.steamCloudFolders.isEmpty()) {
 					HashMap<File,String> folderLabels = new HashMap<>();
-					game.steamCloudFolders.forEach((playerID,folder)->folderLabels.put(folder, String.format("by %s", getPlayerName(playerID))));
+					game.steamCloudFolders.forEach((playerID,folder)->folderLabels.put(folder, String.format("by %s", Data.getPlayerName(playerID))));
 					
-					Stream<Map.Entry<Long, File>> sorted = game.steamCloudFolders.entrySet().stream().sorted(createPlayerIdKeyOrder());
+					Stream<Map.Entry<Long, File>> sorted = game.steamCloudFolders.entrySet().stream().sorted(Data.createPlayerIdKeyOrder());
 					File[] files = sorted.map(Map.Entry<Long,File>::getValue).toArray(File[]::new);
 					//Collection<File> files = game.gameDataFolders.values();
 					
@@ -3292,11 +3283,11 @@ class TreeNodes {
 				
 				GroupingNode<?> groupingNode;
 				if (player.steamCloudFolders!=null && !player.steamCloudFolders.isEmpty()) {
-					children.add(groupingNode = GroupingNode.create(this, "SteamCloud Shared Data", player.steamCloudFolders, createGameIdKeyOrder(), this::createSteamCloudFolderNode));
+					children.add(groupingNode = GroupingNode.create(this, "SteamCloud Shared Data", player.steamCloudFolders, Data.createGameIdKeyOrder(), this::createSteamCloudFolderNode));
 					groupingNode.setFileSource(player.folder, null);
 				}
 				if (player.screenShots!=null && !player.screenShots.isEmpty()) {
-					children.add(groupingNode = GroupingNode.create(this, "ScreenShots", player.screenShots, createGameIdKeyOrder(), PlayersNGames::createGameScreenShotsNode, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile)));
+					children.add(groupingNode = GroupingNode.create(this, "ScreenShots", player.screenShots, Data.createGameIdKeyOrder(), PlayersNGames::createGameScreenShotsNode, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile)));
 					groupingNode.setFileSource(player.screenShots.folder, null);
 					//children.add(new ScreenShotsNode<Integer>(this,player.screenShots,id->getGameTitle(id),id->getGameIcon(id,TreeIcons.ImageFile),gameIdOrder));
 				}
@@ -3311,7 +3302,7 @@ class TreeNodes {
 				}
 				if (!player.gameInfos.isEmpty()) {
 					GroupingNode<Map.Entry<Integer, GameInfos>> groupingNode1;
-					children.add(groupingNode1 = GroupingNode.create(this, "Game Infos", player.gameInfos, createGameIdKeyOrder(), GameInfosNode::new));
+					children.add(groupingNode1 = GroupingNode.create(this, "Game Infos", player.gameInfos, Data.createGameIdKeyOrder(), GameInfosNode::new));
 					groupingNode1.setFileSource(player.gameStateFolder, null);
 					groupingNode1.setFilter(GroupingNode.createMapFilter(GameInfosFilterOptions.class, GameInfosFilterOptions.values(), GameInfosFilterOptions::cast, GameInfos::meetsFilterOption));
 				}
@@ -3320,10 +3311,10 @@ class TreeNodes {
 			}
 
 			private FolderNode createSteamCloudFolderNode(TreeNode parent, Integer gameID, File file) {
-				FileSystem.FolderNode node = new FileSystem.FolderNode(parent, getGameTitle(gameID), file, getGameIcon(gameID, TreeIcons.Folder));
+				FileSystem.FolderNode node = new FileSystem.FolderNode(parent, Data.getGameTitle(gameID), file, Data.getGameIcon(gameID, TreeIcons.Folder));
 				gameChangeListeners.add(gameID, new GameChangeListener() {
 					@Override public TreeNode getTreeNode() { return node; }
-					@Override public void gameTitleWasChanged() { node.setTitle(getGameTitle(gameID)); }
+					@Override public void gameTitleWasChanged() { node.setTitle(Data.getGameTitle(gameID)); }
 				});
 				return node;
 			}
@@ -3454,7 +3445,7 @@ class TreeNodes {
 					children.add( new RawJsonDataNode(this, "Raw JSON Data", data.rawData, data.file) );
 				if (data.gameStates!=null) {
 					Vector<Integer> vec = new Vector<>(data.gameStates.keySet());
-					vec.sort(createGameIdOrder());
+					vec.sort(Data.createGameIdOrder());
 					for (Integer gameID:vec)
 						children.add(new AchievementProgressInGameNode(this,gameID,data.gameStates.get(gameID)));
 				}
@@ -3471,15 +3462,15 @@ class TreeNodes {
 				private final AchievementProgressInGame progress;
 
 				public AchievementProgressInGameNode(TreeNode parent, Long playerID, AchievementProgressInGame progress) {
-					super(parent,"by "+getPlayerName(playerID),true,false);
+					super(parent,"by "+Data.getPlayerName(playerID),true,false);
 					this.progress = progress;
 				}
 				public AchievementProgressInGameNode(TreeNode parent, Integer gameID, AchievementProgressInGame gameStatus) {
-					super(parent,getGameTitle(gameID),true,false,getGameIcon(gameID, TreeIcons.Folder));
+					super(parent,Data.getGameTitle(gameID),true,false,Data.getGameIcon(gameID, TreeIcons.Folder));
 					if (gameStatus!=null) {
 						gameChangeListeners.add(gameID, new GameChangeListener() {
 							@Override public TreeNode getTreeNode() { return AchievementProgressInGameNode.this; }
-							@Override public void gameTitleWasChanged() { setTitle(getGameTitle(gameID)); }
+							@Override public void gameTitleWasChanged() { setTitle(Data.getGameTitle(gameID)); }
 						});
 					}
 					this.progress = gameStatus;
@@ -3530,14 +3521,14 @@ class TreeNodes {
 			private final GameInfos data;
 
 			GameInfosNode(TreeNode parent, Long playerID, GameInfos gameInfos) {
-				super(parent, "by "+getPlayerName(playerID)+generateExtraInfo(gameInfos), true, false);
+				super(parent, "by "+Data.getPlayerName(playerID)+generateExtraInfo(gameInfos), true, false);
 				this.data = gameInfos;
 			}
 			GameInfosNode(TreeNode parent, Integer gameID, GameInfos gameInfos) {
-				super(parent, getGameTitle(gameID)+generateExtraInfo(gameInfos), true, false, generateMergedIcon( getGameIcon(gameID, TreeIcons.Folder), gameInfos ));
+				super(parent, Data.getGameTitle(gameID)+generateExtraInfo(gameInfos), true, false, generateMergedIcon( Data.getGameIcon(gameID, TreeIcons.Folder), gameInfos ));
 				gameChangeListeners.add(gameID, new GameChangeListener() {
 					@Override public TreeNode getTreeNode() { return GameInfosNode.this; }
-					@Override public void gameTitleWasChanged() { setTitle(getGameTitle(gameID)+generateExtraInfo(gameInfos)); }
+					@Override public void gameTitleWasChanged() { setTitle(Data.getGameTitle(gameID)+generateExtraInfo(gameInfos)); }
 				});
 				this.data = gameInfos;
 			}
@@ -3632,7 +3623,7 @@ class TreeNodes {
 
 				private static Icon getIcon(CommunityItem communityItem) {
 					if (communityItem.hasParsedData)
-						return getGameIcon((int) communityItem.appID, null);
+						return Data.getGameIcon((int) communityItem.appID, null);
 					return null;
 				}
 

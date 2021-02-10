@@ -154,7 +154,7 @@ class SteamInspector {
 	enum TreeType {
 		FilesNFolders("Discovered Folders, Some Simple Extracts", TreeNodes.FileSystem.Root::new, false),
 		GamesNPlayers("Discovered Players & Games", ()-> {
-			TreeNodes.PlayersNGames.loadData();
+			TreeNodes.Data.loadData();
 			return new TreeNodes.PlayersNGames.Root();
 		}, true),
 		;
@@ -1036,7 +1036,7 @@ class SteamInspector {
 			if (clickedNode instanceof TreeNode) {
 				TreeNode treeNode = (TreeNode) clickedNode;
 				Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
-				TreeNodes.Data.Game game = TreeNodes.PlayersNGames.games.get(gameID);
+				TreeNodes.Data.Game game = TreeNodes.Data.games.get(gameID);
 				miSetTitle.setEnabled(gameID!=null && (game==null || !game.hasATitle()));
 				if (gameID!=null) {
 					String currentTitle = TreeNodes.Data.knownGameTitles.get(gameID);
