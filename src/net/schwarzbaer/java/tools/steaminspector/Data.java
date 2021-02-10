@@ -36,7 +36,6 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Data.TraverseException;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.FilterOption;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileNameNExt;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.ImageFile;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;
 
@@ -333,7 +332,7 @@ class Data {
 					if (pos>0) {
 						String gameIDStr = line.substring(0, pos);
 						String gameTitle = line.substring(pos+1);
-						Integer gameID = TreeNodes.parseNumber(gameIDStr);
+						Integer gameID = parseNumber(gameIDStr);
 						if (gameID!=null)
 							put(gameID,gameTitle);
 					}
@@ -386,9 +385,9 @@ class Data {
 		players.clear();
 		folder = SteamInspector.KnownFolders.getSteamClientSubFolder(SteamInspector.KnownFolders.SteamClientSubFolders.USERDATA);
 		if (folder!=null) {
-			File[] files = folder.listFiles(file->file.isDirectory() && TreeNodes.parseLongNumber(file.getName())!=null);
+			File[] files = folder.listFiles(file->file.isDirectory() && parseLongNumber(file.getName())!=null);
 			for (File playerFolder:files) {
-				Long playerID = TreeNodes.parseLongNumber(playerFolder.getName());
+				Long playerID = parseLongNumber(playerFolder.getName());
 				if (playerID==null) throw new IllegalStateException();
 				players.put(playerID, new Player(playerID,playerFolder));
 			}
@@ -459,6 +458,25 @@ class Data {
 	static <ValueType> Comparator<Map.Entry<Long,ValueType>> createPlayerIdKeyOrder() {
 		return Comparator.comparing(Map.Entry<Long,ValueType>::getKey);
 	}
+	
+	static Integer parseNumber(String name) {
+		try {
+			int n = Integer.parseInt(name);
+			if (name.equals(Integer.toString(n))) return n;
+		}
+		catch (NumberFormatException e) {}
+		return null;
+	}
+	
+	static Long parseLongNumber(String name) {
+		try {
+			long n = Long.parseLong(name);
+			if (name.equals(Long.toString(n))) return n;
+		}
+		catch (NumberFormatException e) {}
+		return null;
+	}
+	
 	static class Player {
 		
 		final long playerID;
@@ -477,12 +495,12 @@ class Data {
 			this.playerID = playerID;
 			this.folder = folder;
 			
-			File[] gameNumberFolders = folder.listFiles(file->file.isDirectory() && TreeNodes.parseNumber(file.getName())!=null);
+			File[] gameNumberFolders = folder.listFiles(file->file.isDirectory() && parseNumber(file.getName())!=null);
 			steamCloudFolders = new HashMap<Integer,File>();
 			for (File subFolder:gameNumberFolders) {
 				String name = subFolder.getName();
 				if (!name.equals("7") && !name.equals("760")) {
-					Integer gameID = TreeNodes.parseNumber(name);
+					Integer gameID = parseNumber(name);
 					steamCloudFolders.put(gameID, subFolder);
 				}
 			}
@@ -553,7 +571,7 @@ class Data {
 									}
 								}
 								
-							} else if ((gameID=TreeNodes.parseNumber(fileNameNExt.name))!=null) {
+							} else if ((gameID=parseNumber(fileNameNExt.name))!=null) {
 								// \config\librarycache\1465680.json
 								JSON_Data.Value<Data.NV, Data.V> result = null;
 								try { result = JSONHelper.parseJsonFile(file); }
@@ -643,7 +661,7 @@ class Data {
 
 				public Friend(String idStr, VDFTreeNode node) {
 					this.idStr = idStr;
-					this.id = TreeNodes.parseLongNumber(idStr);
+					this.id = parseLongNumber(idStr);
 					this.rawData = null;
 					//this.rawData = node;
 					//DevHelper.scanVdfStructure(node,"Friend");
@@ -656,7 +674,7 @@ class Data {
 						nameHistory = new HashMap<Integer,String>();
 						arrayNode.forEach((subNode,t,n,v) -> {
 							if (t==VDFTreeNode.Type.String) {
-								Integer index = TreeNodes.parseNumber(n);
+								Integer index = parseNumber(n);
 								if (index!=null && v!=null) {
 									nameHistory.put(index,v);
 									return;
@@ -715,7 +733,7 @@ class Data {
 						progress = new AchievementProgressInGame(nv);
 					}
 					
-					Integer gameID = TreeNodes.parseNumber(nv.name);
+					Integer gameID = parseNumber(nv.name);
 					if (gameID==null && progress.hasParsedData)
 						gameID = (int) progress.appID;
 					
@@ -2101,7 +2119,7 @@ class Data {
 				if (file.isDirectory()) {
 					otherFiles.add(file);
 					
-				} else if (ImageFile.is(file)) {
+				} else if (TreeNodes.isImageFile(file)) {
 					GameImages.ImageFileName ifn = ImageFileName.parse(file.getName());
 					if (ifn==null || ifn.label==null || ifn.number==null)
 						imageFiles.add(file);
@@ -2197,7 +2215,7 @@ class Data {
 				if (pos<0) return null;
 				String numberStr = name.substring(0, pos);
 				String labelStr  = name.substring(pos+1);
-				Integer number = TreeNodes.parseNumber(numberStr);
+				Integer number = parseNumber(numberStr);
 				if (number==null) return null;
 				return new ImageFileName(number,labelStr);
 			}
@@ -2213,9 +2231,9 @@ class Data {
 			File subFolder = new File(folder,"remote");
 			if (subFolder.isDirectory()) {
 				this.folder = subFolder;
-				File[] folders = subFolder.listFiles(file->file.isDirectory() && TreeNodes.parseNumber(file.getName())!=null);
+				File[] folders = subFolder.listFiles(file->file.isDirectory() && parseNumber(file.getName())!=null);
 				for (File gameFolder:folders) {
-					Integer gameID = TreeNodes.parseNumber(gameFolder.getName());
+					Integer gameID = parseNumber(gameFolder.getName());
 					File imagesFolder = new File(gameFolder,"screenshots");
 					if (imagesFolder.isDirectory()) {
 						File thumbnailsFolder = new File(imagesFolder,"thumbnails");

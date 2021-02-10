@@ -60,7 +60,7 @@ import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShotLists;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteFileSource;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExtendedTextFileSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteBasedTextFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerInfo;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageNTextContentSource;
@@ -71,7 +71,7 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextM
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.FilterOption;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.FilterableNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.URLBasedNode;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedTextFileSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedByteBasedTextFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
@@ -133,24 +133,6 @@ class TreeNodes {
 			return file.isFile();
 		});
 		return files;
-	}
-	
-	static Integer parseNumber(String name) {
-		try {
-			int n = Integer.parseInt(name);
-			if (name.equals(Integer.toString(n))) return n;
-		}
-		catch (NumberFormatException e) {}
-		return null;
-	}
-	
-	static Long parseLongNumber(String name) {
-		try {
-			long n = Long.parseLong(name);
-			if (name.equals(Long.toString(n))) return n;
-		}
-		catch (NumberFormatException e) {}
-		return null;
 	}
 
 	static BufferedImage createImageOfMessage(String message, int width, int height, Color textColor) {
@@ -526,7 +508,7 @@ class TreeNodes {
 		}
 	}
 	
-	static class UrlNode extends SimpleTextNode implements ExternViewableNode, URLBasedNode {
+	private static class UrlNode extends SimpleTextNode implements ExternViewableNode, URLBasedNode {
 		
 		protected final String url;
 		
@@ -542,7 +524,7 @@ class TreeNodes {
 		@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
 	}
 	
-	static class ImageUrlNode extends UrlNode implements ImageContentSource {
+	private static class ImageUrlNode extends UrlNode implements ImageContentSource {
 		
 		ImageUrlNode(TreeNode parent, String label, String  url) {
 			super(parent, TreeIconsIS.getCachedIcon(TreeIcons.ImageFile), label, url);
@@ -552,7 +534,7 @@ class TreeNodes {
 		@Override public BufferedImage getContentAsImage() { return readImageFromURL(url,"image"); }
 	}
 	
-	static class Base64ImageNode extends SimpleTextNode implements ImageContentSource {
+	private static class Base64ImageNode extends SimpleTextNode implements ImageContentSource {
 		
 		private final String base64Data;
 
@@ -565,7 +547,7 @@ class TreeNodes {
 		@Override public BufferedImage getContentAsImage() { return createImageFromBase64(base64Data); }
 	}
 	
-	static class PrimitiveValueNode extends SimpleTextNode {
+	private static class PrimitiveValueNode extends SimpleTextNode {
 		PrimitiveValueNode(TreeNode parent, String label, boolean value) { super(parent, "%s: "+  "%s"  , label, value); }
 		PrimitiveValueNode(TreeNode parent, String label, int     value) { super(parent, "%s: "+  "%d"  , label, value); }
 		PrimitiveValueNode(TreeNode parent, String label, long    value) { super(parent, "%s: "+  "%d"  , label, value); }
@@ -740,7 +722,7 @@ class TreeNodes {
 			}
 		}
 		
-		static class GameNode extends BaseTreeNode<TreeNode,TreeNode> {
+		private static class GameNode extends BaseTreeNode<TreeNode,TreeNode> {
 		
 			private final Game game;
 		
@@ -789,7 +771,7 @@ class TreeNodes {
 			}
 		}
 
-		static class PlayerNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode {
+		private static class PlayerNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode {
 
 			//private long playerID;
 			private Player player;
@@ -848,7 +830,7 @@ class TreeNodes {
 			}
 		}
 		
-		static class FriendListNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, TextContentSource {
+		private static class FriendListNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, TextContentSource {
 
 			private final FriendList data;
 			private final File localconfigFile;
@@ -939,7 +921,7 @@ class TreeNodes {
 			}
 		}
 		
-		static class AchievementProgressNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, TreeContentSource {
+		private static class AchievementProgressNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, TreeContentSource {
 			
 			private final AchievementProgress data;
 
@@ -1044,7 +1026,7 @@ class TreeNodes {
 			}
 		}
 		
-		static class GameInfosNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, TreeContentSource {
+		private static class GameInfosNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, TreeContentSource {
 			
 			private final GameInfos data;
 
@@ -1466,7 +1448,7 @@ class TreeNodes {
 			}
 		}
 
-		static class ScreenShotNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, ImageContentSource {
+		private static class ScreenShotNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, ImageContentSource {
 			
 			private final ScreenShot screenShot;
 			ScreenShotNode(TreeNode parent, ScreenShot screenShot) {
@@ -1492,6 +1474,11 @@ class TreeNodes {
 	}
 	
 	static class FileSystem {
+		
+		@SuppressWarnings("unused")
+		private static Icon getIconForFile(String filename) {
+			return new JFileChooser().getIcon(new File(filename));
+		}
 		
 		static class Root extends BaseTreeNode<TreeNode,TreeNode> {
 		
@@ -1540,7 +1527,7 @@ class TreeNodes {
 		
 		}
 
-		static class GameImagesRoot extends BaseTreeNode<TreeNode,TreeNode> {
+		private static class GameImagesRoot extends BaseTreeNode<TreeNode,TreeNode> {
 		
 			private File folder;
 
@@ -1622,7 +1609,7 @@ class TreeNodes {
 			}
 		}
 
-		static class AppManifestsRoot extends BaseTreeNode<TreeNode,TreeNode> {
+		private static class AppManifestsRoot extends BaseTreeNode<TreeNode,TreeNode> {
 		
 			private final File folder;
 			private final Vector<File> folders;
@@ -1659,7 +1646,7 @@ class TreeNodes {
 			
 		}
 
-		static class FolderRoot extends FolderNode {
+		private static class FolderRoot extends FolderNode {
 			private final String rootTitle;
 			
 			FolderRoot(TreeNode parent, String rootTitle, File folder) {
@@ -1669,6 +1656,7 @@ class TreeNodes {
 				super(parent, folder, icon);
 				this.rootTitle = rootTitle;
 			}
+			@SuppressWarnings("unused")
 			FolderRoot(TreeNode parent, String rootTitle, Vector<File> folders) {
 				this(parent, rootTitle, folders, null);
 			}
@@ -1682,10 +1670,11 @@ class TreeNodes {
 			}
 		}
 
-		static abstract class FileSystemNode extends BaseTreeNode<TreeNode,FileSystemNode> implements FileBasedNode {
+		private static abstract class FileSystemNode extends BaseTreeNode<TreeNode,FileSystemNode> implements FileBasedNode {
 			
 			protected final File fileObj;
 			
+			@SuppressWarnings("unused")
 			protected FileSystemNode(TreeNode parent, File file, String title, boolean allowsChildren, boolean isLeaf) {
 				this(parent, file, title, allowsChildren, isLeaf, (Icon)null);
 			}
@@ -1702,7 +1691,7 @@ class TreeNodes {
 			}
 		}
 
-		static class FolderNode extends FileSystemNode {
+		protected static class FolderNode extends FileSystemNode {
 			
 			protected final File[] files;
 			protected final boolean keepFileOrder;
@@ -1770,7 +1759,7 @@ class TreeNodes {
 			static void sortFiles(File[] files) {
 				//Comparator<String> fileNameAsNumber = Comparator.comparing(FolderNode::parseNumber, Comparator.nullsLast(Comparator.naturalOrder()));
 				//Comparator<String> fileNameComparator = fileNameAsNumber.thenComparing(String::toLowerCase);
-				Comparator<FileNameNExt> splitted = Comparator.comparing((FileNameNExt sfn)->parseNumber(sfn.name), Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
+				Comparator<FileNameNExt> splitted = Comparator.comparing((FileNameNExt sfn)->Data.parseNumber(sfn.name), Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
 				Comparator<String> fileNameComparator = Comparator.comparing(FileNameNExt::create, splitted);
 				Comparator<File> fileComparator = Comparator.comparing(File::isFile).thenComparing(File::getName, fileNameComparator);
 				Arrays.sort(files,fileComparator);
@@ -1791,42 +1780,50 @@ class TreeNodes {
 				Vector<FileSystemNode> children = new Vector<>();
 				
 				for (File file:files) {
-					if (file.isDirectory()) {
-						
-						String title = getNodeTitle!=null ? getNodeTitle.apply(file) : null;
-						
-						Icon icon = getNodeIcon!=null ? getNodeIcon.apply(file) : null;
-						if (icon==null) icon = TreeIconsIS.getCachedIcon(TreeIcons.Folder);
-						
-						children.add(new FolderNode(parent, title, file, icon));
-						
-					} else if (file.isFile()) {
-						
-						if (TextFile.is(file))
-							children.add(new TextFile(parent, file));
-						
-						else if (VDF_File.is(file))
-							children.add(new VDF_File(parent, file));
-						
-						else if (JSON_File.is(file))
-							children.add(new JSON_File(parent, file));
-						
-						else if (AppManifestNode.is(file))
-							children.add(new AppManifestNode(parent, file));
-						
-						else if (ImageFile.is(file))
-							children.add(new ImageFile(parent, file));
-							
-						else
-							children.add(new FileNode(parent, file));
-					}
+					FileSystemNode node = createNode(parent, file, getNodeTitle, getNodeIcon);
+					if (node!=null) children.add(node);
 				}
 				
 				return children;
 			}
+			static FileSystemNode createNode(TreeNode parent, File file, Function<File, String> getNodeTitle, Function<File, Icon> getNodeIcon) {
+				FileSystemNode node;
+				if (file.isDirectory()) {
+					
+					String title = getNodeTitle!=null ? getNodeTitle.apply(file) : null;
+					
+					Icon icon = getNodeIcon!=null ? getNodeIcon.apply(file) : null;
+					if (icon==null) icon = TreeIconsIS.getCachedIcon(TreeIcons.Folder);
+					
+					node = new FolderNode(parent, title, file, icon);
+					
+				} else if (file.isFile()) {
+					
+					if (TextFile.is(file)) {
+						node = new TextFile(parent, file);
+						
+					} else if (VDF_File.is(file)) {
+						node = new VDF_File(parent, file);
+						
+					} else if (JSON_File.is(file)) {
+						node = new JSON_File(parent, file);
+						
+					} else if (AppManifestNode.is(file)) {
+						node = new AppManifestNode(parent, file);
+						
+					} else if (ImageFile.is(file)) {
+						node = new ImageFile(parent, file);
+						
+					} else {
+						node = new FileNode(parent, file);
+					}
+				} else
+					node = null;
+				return node;
+			}
 		}
 
-		static class FileNode extends FileSystemNode implements ByteFileSource, ExternViewableNode {
+		private static class FileNode extends FileSystemNode implements ByteFileSource, ExternViewableNode {
 		
 			protected byte[] byteContent;
 			private final ExternalViewerInfo externalViewerInfo;
@@ -1844,10 +1841,6 @@ class TreeNodes {
 			
 			@Override public boolean isLarge() { return getFileSize()>400000; }
 			@Override public long getFileSize() { return fileObj.length(); }
-			
-			static Icon getIconForFile(String filename) {
-				return new JFileChooser().getIcon(new File(filename));
-			}
 
 			@Override
 			public String toString() {
@@ -1880,7 +1873,7 @@ class TreeNodes {
 			}
 		}
 
-		static class ImageFile extends FileNode implements ImageContentSource {
+		private static class ImageFile extends FileNode implements ImageContentSource {
 			
 			private BufferedImage imageContent;
 
@@ -1913,7 +1906,7 @@ class TreeNodes {
 			}
 		}
 
-		static class TextFile extends FileNode implements ExtendedTextFileSource {
+		private static class TextFile extends FileNode implements ByteBasedTextFileSource {
 			
 			protected final Charset charset;
 			protected String textContent;
@@ -1944,7 +1937,7 @@ class TreeNodes {
 			}
 		}
 		
-		static class JSON_File extends TextFile implements ParsedTextFileSource {
+		private static class JSON_File extends TextFile implements ParsedByteBasedTextFileSource {
 			
 			private JSON_Data.Value<Data.NV,Data.V> parseResult;
 
@@ -1984,7 +1977,7 @@ class TreeNodes {
 			}
 		}
 
-		static class VDF_File extends TextFile implements ParsedTextFileSource {
+		private static class VDF_File extends TextFile implements ParsedByteBasedTextFileSource {
 			
 			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
 			private VDFParser.Data vdfData;
@@ -2021,7 +2014,7 @@ class TreeNodes {
 			}
 		}
 
-		static class AppManifestNode extends VDF_File {
+		private static class AppManifestNode extends VDF_File {
 			
 			private final int id;
 		

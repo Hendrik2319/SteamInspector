@@ -77,7 +77,6 @@ import javax.swing.tree.TreeSelectionModel;
 import net.schwarzbaer.gui.ImageView;
 import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AppSettings.ValueKey;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FilePromise;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.LabeledFile;
 import net.schwarzbaer.system.ClipboardTools;
@@ -139,13 +138,13 @@ class SteamInspector {
 		}
 
 		static File[] getSteamLibraryFolders() {
-			ValueKey key = SteamInspector.AppSettings.ValueKey.SteamLibraryFolders;
-			return SteamInspector.settings.getFiles(key);
+			AppSettings.ValueKey key = AppSettings.ValueKey.SteamLibraryFolders;
+			return settings.getFiles(key);
 		}
 
 		static File getSteamClientFolder() {
-			ValueKey folderKey = SteamInspector.AppSettings.ValueKey.SteamClientFolder;
-			return SteamInspector.settings.getFile(folderKey, null);
+			AppSettings.ValueKey folderKey = AppSettings.ValueKey.SteamClientFolder;
+			return settings.getFile(folderKey, null);
 		}
 	}
 	
@@ -184,7 +183,7 @@ class SteamInspector {
 	private final OutputDummy outputDummy;
 	private FileContentOutput lastFileContentOutput;
 	
-	SteamInspector() {
+	private SteamInspector() {
 		hexTableOutput     = new CombinedOutput(BaseTreeNode.ContentType.Bytes);
 		plainTextOutput    = new CombinedOutput(BaseTreeNode.ContentType.PlainText);
 		extendedTextOutput = new CombinedOutput(BaseTreeNode.ContentType.ByteBasedText);
@@ -196,12 +195,12 @@ class SteamInspector {
 		lastFileContentOutput = outputDummy;
 	}
 
-	public static class AppSettings extends Settings<AppSettings.ValueGroup,AppSettings.ValueKey> {
-		public enum ValueKey {
+	private static class AppSettings extends Settings<AppSettings.ValueGroup,AppSettings.ValueKey> {
+		private enum ValueKey {
 			WindowX, WindowY, WindowWidth, WindowHeight, TextEditor, ImageViewer, Browser, SteamClientFolder, SteamLibraryFolders, SelectedTreeType,
 		}
 
-		public enum ValueGroup implements Settings.GroupKeys<ValueKey> {
+		private enum ValueGroup implements Settings.GroupKeys<ValueKey> {
 			WindowPos (ValueKey.WindowX, ValueKey.WindowY),
 			WindowSize(ValueKey.WindowWidth, ValueKey.WindowHeight),
 			;
@@ -217,7 +216,7 @@ class SteamInspector {
 		public void      setWindowSize(Dimension size) {        putDimension(ValueKey.WindowWidth,ValueKey.WindowHeight,size); }
 	}
 	
-	enum TreeType {
+	private enum TreeType {
 		FilesNFolders("Discovered Folders, Some Simple Extracts", TreeNodes.FileSystem.Root::new, false),
 		GamesNPlayers("Discovered Players & Games", ()-> {
 			Data.loadData();
@@ -327,7 +326,7 @@ class SteamInspector {
 		return menuBar;
 	}
 
-	protected void showContent(Object selectedNode) {
+	private void showContent(Object selectedNode) {
 		boolean hideOutput = true;
 		if (selectedNode instanceof BaseTreeNode) {
 			BaseTreeNode<?,?> baseTreeNode = (BaseTreeNode<?,?>) selectedNode;
@@ -360,8 +359,8 @@ class SteamInspector {
 					break;
 					
 				case ByteBasedText:
-					if (baseTreeNode instanceof ExtendedTextContentSource) {
-						ExtendedTextContentSource source = (ExtendedTextContentSource) baseTreeNode;
+					if (baseTreeNode instanceof ByteBasedTextContentSource) {
+						ByteBasedTextContentSource source = (ByteBasedTextContentSource) baseTreeNode;
 						if (allowLargeFile(baseTreeNode)) {
 							extendedTextOutput.setSource(source);
 							changeFileContentOutput(extendedTextOutput);
@@ -372,8 +371,8 @@ class SteamInspector {
 					break;
 				
 				case ParsedByteBasedText:
-					if (baseTreeNode instanceof ParsedTextContentSource) {
-						ParsedTextContentSource source = (ParsedTextContentSource) baseTreeNode;
+					if (baseTreeNode instanceof ParsedByteBasedTextContentSource) {
+						ParsedByteBasedTextContentSource source = (ParsedByteBasedTextContentSource) baseTreeNode;
 						if (allowLargeFile(baseTreeNode)) {
 							parsedTextOutput.setSource(source);
 							changeFileContentOutput(parsedTextOutput);
@@ -420,12 +419,11 @@ class SteamInspector {
 	}
 
 	private boolean allowLargeFile(BaseTreeNode<?, ?> baseTreeNode) {
-		boolean allow = true;
 		if (baseTreeNode instanceof FileBasedSource) {
 			FileBasedSource fileBasedSource = (FileBasedSource) baseTreeNode;
-			allow = !fileBasedSource.isLarge() || userAllowsLargeFile(fileBasedSource);
+			return !fileBasedSource.isLarge() || userAllowsLargeFile(fileBasedSource);
 		}
-		return allow;
+		return true;
 	}
 
 	private boolean userAllowsLargeFile(FileBasedSource source) {
@@ -446,7 +444,8 @@ class SteamInspector {
 		fileContentPanel.repaint();
 	}
 
-	static JRadioButton createRadioButton(String title, boolean isSelected, boolean isEnabled, ButtonGroup bg, Consumer<Boolean> setValue) {
+	@SuppressWarnings("unused")
+	private static JRadioButton createRadioButton(String title, boolean isSelected, boolean isEnabled, ButtonGroup bg, Consumer<Boolean> setValue) {
 		JRadioButton comp = new JRadioButton(title, isSelected);
 		comp.setEnabled(isEnabled);
 		if (bg!=null) bg.add(comp);
@@ -454,14 +453,14 @@ class SteamInspector {
 		return comp;
 	}
 	
-	static JButton createButton(String title, boolean enabled, ActionListener al) {
+	private static JButton createButton(String title, boolean enabled, ActionListener al) {
 		JButton comp = new JButton(title);
 		comp.setEnabled(enabled);
 		if (al!=null) comp.addActionListener(al);
 		return comp;
 	}
 	
-	static JCheckBoxMenuItem createCheckBoxMenuItem(String title, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
+	private static JCheckBoxMenuItem createCheckBoxMenuItem(String title, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
 		JCheckBoxMenuItem comp = new JCheckBoxMenuItem(title, isSelected);
 		comp.setEnabled(isEnabled);
 		if (setValue!=null) comp.addActionListener(e->setValue.accept(comp.isSelected()));
@@ -475,26 +474,27 @@ class SteamInspector {
 		return comp;
 	}
 	
-	static JCheckBox createCheckBox(String title, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
+	@SuppressWarnings("unused")
+	private static JCheckBox createCheckBox(String title, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
 		JCheckBox comp = new JCheckBox(title, isSelected);
 		comp.setEnabled(isEnabled);
 		if (setValue!=null) comp.addActionListener(e->setValue.accept(comp.isSelected()));
 		return comp;
 	}
 
-	static Component createHorizontalLine() {
+	private static Component createHorizontalLine() {
 		JLabel comp = new JLabel();
 		comp.setBorder(BorderFactory.createEtchedBorder());
 		return comp;
 	}
 
-	static JLabel createLabel(String text, int vertAlign) {
+	private static JLabel createLabel(String text, int vertAlign) {
 		JLabel comp = new JLabel(text);
 		comp.setVerticalAlignment(vertAlign);
 		return comp;
 	}
 
-	static ToggleBox createToggleBox(Boolean value, int minWidth, int minHeight, String strTrue, String strFalse, String strNull, Color colorTrue, Color colorFalse, Color colorNull) {
+	private static ToggleBox createToggleBox(Boolean value, int minWidth, int minHeight, String strTrue, String strFalse, String strNull, Color colorTrue, Color colorFalse, Color colorNull) {
 		ToggleBox comp = new ToggleBox(value, strTrue, strFalse, strNull, colorTrue, colorFalse, colorNull);
 		Dimension size = new Dimension(minWidth,minHeight);
 		comp.setMinimumSize(size);
@@ -502,7 +502,7 @@ class SteamInspector {
 		return comp;
 	}
 	
-	static class ModifiedTextField<A> extends JTextField {
+	private static class ModifiedTextField<A> extends JTextField {
 		private static final long serialVersionUID = -814226398681252148L;
 		private final Color defaultBG;
 		private final Color errorBG;
@@ -543,11 +543,12 @@ class SteamInspector {
 		
 	}
 	
-	static <A> ModifiedTextField<A> createModifiedTextField(String initialValue, Function<String,A> convert, Predicate<A> check, Consumer<A> setValue) {
+	private static <A> ModifiedTextField<A> createModifiedTextField(String initialValue, Function<String,A> convert, Predicate<A> check, Consumer<A> setValue) {
 		return new ModifiedTextField<A>(initialValue, convert, check, setValue);
 	}
 	
-	static <A> JTextField createTextField(String initialValue, Function<String,A> convert, Predicate<A> check, Consumer<A> setValue) {
+	@SuppressWarnings("unused")
+	private static <A> JTextField createTextField(String initialValue, Function<String,A> convert, Predicate<A> check, Consumer<A> setValue) {
 		JTextField comp = new JTextField(initialValue);
 		Color defaultBG = comp.getBackground();
 		Color errorBG = Color.RED;
@@ -571,7 +572,7 @@ class SteamInspector {
 		return comp;
 	}
 	
-	static class ToggleBox extends JLabel {
+	private static class ToggleBox extends JLabel {
 		private static final long serialVersionUID = 8024197163969547939L;
 		
 		private Boolean value;
@@ -582,7 +583,7 @@ class SteamInspector {
 		private final Color colorFalse;
 		private final Color colorNull;
 	
-		public ToggleBox(Boolean value, String strTrue, String strFalse, String strNull, Color colorTrue, Color colorFalse, Color colorNull) {
+		ToggleBox(Boolean value, String strTrue, String strFalse, String strNull, Color colorTrue, Color colorFalse, Color colorNull) {
 			this.strTrue = strTrue;
 			this.strFalse = strFalse;
 			this.strNull = strNull;
@@ -593,12 +594,12 @@ class SteamInspector {
 			setBorder(BorderFactory.createEtchedBorder());
 		}
 	
-		public void setValue(Boolean value) {
+		void setValue(Boolean value) {
 			this.value = value;
 			updateBoxText();
 		}
 	
-		public void updateBoxText() {
+		void updateBoxText() {
 			if (value==null)
 				setBoxText(strNull,colorNull);
 			else if (value)
@@ -607,14 +608,14 @@ class SteamInspector {
 				setBoxText(strFalse,colorFalse);
 		}
 	
-		public void setBoxText(String str, Color color) {
+		void setBoxText(String str, Color color) {
 			setText(str);
 			setForeground(color);
 			//setOpaque(color!=null);
 			//setBackground(color);
 		}
 		
-		public <A> Predicate<A> passThrough(Predicate<A> isOK) {
+		<A> Predicate<A> passThrough(Predicate<A> isOK) {
 			return val -> {
 				boolean b = isOK.test(val);
 				setValue(b);
@@ -640,7 +641,7 @@ class SteamInspector {
 		}
 	}
 	
-	static class FolderSettingsDialog extends StandardDialog {
+	private static class FolderSettingsDialog extends StandardDialog {
 		private static final long serialVersionUID = 4253868170530477053L;
 		private static final int RMD = GridBagConstraints.REMAINDER;
 		private static final Color COLOR_FILE_EXISTS     = Color.GREEN.darker();
@@ -876,9 +877,9 @@ class SteamInspector {
 	}
 	
 	enum ExternalViewerInfo {
-		TextEditor  ( "Text Editor" , SteamInspector.AppSettings.ValueKey.TextEditor , AddressType.File),
-		ImageViewer ( "Image Viewer", SteamInspector.AppSettings.ValueKey.ImageViewer, AddressType.File),
-		Browser     ( "Browser"     , SteamInspector.AppSettings.ValueKey.Browser    , AddressType.URL, AddressType.File),
+		TextEditor  ( "Text Editor" , AppSettings.ValueKey.TextEditor , AddressType.File),
+		ImageViewer ( "Image Viewer", AppSettings.ValueKey.ImageViewer, AddressType.File),
+		Browser     ( "Browser"     , AppSettings.ValueKey.Browser    , AddressType.URL, AddressType.File),
 		;
 		
 		enum AddressType { Folder, File, URL }
@@ -920,10 +921,11 @@ class SteamInspector {
 		}
 	}
 	
-	static class AbstractComponentContextMenu extends JPopupMenu {
+	private static class AbstractComponentContextMenu extends JPopupMenu {
 		private static final long serialVersionUID = -7319873585613172787L;
 
 		AbstractComponentContextMenu() {}
+		@SuppressWarnings("unused")
 		AbstractComponentContextMenu(Component invoker) { addTo(invoker); }
 
 		void addTo(Component invoker) {
@@ -1146,7 +1148,7 @@ class SteamInspector {
 		
 	}
 	
-	static abstract class FileContentOutput {
+	private static abstract class FileContentOutput {
 
 		abstract Component getMainComponent();
 		abstract void showLoadingMsg();
@@ -1183,7 +1185,7 @@ class SteamInspector {
 		}
 	}
 	
-	static class OutputDummy extends FileContentOutput {
+	private static class OutputDummy extends FileContentOutput {
 		private JLabel dummyLabel;
 		OutputDummy() {
 			dummyLabel = new JLabel("No Content");
@@ -1195,7 +1197,7 @@ class SteamInspector {
 		@Override void showLoadingMsg() {}
 	}
 
-	static class ImageNTextOutput extends FileContentOutput {
+	private static class ImageNTextOutput extends FileContentOutput {
 		
 		private final JSplitPane mainPanel;
 		private final ImageOutput imageView;
@@ -1216,7 +1218,7 @@ class SteamInspector {
 		}
 	}
 
-	static class ImageOutput extends FileContentOutput {
+	private static class ImageOutput extends FileContentOutput {
 		
 		private final ImageView imageView;
 		private ImageLoaderThread runningImageLoaderThread;
@@ -1286,7 +1288,7 @@ class SteamInspector {
 		}
 	}
 
-	static class HexTableOutput extends TextOutput {
+	private static class HexTableOutput extends TextOutput {
 		private final static int PAGE_SIZE = 0x10000;
 		private final JButton prevPageBtn1;
 		private final JButton prevPageBtn2;
@@ -1430,7 +1432,7 @@ class SteamInspector {
 
 	}
 
-	static class TextOutput extends FileContentOutput {
+	private static class TextOutput extends FileContentOutput {
 		
 		protected final JTextArea view;
 		protected final JScrollPane scrollPane;
@@ -1504,7 +1506,7 @@ class SteamInspector {
 		}
 	}
 
-	static class DataTreeOutput extends FileContentOutput {
+	private static class DataTreeOutput extends FileContentOutput {
 		private JTree view;
 		private JScrollPane scrollPane;
 		private TreeRoot treeRoot;
@@ -1552,7 +1554,7 @@ class SteamInspector {
 		}
 	}
 	
-	static class MultiOutput extends FileContentOutput {
+	private static class MultiOutput extends FileContentOutput {
 		private final JTabbedPane mainPanel;
 		private final Vector<FileContentOutput> subPanels;
 
@@ -1575,7 +1577,7 @@ class SteamInspector {
 		}
 	}
 
-	static class CombinedOutput extends MultiOutput {
+	private static class CombinedOutput extends MultiOutput {
 		
 		private final BaseTreeNode.ContentType type;
 		private final Component mainComp;
@@ -1653,13 +1655,13 @@ class SteamInspector {
 			setOutput(source, ContentLoadWorker::new);
 		}
 		
-		void setSource(ExtendedTextContentSource source) {
+		void setSource(ByteBasedTextContentSource source) {
 			if (type!=BaseTreeNode.ContentType.ByteBasedText || hexView==null || plainText==null || dataTree!=null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 			setActiveTab(1);
 		}
 
-		void setSource(ParsedTextContentSource source) {
+		void setSource(ParsedByteBasedTextContentSource source) {
 			if (type!=BaseTreeNode.ContentType.ParsedByteBasedText || hexView==null || plainText==null || dataTree==null) throw new IllegalStateException();
 			setOutput(source, ContentLoadWorker::new);
 			setActiveTab(2);
@@ -1687,11 +1689,11 @@ class SteamInspector {
 			private final TreeContentSource   treeSource;
 			private boolean isObsolete;
 		
-			ContentLoadWorker(        ByteContentSource source) { this(source,  null,  null); }
-			ContentLoadWorker(        TextContentSource source) { this(  null,source,  null); }
-			ContentLoadWorker(        TreeContentSource source) { this(  null,  null,source); }
-			ContentLoadWorker(ExtendedTextContentSource source) { this(source,source,  null); }
-			ContentLoadWorker(  ParsedTextContentSource source) { this(source,source,source); }
+			ContentLoadWorker(               ByteContentSource source) { this(source,  null,  null); }
+			ContentLoadWorker(               TextContentSource source) { this(  null,source,  null); }
+			ContentLoadWorker(               TreeContentSource source) { this(  null,  null,source); }
+			ContentLoadWorker(      ByteBasedTextContentSource source) { this(source,source,  null); }
+			ContentLoadWorker(ParsedByteBasedTextContentSource source) { this(source,source,source); }
 			
 			private ContentLoadWorker(ByteContentSource bytesSource, TextContentSource textSource, TreeContentSource treeSource) {
 				this.bytesSource = bytesSource;
@@ -1814,13 +1816,13 @@ class SteamInspector {
 	}
 	interface ImageNTextContentSource extends ImageContentSource, TextContentSource {}
 	
-	interface ExtendedTextContentSource extends ByteContentSource, TextContentSource {}
-	interface ParsedTextContentSource extends ExtendedTextContentSource, TreeContentSource {}
+	interface ByteBasedTextContentSource extends ByteContentSource, TextContentSource {}
+	interface ParsedByteBasedTextContentSource extends ByteBasedTextContentSource, TreeContentSource {}
 	
 	interface ByteFileSource extends ByteContentSource, FileBasedSource {}
 	interface TextFileSource extends TextContentSource, FileBasedSource {}
-	interface ExtendedTextFileSource extends ExtendedTextContentSource, FileBasedSource {}
-	interface ParsedTextFileSource extends ParsedTextContentSource, FileBasedSource {}
+	interface ByteBasedTextFileSource extends ByteBasedTextContentSource, FileBasedSource {}
+	interface ParsedByteBasedTextFileSource extends ParsedByteBasedTextContentSource, FileBasedSource {}
 	
 	interface TreeContextMenuHandler {
 		void showContextMenu(JTree invoker, int x, int y, TreePath clickedTreePath, Object clickedTreeNode);
@@ -1850,35 +1852,6 @@ class SteamInspector {
 				tcmh.showContextMenu(invoker, x, y, clickedTreePath, clickedTreeNode);
 		}
 	}
-	
-/*
-	private static class SwingWorkerImpl<FinalResult,IntermediateResult> extends SwingWorker<FinalResult,IntermediateResult> {
-
-		// Worker Thread
-		@Override
-		protected FinalResult doInBackground() throws Exception {
-			// TO-DO Auto-generated method stub
-			return null;
-		}
-
-		// GUI Event Thread
-		@Override
-		protected void process(List<IntermediateResult> chunks) {
-			// TO-DO Auto-generated method stub
-		}
-
-		@Override
-		protected void done() {
-			try {
-				FinalResult finalResult = get();
-			} catch (InterruptedException | ExecutionException e) {
-				// TO-DO Auto-generated catch block
-				e.printStackTrace();
-			}
-			// TO-DO Auto-generated method stub
-		}
-	}
-*/
 	
 	private final static class BaseTreeNodeRenderer extends DefaultTreeCellRenderer {
 		private static final long serialVersionUID = -7291286788678796516L;
