@@ -11,7 +11,6 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.Data;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.DataTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.DataTreeNodeContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.JsonTreeIcons;

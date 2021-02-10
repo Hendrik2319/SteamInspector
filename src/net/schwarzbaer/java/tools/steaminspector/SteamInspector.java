@@ -220,7 +220,7 @@ class SteamInspector {
 	enum TreeType {
 		FilesNFolders("Discovered Folders, Some Simple Extracts", TreeNodes.FileSystem.Root::new, false),
 		GamesNPlayers("Discovered Players & Games", ()-> {
-			TreeNodes.Data.loadData();
+			Data.loadData();
 			return new TreeNodes.PlayersNGames.Root();
 		}, true),
 		;
@@ -1031,12 +1031,12 @@ class SteamInspector {
 					TreeNode treeNode = (TreeNode) clickedNode;
 					Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
 					if (gameID!=null) {
-						String currentTitle = TreeNodes.Data.knownGameTitles.get(gameID);
+						String currentTitle = Data.knownGameTitles.get(gameID);
 						String actionName = currentTitle==null ? "Set" : "Change";
 						String newTitle = JOptionPane.showInputDialog(this, actionName+" Title of Game "+gameID, currentTitle);
 						if (newTitle!=null) {
-							TreeNodes.Data.knownGameTitles.put(gameID, newTitle);
-							TreeNodes.Data.knownGameTitles.writeToFile();
+							Data.knownGameTitles.put(gameID, newTitle);
+							Data.knownGameTitles.writeToFile();
 							TreeNodes.PlayersNGames.gameChangeListeners.gameTitleWasChanged(treeModel, gameID);
 						}
 					}
@@ -1102,10 +1102,10 @@ class SteamInspector {
 			if (clickedNode instanceof TreeNode) {
 				TreeNode treeNode = (TreeNode) clickedNode;
 				Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
-				TreeNodes.Data.Game game = TreeNodes.Data.games.get(gameID);
+				Data.Game game = Data.games.get(gameID);
 				miSetTitle.setEnabled(gameID!=null && (game==null || !game.hasATitle()));
 				if (gameID!=null) {
-					String currentTitle = TreeNodes.Data.knownGameTitles.get(gameID);
+					String currentTitle = Data.knownGameTitles.get(gameID);
 					String miTitle;
 					if (currentTitle==null) miTitle = String.format("Set Title of Game %d", gameID);
 					else miTitle = String.format("Change Title of Game %d (\"%s\")%s", gameID, currentTitle, game!=null && game.hasATitle() ? " <fixed by AppManifest>" : "");
