@@ -1980,7 +1980,7 @@ class TreeNodes {
 				try {
 					parseResult = JSONHelper.parseJsonText(text);
 				} catch (JSON_Parser.ParseException e) {
-					System.err.printf("ParseException: %s%n", e.getMessage());
+					Data.showException(e, fileObj);
 					return SimpleTextNode.createSingleTextLineTree("Parse Error: %s", e.getMessage());
 				}
 				if (parseResult != null)

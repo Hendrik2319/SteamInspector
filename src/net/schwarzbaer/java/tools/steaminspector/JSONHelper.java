@@ -6,9 +6,14 @@ import java.util.Vector;
 import java.util.function.Function;
 
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Data.ArrayValue;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Array;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Data.ObjectValue;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Data.TraverseException;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Parser.ParseException;
 import net.schwarzbaer.java.tools.steaminspector.Data.NV;
 import net.schwarzbaer.java.tools.steaminspector.Data.V;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
@@ -20,30 +25,37 @@ import net.schwarzbaer.java.tools.steaminspector.TreeNodes.JsonTreeIcons;
 class JSONHelper {
 
 	public static class FactoryForExtras implements JSON_Data.FactoryForExtras<NV,V> {
-		@Override public NV createNamedValueExtra(JSON_Data.Value.Type type) { return null; }
-		@Override public V  createValueExtra     (JSON_Data.Value.Type type) { return new V(type); }
+		@Override public NV createNamedValueExtra(Value.Type type) { return null; }
+		@Override public V  createValueExtra     (Value.Type type) { return new V(type); }
 	}
 
-	private static JSON_Data.Value<NV, V> parseJson(JSON_Parser<NV, V> parser) throws JSON_Parser.ParseException {
-		JSON_Data.Value<NV, V> result = parser.parse_withParseException();
+	private static Value<NV, V> parseJson(JSON_Parser<NV, V> parser) throws ParseException {
+		Value<NV, V> result = parser.parse_withParseException();
 		JSON_Data.traverseAllValues(result, null, (path,v)->v.extra.setHost(v));
 		return result;
 	}
 
-	static JSON_Data.Value<NV, V> parseJsonFile(File   file) throws JSON_Parser.ParseException { return parseJson(new JSON_Parser<>(file,new FactoryForExtras())); }
+	static Value<NV, V> parseJsonFile(File   file) throws ParseException { return parseJson(new JSON_Parser<>(file,new FactoryForExtras())); }
 
-	static JSON_Data.Value<NV, V> parseJsonText(String text) throws JSON_Parser.ParseException { return parseJson(new JSON_Parser<>(text,new FactoryForExtras())); }
+	static Value<NV, V> parseJsonText(String text) throws ParseException { return parseJson(new JSON_Parser<>(text,new FactoryForExtras())); }
+	static Value<NV, V> parseJsonText(String text, String debugOutputPrefixStr) throws TraverseException {
+		try {
+			return JSONHelper.parseJsonText(text);
+		} catch (ParseException e) {
+			throw new TraverseException("%s isn't a well formed JSON text: %s", (String)debugOutputPrefixStr, e.getMessage());
+		}
+	}
 
-	static JSON_Data.ArrayValue<NV, V> createArrayValue(JSON_Array<NV, V> array) {
-		V extra = new V(JSON_Data.Value.Type.Array);
-		JSON_Data.ArrayValue<NV, V> host = new JSON_Data.ArrayValue<>(array,extra);
+	static ArrayValue<NV, V> createArrayValue(JSON_Array<NV, V> array) {
+		V extra = new V(Value.Type.Array);
+		ArrayValue<NV, V> host = new ArrayValue<>(array,extra);
 		extra.setHost(host);
 		return host;
 	}
 
-	static JSON_Data.ObjectValue<NV, V> createObjectValue(JSON_Object<NV, V> object) {
-		V extra = new V(JSON_Data.Value.Type.Object);
-		JSON_Data.ObjectValue<NV, V> host = new JSON_Data.ObjectValue<>(object,extra);
+	static ObjectValue<NV, V> createObjectValue(JSON_Object<NV, V> object) {
+		V extra = new V(Value.Type.Object);
+		ObjectValue<NV, V> host = new ObjectValue<>(object,extra);
 		extra.setHost(host);
 		return host;
 	}
@@ -59,14 +71,14 @@ class JSONHelper {
 		return new TreeRoot(JSON_TreeNode.create(null,null,createObjectValue(object)),true,!isLarge,JSON_TreeNode.contextMenu);
 	}
 	
-	static TreeRoot createTreeRoot(JSON_Data.Value<NV, V> value, boolean isLarge) {
+	static TreeRoot createTreeRoot(Value<NV, V> value, boolean isLarge) {
 		return new TreeRoot(JSON_TreeNode.create(null,null,value),true,!isLarge,JSON_TreeNode.contextMenu);
 	}
 	
 	private static final Color COLOR_WAS_PARTIALLY_PROCESSED = new Color(0xC000C0);
 	private static final Color COLOR_WAS_FULLY_PROCESSED     = new Color(0x00B000);
 
-	static Color getTextColor(JSON_Data.Value<NV, V> value) {
+	static Color getTextColor(Value<NV, V> value) {
 		if (value==null) return COLOR_WAS_FULLY_PROCESSED;
 		boolean wasProcessed = value.extra.wasProcessed;
 		boolean hasUnprocessedChildren = value.extra.hasUnprocessedChildren();
@@ -78,11 +90,11 @@ class JSONHelper {
 
 		private final Vector<ChildValueType> childValues;
 		private final Function<ChildValueType, String> getChildName;
-		private final Function<ChildValueType, JSON_Data.Value<NV,V>> getChildValue;
+		private final Function<ChildValueType, Value<NV,V>> getChildValue;
 		final String name;
-		final JSON_Data.Value<NV,V> value;
+		final Value<NV,V> value;
 
-		private JSON_TreeNode(JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, JSON_Data.Value<NV,V> value, Vector<ChildValueType> childValues, Function<ChildValueType,String> getChildName, Function<ChildValueType,JSON_Data.Value<NV,V>> getChildValue) {
+		private JSON_TreeNode(JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, Value<NV,V> value, Vector<ChildValueType> childValues, Function<ChildValueType,String> getChildName, Function<ChildValueType,Value<NV,V>> getChildValue) {
 			super(parent, title, childValues!=null, childValues==null || childValues.isEmpty(), icon==null ? null : icon.getIcon());
 			this.name = name;
 			this.value = value;
@@ -98,16 +110,16 @@ class JSONHelper {
 					return name;
 				return "<Root"+value.type+">";
 			}
-			JSON_Data.Value.Type parentType = parent.getValueType();
-			String indexInParent = parentType==JSON_Data.Value.Type.Array ? "["+parent.getIndex(this)+"]" : "";
+			Value.Type parentType = parent.getValueType();
+			String indexInParent = parentType==Value.Type.Array ? "["+parent.getIndex(this)+"]" : "";
 			String nameRef = name!=null ? "."+name : "";
 			return parent.getPath()+indexInParent+nameRef;
 		}
 		
-		JSON_Data.Value<NV,V> getSubNodeValue(Object... path) {
+		Value<NV,V> getSubNodeValue(Object... path) {
 			try {
 				return JSON_Data.getSubNode(value, path);
-			} catch (JSON_Data.TraverseException e) {
+			} catch (TraverseException e) {
 				return null;
 			}
 		}
@@ -119,13 +131,13 @@ class JSONHelper {
 			if (parent==null) return "";
 			String path = parent.getAccessPath();
 			if (!path.isEmpty()) path += ",";
-			JSON_Data.Value.Type parentType = parent.getValueType();
-			return path + (parentType==JSON_Data.Value.Type.Array ? parent.getIndex(this) : "\""+name+"\"");
+			Value.Type parentType = parent.getValueType();
+			return path + (parentType==Value.Type.Array ? parent.getIndex(this) : "\""+name+"\"");
 		}
 
 		@Override public String getName    () { return name; }
 		@Override public String getValueStr() { return value.toString(); }
-		private JSON_Data.Value.Type getValueType() { return value.type; }
+		private Value.Type getValueType() { return value.type; }
 		@Override public boolean hasName () { return name !=null; }
 		@Override public boolean hasValue() { return value!=null; }
 
@@ -137,7 +149,7 @@ class JSONHelper {
 			return childNodes;
 		}
 		
-		private static JSON_TreeNode<?> create(JSON_TreeNode<?> parent, String name, JSON_Data.Value<NV,V> value) {
+		private static JSON_TreeNode<?> create(JSON_TreeNode<?> parent, String name, Value<NV,V> value) {
 			String title = getTitle(name,value);
 			JsonTreeIcons icon = getIcon(value.type);
 			switch (value.type) {
@@ -152,7 +164,7 @@ class JSONHelper {
 			return JSONHelper.getTextColor(value);
 		}
 
-		private static JsonTreeIcons getIcon(JSON_Data.Value.Type type) {
+		private static JsonTreeIcons getIcon(Value.Type type) {
 			if (type==null) return null;
 			switch(type) {
 			case Object: return JsonTreeIcons.Object;
@@ -166,7 +178,7 @@ class JSONHelper {
 			return null;
 		}
 		
-		private static String getTitle(String name, JSON_Data.Value<NV,V> value) {
+		private static String getTitle(String name, Value<NV,V> value) {
 			switch (value.type) {
 			case Object : return getTitle(name, "{" , value.castToObjectValue ().value.size(), "}" );
 			case Array  : return getTitle(name, "[" , value.castToArrayValue  ().value.size(), "]" );
