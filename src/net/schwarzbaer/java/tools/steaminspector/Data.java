@@ -127,6 +127,7 @@ class Data {
 			node.forEach((subNode,t,n,v) -> {
 				if (!knownValues.contains(n,t))
 					unknownValues.add(prefixStr, n, t);
+				return false;
 			});
 		}
 	
@@ -157,6 +158,7 @@ class Data {
 				unknownValues.add(nodeLabel, n, t);
 				if (t==VDFTreeNode.Type.Array)
 					scanVdfStructure(node1, nodeLabel+"."+n);
+				return false;
 			});
 		}
 		
@@ -283,17 +285,13 @@ class Data {
 			// ArrayValue   @Override public boolean hasUnprocessedChildren() { return JSON_hasUnprocessedChildren(this,this.value, v-> v      ); }
 			// ObjectValue  @Override public boolean hasUnprocessedChildren() { return JSON_hasUnprocessedChildren(this,this.value,nv->nv.value); }
 			if (type==JSON_Data.Value.Type.Array ) {
-				if (host==null)
-					throw new IllegalStateException();
-				if (host.castToArrayValue()==null)
-					throw new IllegalStateException();
+				if (host                   ==null) throw new IllegalStateException();
+				if (host.castToArrayValue()==null) throw new IllegalStateException();
 				return hasUnprocessedChildren(host,host.castToArrayValue ().value, v-> v      );
 			}
 			if (type==JSON_Data.Value.Type.Object) {
-				if (host==null)
-					throw new IllegalStateException();
-				if (host.castToObjectValue()==null)
-					throw new IllegalStateException();
+				if (host                    ==null) throw new IllegalStateException();
+				if (host.castToObjectValue()==null) throw new IllegalStateException();
 				return hasUnprocessedChildren(host,host.castToObjectValue().value,nv->nv.value);
 			}
 			return false;
@@ -769,12 +767,9 @@ class Data {
 			}
 
 			public String getPlayerName() {
-				if (vdfTreeNode!=null) {
-					VDFTreeNode nameNode = vdfTreeNode.getSubNode("UserLocalConfigStore","friends","PersonaName");
-					if (nameNode!=null && nameNode.type==VDFTreeNode.Type.String && nameNode.value!=null && !nameNode.value.isEmpty())
-						return nameNode.value;
-				}
-				return null;
+				String name = null;
+				if (vdfTreeNode!=null) name = vdfTreeNode.getString("UserLocalConfigStore","friends","PersonaName");
+				return name;
 			}
 
 			public FriendList parseFriendList() {
@@ -814,21 +809,25 @@ class Data {
 			}
 
 			public static FriendList parse(VDFTreeNode friendsNode, long playerID) throws VDFTraverseException {
-				if (friendsNode==null) throw new VDFTraverseException("FriendList[Player %d]: base VDFTreeNode is NULL", playerID);
-				if (friendsNode.type!=VDFTreeNode.Type.Array) throw new VDFTraverseException("FriendList[Player %d]: base VDFTreeNode is not an Array", playerID);
+				if ( friendsNode==null) throw new VDFTraverseException("FriendList[Player %d]: base VDFTreeNode is NULL", playerID);
+				if (!friendsNode.is(VDFTreeNode.Type.Array)) throw new VDFTraverseException("FriendList[Player %d]: base VDFTreeNode is not an Array", playerID);
 				FriendList friendList = new FriendList();
 				friendsNode.forEach((subNode, type, name, value)->{
 					switch (type) {
-					case Root: System.err.printf("FriendList[Player %d]: Root node as sub node of base VDFTreeNode%n", playerID); break;
+					
+					case Root:
+						System.err.printf("FriendList[Player %d]: Root node as sub node of base VDFTreeNode%n", playerID);
+						break;
 
 					case Array: // Friend
 						friendList.friends.add(new Friend(name,subNode));
-						break;
+						return true;
 						
 					case String: // simple value
 						friendList.values.put(name, value);
-						break;
+						return true;
 					}
+					return false;
 				});
 				return friendList;
 			}
@@ -866,10 +865,11 @@ class Data {
 								Integer index = parseNumber(n);
 								if (index!=null && v!=null) {
 									nameHistory.put(index,v);
-									return;
+									return true;
 								}
 							}
 							DevHelper.unknownValues.add("Friend.NameHistory", n, t);
+							return false;
 						});
 					} else
 						nameHistory = null;
@@ -2179,11 +2179,9 @@ class Data {
 		}
 
 		String getGameTitle() {
-			if (vdfTree!=null) {
-				VDFTreeNode appNameNode = vdfTree.getSubNode("AppState","name");
-				if (appNameNode!=null) return appNameNode.value;
-			}
-			return null;
+			String appName = null;
+			if (vdfTree!=null) appName = vdfTree.getString("AppState","name");
+			return appName;
 		}
 	}
 	

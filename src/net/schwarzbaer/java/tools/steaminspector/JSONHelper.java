@@ -82,6 +82,10 @@ class JSONHelper {
 		if (value==null) return COLOR_WAS_FULLY_PROCESSED;
 		boolean wasProcessed = value.extra.wasProcessed;
 		boolean hasUnprocessedChildren = value.extra.hasUnprocessedChildren();
+		return getTextColor(wasProcessed, hasUnprocessedChildren);
+	}
+
+	static Color getTextColor(boolean wasProcessed, boolean hasUnprocessedChildren) {
 		return !wasProcessed ? null : hasUnprocessedChildren ? COLOR_WAS_PARTIALLY_PROCESSED : COLOR_WAS_FULLY_PROCESSED;
 	}
 

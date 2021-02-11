@@ -1,5 +1,6 @@
 package net.schwarzbaer.java.tools.steaminspector;
 
+import java.awt.Color;
 import java.io.File;
 import java.io.IOException;
 import java.io.LineNumberReader;
@@ -9,6 +10,8 @@ import java.nio.file.Files;
 import java.util.Locale;
 import java.util.Vector;
 import java.util.function.Function;
+
+import javax.swing.Icon;
 
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContextMenuHandler;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
@@ -328,9 +331,11 @@ class VDFParser {
 		enum Type { Root, String, Array }
 		
 		private final Vector<ValuePair> valuePairArray;
-		final String name;
-		final String value;
-		final Type type;
+		private final String name;
+		private final String value;
+		private final Type type;
+		boolean wasProcessed;
+		Boolean hasUnprocessedChildren;
 
 		VDFTreeNode(Vector<ValuePair> valuePairArray) { // Root
 			super(null,"VDF Tree Root",true,valuePairArray==null || valuePairArray.isEmpty());
@@ -338,6 +343,8 @@ class VDFParser {
 			this.valuePairArray = valuePairArray;
 			this.name = null;
 			this.value = null;
+			this.wasProcessed = false;
+			this.hasUnprocessedChildren = null;
 		}
 		VDFTreeNode(VDFTreeNode parent, String name, String value) { // String Value
 			super(parent, String.format("%s : \"%s\"", name, value), false, true);
@@ -345,6 +352,8 @@ class VDFParser {
 			this.valuePairArray = null;
 			this.name = name;
 			this.value = value;
+			this.wasProcessed = false;
+			this.hasUnprocessedChildren = false;
 		}
 		VDFTreeNode(VDFTreeNode parent, String name, Vector<ValuePair> valuePairArray) { // Array Value
 			super(parent, name, true,valuePairArray==null || valuePairArray.isEmpty());
@@ -352,36 +361,37 @@ class VDFParser {
 			this.valuePairArray = valuePairArray;
 			this.name = name;
 			this.value = null;
+			this.wasProcessed = false;
+			this.hasUnprocessedChildren = null;
+		}
+		
+		TreeRoot getTreeRoot(TreeContextMenuHandler tcmh) {
+			return new TreeRoot(this, type!=Type.Root, true, tcmh);
+		}
+		
+		boolean is(Type type) { return this.type==type; }
+		
+		void markAsProcessed() {
+			wasProcessed = true;
+		}
+		
+		boolean hasUnprocessedChildren() {
+			if (hasUnprocessedChildren==null) {
+				hasUnprocessedChildren=false;
+				checkChildren("hasUnprocessedChildren()");
+				for (VDFTreeNode child:children) {
+					if (!child.wasProcessed || child.hasUnprocessedChildren()) {
+						hasUnprocessedChildren=true;
+						break;
+					}
+				}
+			}
+			return hasUnprocessedChildren;
 		}
 		
 		@Override public String getPath() {
 			if (parent==null) return "Root";
 			return parent.getPath()+"["+parent.getIndex(this)+"]."+name;
-		}
-		
-		VDFTreeNode getSubNode(String... path) {
-			VDFTreeNode node = this;
-			int i = 0;
-			while (path!=null && i<path.length) {
-				if (node.valuePairArray==null)
-					return null;
-				
-				String subNodeName = path[i];
-				if (subNodeName==null) return null;
-				
-				node.checkChildren("getSubNode()");
-				boolean subNodeFound = false;
-				for (VDFTreeNode subNode:node.children)
-					if (subNodeName.equals(subNode.name)) {
-						subNodeFound = true;
-						node = subNode;
-						i++;
-						break;
-					}
-				if (!subNodeFound)
-					return null;
-			}
-			return node;
 		}
 		
 		@Override public String getAccessCall() {
@@ -404,6 +414,23 @@ class VDFParser {
 		}
 		
 		@Override
+		Icon getIcon() {
+			switch (type) {
+			case Array:
+				break;
+			case Root:
+				break;
+			case String:
+				break;
+			}
+			// TODO Auto-generated method stub
+			return super.getIcon();
+		}
+		@Override Color getTextColor() {
+			return JSONHelper.getTextColor(wasProcessed,hasUnprocessedChildren());
+		}
+		
+		@Override
 		protected Vector<? extends VDFTreeNode> createChildren() {
 			Vector<VDFTreeNode> children = new Vector<>();
 			if (valuePairArray!=null)
@@ -418,27 +445,75 @@ class VDFParser {
 		
 		void forEach(ForEachAction action) {
 			checkChildren("forEach(action)");
-			for (VDFTreeNode child:children)
-				action.applyTo(child, child.type, child.name, child.value);
+			for (VDFTreeNode child:children) {
+				boolean wasProcessed = action.applyTo(child, child.type, child.name, child.value);
+				if (wasProcessed) child.markAsProcessed();
+			}
 		}
 		interface ForEachAction {
-			void applyTo(VDFTreeNode subNode, Type type, String name, String value);
+			boolean applyTo(VDFTreeNode subNode, Type type, String name, String value);
 		}
 		
-		String      getString(String name) { return getValue(name, VDFTreeNode.Type.String, node->node.value, "getString"); }
-		VDFTreeNode getArray (String name) { return getValue(name, VDFTreeNode.Type.Array , node->node      , "getArray" ); }
-		
-		<ValueType> ValueType getValue(String name, VDFTreeNode.Type type, Function<VDFTreeNode,ValueType> getValue, String functionName) {
-			if (name==null) return null;
-			checkChildren(String.format("%s(\"%s\")", functionName, name));
-			for (VDFTreeNode child:children) {
-				if (name.equals(child.name)) {
-					if (child.type==type)
-						return getValue.apply(child);
-					break;
-				}
+		VDFTreeNode getSubNode(String... path) {
+			return getSubNode_intern("getSubNode()", path);
+		}
+		private VDFTreeNode getSubNode_intern(String functionName, String... path) {
+			VDFTreeNode node = this;
+			int i = 0;
+			while (path!=null && i<path.length) {
+				if (node.valuePairArray==null)
+					return null;
+				
+				node.markAsProcessed();
+				
+				String subNodeName = path[i];
+				if (subNodeName==null) throw new IllegalArgumentException();
+				
+				node.checkChildren(functionName);
+				boolean subNodeFound = false;
+				for (VDFTreeNode subNode:node.children)
+					if (subNodeName.equals(subNode.name)) {
+						subNodeFound = true;
+						node = subNode;
+						i++;
+						break;
+					}
+				if (!subNodeFound)
+					return null;
 			}
-			return null;
+			return node;
 		}
+		
+		String      getString(String... path) { return getValue(Type.String, node->node.value, "getString", path); }
+		VDFTreeNode getArray (String... path) { return getValue(Type.Array , node->node      , "getArray" , path); }
+		
+		private <ValueType> ValueType getValue(Type type, Function<VDFTreeNode,ValueType> getValue, String functionName, String... path) {
+			VDFTreeNode node = getSubNode_intern(functionName, path);
+			if (node==null) return null;
+			return node.getValue(type, getValue);
+		}
+		
+//		String      getString(String name) { return getValue(name, Type.String, node->node.value, "getString"); }
+//		VDFTreeNode getArray (String name) { return getValue(name, Type.Array , node->node      , "getArray" ); }
+//		
+//		private <ValueType> ValueType getValue(String name, Type type, Function<VDFTreeNode,ValueType> getValue, String functionName) {
+//			if (name==null) return null;
+//			checkChildren(String.format("%s(\"%s\")", functionName, name));
+//			for (VDFTreeNode child:children) {
+//				if (name.equals(child.name)) {
+//					return child.getValue(type, getValue);
+//				}
+//			}
+//			return null;
+//		}
+		
+		private <ValueType> ValueType getValue(Type type, Function<VDFTreeNode, ValueType> getValue) {
+			if (this.type==type) {
+				markAsProcessed();
+				return getValue.apply(this);
+			} else
+				return null;
+		}
+		
 	}
 }

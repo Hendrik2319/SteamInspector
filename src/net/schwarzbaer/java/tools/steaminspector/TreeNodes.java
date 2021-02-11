@@ -624,7 +624,7 @@ class TreeNodes {
 			this.viewerInfo = viewerInfo;
 		}
 		@Override ContentType getContentType() { return ContentType.DataTree; }
-		@Override public TreeRoot getContentAsTree() { return new TreeRoot(rawData, true, true, new DataTreeNodeContextMenu()); }
+		@Override public TreeRoot getContentAsTree() { return rawData.getTreeRoot(new DataTreeNodeContextMenu()); }
 		@Override protected Vector<? extends TreeNode> createChildren() { return null; }
 		@Override public LabeledFile getFile() { return file==null ? null : new LabeledFile(file); }
 		@Override public ExternalViewerInfo getExternalViewerInfo() { return viewerInfo; }
@@ -866,7 +866,7 @@ class TreeNodes {
 			}
 		}
 		
-		private static class FriendListNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource {
+		private static class FriendListNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource, TreeContentSource {
 
 			private final FriendList data;
 
@@ -875,8 +875,9 @@ class TreeNodes {
 				this.data = friendList;
 			}
 
-			@Override ContentType getContentType() { return ContentType.PlainText; }
+			@Override ContentType getContentType() { return data.values!=null ? ContentType.PlainText : data.rawData!=null ? ContentType.DataTree : null; }
 			@Override public String getContentAsText() {
+				if (data.values==null) return null;
 				Vector<String> valueKeys = new Vector<>(data.values.keySet());
 				valueKeys.sort(null);
 				Iterator<String> iterator = valueKeys
@@ -885,7 +886,11 @@ class TreeNodes {
 						.iterator();
 				return String.join("", (Iterable<String>)()->iterator);
 			}
-			
+			@Override public TreeRoot getContentAsTree() {
+				if (data.rawData==null) return null;
+				return data.rawData.getTreeRoot(new DataTreeNodeContextMenu());
+			}
+
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
