@@ -28,7 +28,6 @@ import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.stream.Stream;
 
 import javax.imageio.ImageIO;
 import javax.swing.BorderFactory;
@@ -45,6 +44,7 @@ import net.schwarzbaer.gui.IconSource;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.Data.AppManifest;
+import net.schwarzbaer.java.tools.steaminspector.Data.Base64String;
 import net.schwarzbaer.java.tools.steaminspector.Data.Game;
 import net.schwarzbaer.java.tools.steaminspector.Data.GameImages;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player;
@@ -63,13 +63,13 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerInfo;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageNTextContentSource;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.ExternViewableNode;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.FileBasedNode;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.FileCreatingNode;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.Filter;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.FilterOption;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.FilterableNode;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.URLBasedNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.ExternViewableNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FileBasedNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FileCreatingNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.Filter;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FilterOption;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FilterableNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.URLBasedNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedByteBasedTextFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContentSource;
@@ -327,7 +327,7 @@ class TreeNodes {
 		}
 	}
 
-	private static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, FileCreatingNode, ExternViewableNode, FilterableNode {
+	private static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, FileCreatingNode, ExternViewableNode, FilterableNode, TreeContentSource {
 		
 		private final Collection<ValueType> values;
 		private final Comparator<ValueType> sortOrder;
@@ -336,6 +336,7 @@ class TreeNodes {
 		private LabeledFile file;
 		private FilePromise getFile;
 		private GroupingNodeFilter<ValueType,?> filter;
+		private TreeRoot dataTree;
 		
 		private static <IT,VT> Comparator<Map.Entry<IT,VT>> createMapKeyOrder(Comparator<IT> keyOrder) {
 			return Comparator.comparing(Map.Entry<IT,VT>::getKey,keyOrder);
@@ -345,24 +346,24 @@ class TreeNodes {
 		}
 		
 		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode) {
-			return create(parent, title, values, sortOrder, createChildNode, null);
+			return create(parent, title, values, sortOrder, null, createChildNode);
 		}
-		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode, Icon icon) {
-			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), createMapValueOrder(sortOrder), (p,e)->createChildNode.create(p,e.getValue()), icon);
+		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<VT> sortOrder, Icon icon, NodeCreator1<VT> createChildNode) {
+			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), createMapValueOrder(sortOrder), icon, (p,e)->createChildNode.create(p,e.getValue()));
 		}
 		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<Map.Entry<IT,VT>> sortOrder, NodeCreator2<IT,VT> createChildNode) {
-			return create(parent, title, values, sortOrder, createChildNode, null);
+			return create(parent, title, values, sortOrder, null, createChildNode);
 		}
-		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<Map.Entry<IT,VT>> sortOrder, NodeCreator2<IT,VT> createChildNode, Icon icon) {
-			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), sortOrder, (p,e)->createChildNode.create(p,e.getKey(),e.getValue()), icon);
+		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<Map.Entry<IT,VT>> sortOrder, Icon icon, NodeCreator2<IT,VT> createChildNode) {
+			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), sortOrder, icon, (p,e)->createChildNode.create(p,e.getKey(),e.getValue()));
 		}
 		private static <VT> GroupingNode<VT> create(TreeNode parent, String title, Collection<VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode) {
-			return new GroupingNode<>(parent, title, values, sortOrder, createChildNode, null);
+			return new GroupingNode<>(parent, title, values, sortOrder, null, createChildNode);
 		}
-		private static <VT> GroupingNode<VT> create(TreeNode parent, String title, Collection<VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode, Icon icon) {
-			return new GroupingNode<>(parent, title, values, sortOrder, createChildNode, icon);
+		private static <VT> GroupingNode<VT> create(TreeNode parent, String title, Collection<VT> values, Comparator<VT> sortOrder, Icon icon, NodeCreator1<VT> createChildNode) {
+			return new GroupingNode<>(parent, title, values, sortOrder, icon, createChildNode);
 		}
-		private GroupingNode(TreeNode parent, String title, Collection<ValueType> values, Comparator<ValueType> sortOrder, NodeCreator1<ValueType> createChildNode, Icon icon) {
+		private GroupingNode(TreeNode parent, String title, Collection<ValueType> values, Comparator<ValueType> sortOrder, Icon icon, NodeCreator1<ValueType> createChildNode) {
 			super(parent, title, true, false, icon);
 			this.values = values;
 			this.sortOrder = sortOrder;
@@ -371,6 +372,7 @@ class TreeNodes {
 			getFile = null;
 			externalViewerInfo = null;
 			filter = null;
+			dataTree = null;
 		}
 		
 		private static <IT, VT, FilterOptType extends Enum<FilterOptType> & FilterOption> GroupingNodeFilter<Map.Entry<IT,VT>,FilterOptType> createMapFilter(
@@ -469,22 +471,22 @@ class TreeNodes {
 		}
 		
 		@Override public Filter getFilter() { return filter; }
-		private void setFilter(GroupingNodeFilter<ValueType,?> filter) {
+		void setFilter(GroupingNodeFilter<ValueType,?> filter) {
 			this.filter = filter;
 			if (filter!=null)
 				filter.setHost(this);
 		}
 		
-		private void setFileSource(File file, ExternalViewerInfo externalViewerInfo) {
+		void setFileSource(File file, ExternalViewerInfo externalViewerInfo) {
 			setFileSource(new LabeledFile(file), externalViewerInfo);
 		}
-		private void setFileSource(LabeledFile file, ExternalViewerInfo externalViewerInfo) {
+		void setFileSource(LabeledFile file, ExternalViewerInfo externalViewerInfo) {
 			this.file = file;
 			this.externalViewerInfo = externalViewerInfo;
 			if (getFile!=null) throw new IllegalStateException();
 			if (file==null) throw new IllegalArgumentException();
 		}
-		private void setFileSource(FilePromise getFile, ExternalViewerInfo externalViewerInfo) {
+		void setFileSource(FilePromise getFile, ExternalViewerInfo externalViewerInfo) {
 			this.getFile = getFile;
 			this.externalViewerInfo = externalViewerInfo;
 			if (getFile==null) throw new IllegalArgumentException();
@@ -496,7 +498,11 @@ class TreeNodes {
 		@Override public ExternalViewerInfo getExternalViewerInfo() {
 			return externalViewerInfo;
 		}
-	
+		
+		void setDataTree(TreeRoot dataTree) { this.dataTree = dataTree; }
+		@Override public TreeRoot getContentAsTree() { return dataTree; }
+		@Override ContentType getContentType() { return dataTree==null ? null : ContentType.DataTree; }
+		
 		@Override
 		protected Vector<? extends TreeNode> createChildren() {
 			Vector<ValueType> vector = new Vector<>(values);
@@ -733,7 +739,7 @@ class TreeNodes {
 			return node;
 		}
 		private static GroupingNode<ScreenShot> createGameScreenShotsNode(TreeNode parent, String title, ScreenShotLists.ScreenShotList screenShots, Icon icon) {
-			GroupingNode<ScreenShot> groupingNode = GroupingNode.create(parent, title, screenShots, Comparator.naturalOrder(), ScreenShotNode::new, icon);
+			GroupingNode<ScreenShot> groupingNode = GroupingNode.create(parent, title, screenShots, Comparator.naturalOrder(), icon, ScreenShotNode::new);
 			groupingNode.setFileSource(screenShots.imagesFolder, null);
 			return groupingNode;
 		}
@@ -745,8 +751,8 @@ class TreeNodes {
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
-				children.add(GroupingNode.create(this, "Games"  , Data.games  , Comparator.<Game>naturalOrder()                      , GameNode  ::new));
-				children.add(GroupingNode.create(this, "Players", Data.players, Comparator.comparing(Map.Entry<Long, Player>::getKey), PlayerNode::new));
+				children.add(GroupingNode.create(this, "Games"  , Data.games  , Comparator.<Game>naturalOrder(), GameNode  ::new));
+				children.add(GroupingNode.create(this, "Players", Data.players, Data.createPlayerIdKeyOrder()  , PlayerNode::new));
 				return children;
 			}
 		}
@@ -773,28 +779,47 @@ class TreeNodes {
 					children.add(new FileSystem.AppManifestNode(this, game.appManifest.file));
 				}
 				if (!game.gameInfos.isEmpty()) {
-					children.add(GroupingNode.create(this, "Game Infos", game.gameInfos, Data.createPlayerIdKeyOrder(), GameInfosNode::new));
+					children.add(GroupingNode.create(
+							this, "Game Infos",
+							game.gameInfos,
+							Data.createPlayerIdKeyOrder(),
+							GameInfosNode::new
+					));
 				}
 				if (!game.achievementProgress.isEmpty()) {
-					children.add(GroupingNode.create(this, "Achievement Progress", game.achievementProgress, Data.createPlayerIdKeyOrder(), AchievementProgressNode.AchievementProgressInGameNode::new));
+					children.add(GroupingNode.create(
+							this, "Achievement Progress",
+							game.achievementProgress,
+							Data.createPlayerIdKeyOrder(),
+							AchievementProgressNode.AchievementProgressInGameNode::new
+					));
 				}
 				if (game.imageFiles!=null && !game.imageFiles.isEmpty()) {
-					children.add(GroupingNode.create(this, "Images", game.imageFiles, GroupingNode.createMapKeyOrder(Comparator.<String>naturalOrder()), (p,i,v)->FileSystem.FolderNode.createNode(p,v,null,null), TreeIcons.ImageFile.getIcon()));
-					children.add(new FileSystem.FolderNode(this, "Images", game.imageFiles.values(), TreeIcons.ImageFile));
+					children.add(GroupingNode.create(
+							this, "Images",
+							game.imageFiles,
+							GroupingNode.createMapKeyOrder(Comparator.<String>naturalOrder()),
+							TreeIcons.ImageFile.getIcon(),
+							(p,i,v)->FileSystem.FolderNode.createNode(p,v,null,null)
+					));
 				}
 				if (game.screenShots!=null && !game.screenShots.isEmpty()) {
-					children.add(GroupingNode.create(this, "ScreenShots", game.screenShots, Data.createPlayerIdKeyOrder(), PlayersNGames::createGameScreenShotsNode, TreeIcons.ImageFile.getIcon()));
-					//children.add(new ScreenShotsNode<>(this,game.screenShots,id->String.format("by %s", getPlayerName(id)),Comparator.<Long>naturalOrder()));
+					children.add(GroupingNode.create(
+							this, "ScreenShots",
+							game.screenShots,
+							Data.createPlayerIdKeyOrder(),
+							TreeIcons.ImageFile.getIcon(),
+							PlayersNGames::createGameScreenShotsNode
+					));
 				}
 				if (game.steamCloudFolders!=null && !game.steamCloudFolders.isEmpty()) {
-					HashMap<File,String> folderLabels = new HashMap<>();
-					game.steamCloudFolders.forEach((playerID,folder)->folderLabels.put(folder, String.format("by %s", Data.getPlayerName(playerID))));
-					
-					Stream<Map.Entry<Long, File>> sorted = game.steamCloudFolders.entrySet().stream().sorted(Data.createPlayerIdKeyOrder());
-					File[] files = sorted.map(Map.Entry<Long,File>::getValue).toArray(File[]::new);
-					//Collection<File> files = game.gameDataFolders.values();
-					
-					children.add(new FileSystem.FolderNode(this, "SteamCloud Shared Data", files, true, folderLabels::get, TreeIcons.Folder));
+					children.add(GroupingNode.create(
+							this, "SteamCloud Shared Data",
+							game.steamCloudFolders,
+							Data.createPlayerIdKeyOrder(),
+							TreeIcons.Folder.getIcon(),
+							(p,i,v)->FileSystem.FolderNode.createNode(p,v,f->"by "+Data.getPlayerName(i),null)
+					));
 				}
 				
 				return children;
@@ -823,20 +848,35 @@ class TreeNodes {
 				
 				GroupingNode<?> groupingNode;
 				if (player.steamCloudFolders!=null && !player.steamCloudFolders.isEmpty()) {
-					children.add(groupingNode = GroupingNode.create(this, "SteamCloud Shared Data", player.steamCloudFolders, Data.createGameIdKeyOrder(), this::createSteamCloudFolderNode));
+					children.add(groupingNode = GroupingNode.create(
+							this, "SteamCloud Shared Data",
+							player.steamCloudFolders,
+							Data.createGameIdKeyOrder(),
+							this::createSteamCloudFolderNode
+					));
 					groupingNode.setFileSource(player.folder, null);
 				}
 				if (player.screenShots!=null && !player.screenShots.isEmpty()) {
-					children.add(groupingNode = GroupingNode.create(this, "ScreenShots", player.screenShots, Data.createGameIdKeyOrder(), PlayersNGames::createGameScreenShotsNode, TreeIcons.ImageFile.getIcon()));
+					children.add(groupingNode = GroupingNode.create(
+							this, "ScreenShots",
+							player.screenShots,
+							Data.createGameIdKeyOrder(),
+							TreeIcons.ImageFile.getIcon(),
+							PlayersNGames::createGameScreenShotsNode
+					));
 					groupingNode.setFileSource(player.screenShots.folder, null);
-					//children.add(new ScreenShotsNode<Integer>(this,player.screenShots,id->getGameTitle(id),id->getGameIcon(id,TreeIcons.ImageFile),gameIdOrder));
 				}
 				if (player.configFolder!=null) {
 					children.add(new FileSystem.FolderNode(this, "Config Folder", player.configFolder));
 				}
 				if (player.localconfig!=null) {
 					if (player.localconfig.vdfTreeNode!=null)
-						children.add(new RawVDFDataNode(this, "LocalConfig", player.localconfig.vdfTreeNode, player.localconfig.file, ExternalViewerInfo.TextEditor));
+						children.add(new RawVDFDataNode(
+								this, "LocalConfig",
+								player.localconfig.vdfTreeNode,
+								player.localconfig.file,
+								ExternalViewerInfo.TextEditor
+						));
 					else
 						children.add(new FileSystem.VDF_File(this, "LocalConfig", player.localconfig.file));
 				}
@@ -848,9 +888,19 @@ class TreeNodes {
 				}
 				if (!player.gameInfos.isEmpty()) {
 					GroupingNode<Map.Entry<Integer, GameInfos>> groupingNode1;
-					children.add(groupingNode1 = GroupingNode.create(this, "Game Infos", player.gameInfos, Data.createGameIdKeyOrder(), GameInfosNode::new));
+					children.add(groupingNode1 = GroupingNode.create(
+							this, "Game Infos",
+							player.gameInfos,
+							Data.createGameIdKeyOrder(),
+							GameInfosNode::new
+					));
 					groupingNode1.setFileSource(player.gameStateFolder, null);
-					groupingNode1.setFilter(GroupingNode.createMapFilter(GameInfosFilterOptions.class, GameInfosFilterOptions.values(), GameInfosFilterOptions::cast, GameInfos::meetsFilterOption));
+					groupingNode1.setFilter(GroupingNode.createMapFilter(
+							GameInfosFilterOptions.class,
+							GameInfosFilterOptions.values(),
+							GameInfosFilterOptions::cast,
+							GameInfos::meetsFilterOption
+					));
 				}
 				
 				return children;
@@ -1149,13 +1199,109 @@ class TreeNodes {
 						if (data.communityItems.rawData!=null)
 							children.add(new RawJsonDataNode(this, "Community Items [Raw Data]", data.communityItems.rawData));
 				}
-				
-				
+				if (!CombinedBase64ValuesNode.isEmpty(data.appActivity,data.gameActivity,data.userNews)) {
+					children.add(new CombinedBase64ValuesNode(this, "Some Base64 Values", data.appActivity,data.gameActivity,data.userNews));
+				}
 				if (data.blocks!=null) {
 					children.add(groupingNode = GroupingNode.create(this, "Raw Blocks", data.blocks, null, BlockNode::new));
 					groupingNode.setFileSource(data.file,ExternalViewerInfo.TextEditor);
+					if (data.rawData!=null)
+						groupingNode.setDataTree(JSONHelper.createTreeRoot(data.rawData, false));
 				}
+				
+				// data.fullDesc      ; // Ok
+				// data.shortDesc     ; // Ok
+				// data.badge         ; // Ok
+				// data.achievements  ; // Ok
+				// data.userNews      ; // Ok
+				// data.gameActivity  ; // Ok
+				// data.achievementMap;
+				// data.socialMedia   ;
+				// data.associations  ;
+				// data.appActivity   ; // Ok
+				// data.releaseData   ;
+				// data.friends       ;
+				// data.communityItems; // Ok
+				
 				return children;
+			}
+
+			static class CombinedBase64ValuesNode extends BaseTreeNode<TreeNode,TreeNode> {
+				
+				private final GameInfos.AppActivity  appActivity;
+				private final GameInfos.GameActivity gameActivity;
+				private final GameInfos.UserNews     userNews;
+				
+				public CombinedBase64ValuesNode(TreeNode parent, String title, GameInfos.AppActivity appActivity, GameInfos.GameActivity gameActivity, GameInfos.UserNews userNews) {
+					super(parent, title, true, false);
+					this.appActivity  = appActivity;
+					this.gameActivity = gameActivity;
+					this.userNews     = userNews;
+				}
+
+				public static boolean isEmpty(GameInfos.AppActivity appActivity, GameInfos.GameActivity gameActivity, GameInfos.UserNews userNews) {
+					if (appActivity !=null && !appActivity .isEmpty()) return false;
+					if (gameActivity!=null && !gameActivity.isEmpty()) return false;
+					if (userNews    !=null && !userNews    .isEmpty()) return false;
+					return true;
+				}
+
+				@Override protected Vector<? extends TreeNode> createChildren() {
+					Vector<TreeNode> children = new Vector<>();
+					if (appActivity!=null) {
+						if (appActivity.hasParsedData)
+							children.add(new Base64ValueNode(this, "App Activity", appActivity.value));
+						else if (appActivity.rawData!=null)
+							children.add(new RawJsonDataNode(this, "App Activity [Raw Data]", appActivity.rawData));
+					}
+					if (gameActivity!=null) {
+						if (gameActivity.hasParsedData)
+							for (int i=0; i<gameActivity.values.size(); i++)
+								children.add(new Base64ValueNode(this, "Game Activity ["+(i+1)+"]", gameActivity.values.get(i)));
+						else if (gameActivity.rawData!=null)
+							children.add(new RawJsonDataNode(this, "Game Activity [Raw Data]", gameActivity.rawData));
+					}
+					if (userNews!=null) {
+						if (userNews.hasParsedData)
+							for (int i=0; i<userNews.values.size(); i++)
+								children.add(new Base64ValueNode(this, "User News ["+(i+1)+"]", userNews.values.get(i)));
+						else if (userNews.rawData!=null)
+							children.add(new RawJsonDataNode(this, "User News [Raw Data]", userNews.rawData));
+					}
+					return children;
+				}
+				
+				static class Base64ValueNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource {
+
+					private final Base64String value;
+
+					public Base64ValueNode(TreeNode parent, String title, Base64String value) {
+						super(parent, title, false, true);
+						this.value = value;
+					}
+					@Override protected Vector<? extends TreeNode> createChildren() { return null; }
+					
+					@Override public String getContentAsText() {
+						if (value==null) return "<null>";
+						
+						String str = "";
+						str += "Original Text:\r\n";
+						str += String.format("\"%s\"%n", value.string);
+						str += "\r\n";
+						str += "Decoded Bytes:\r\n";
+						if (value.bytes==null)
+							str += "   <Decode Error>\r\n";
+						else
+							str += SteamInspector.toHexTable(value.bytes,-1);
+						
+						
+						return str;
+					}
+					@Override ContentType getContentType() {
+						return ContentType.PlainText;
+					}
+					
+				}
 			}
 
 			static class CommunityItemNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, TextContentSource{
@@ -1844,11 +1990,17 @@ class TreeNodes {
 					} else if (JSON_File.is(file)) {
 						node = new JSON_File(parent, file);
 						
+					} else if (ACF_File.is(file)) {
+						node = new ACF_File(parent, file);
+						
 					} else if (AppManifestNode.is(file)) {
 						node = new AppManifestNode(parent, file);
 						
 					} else if (ImageFile.is(file)) {
 						node = new ImageFile(parent, file);
+						
+					} else if (ZipArchiveFile.is(file)) {
+						node = new ZipArchiveFile(parent, file);
 						
 					} else {
 						node = new FileNode(parent, file);
@@ -1909,6 +2061,17 @@ class TreeNodes {
 			}
 		}
 
+		private static class ZipArchiveFile extends FileNode {
+
+			ZipArchiveFile(TreeNode parent, File file) {
+				super(parent, file, TreeIcons.RootFolder, ExternalViewerInfo.ZipViewer);
+			}
+			
+			static boolean is(File file) {
+				return file.isFile() && fileNameEndsWith(file, ".zip", ".7z", ".rar");
+			}
+		}
+
 		private static class ImageFile extends FileNode implements ImageContentSource {
 			
 			private BufferedImage imageContent;
@@ -1951,14 +2114,14 @@ class TreeNodes {
 				this(parent, file, TreeIcons.TextFile, null);
 			}
 
-			protected TextFile(TreeNode parent, File file, TreeIcons icon, Charset charset) {
+			TextFile(TreeNode parent, File file, TreeIcons icon, Charset charset) {
 				super(parent, file, icon, ExternalViewerInfo.TextEditor);
 				this.charset = charset;
 				this.textContent = null;
 			}
 
 			static boolean is(File file) {
-				return fileNameEndsWith(file, ".txt");
+				return file.isFile() && fileNameEndsWith(file, ".txt", ".sii", ".lua");
 			}
 
 			@Override ContentType getContentType() {
@@ -1980,13 +2143,13 @@ class TreeNodes {
 			JSON_File(TreeNode parent, File file) {
 				this(parent, file, TreeIcons.JSONFile);
 			}
-			protected JSON_File(TreeNode parent, File file, TreeIcons icon) {
+			JSON_File(TreeNode parent, File file, TreeIcons icon) {
 				super(parent, file, icon, StandardCharsets.UTF_8);
 				parseResult = null;
 			}
 
 			static boolean is(File file) {
-				return fileNameEndsWith(file,".json");
+				return file.isFile() && fileNameEndsWith(file,".json");
 			}
 			
 			@Override ContentType getContentType() {
@@ -2041,7 +2204,7 @@ class TreeNodes {
 				return super.toString();
 			}
 			static boolean is(File file) {
-				return fileNameEndsWith(file,".vdf");
+				return file.isFile() && fileNameEndsWith(file,".vdf");
 			}
 			
 			@Override ContentType getContentType() {
@@ -2064,7 +2227,21 @@ class TreeNodes {
 			}
 		}
 
-		private static class AppManifestNode extends VDF_File {
+		private static class ACF_File extends VDF_File {
+			
+			ACF_File(TreeNode parent, File file) {
+				this(parent, file, TreeIcons.VDFFile);
+			}
+			ACF_File(TreeNode parent, File file, TreeIcons icon) {
+				super(parent, file, icon);
+			}
+		
+			static boolean is(File file) {
+				return file.isFile() && fileNameEndsWith(file,".acf");
+			}
+		}
+
+		private static class AppManifestNode extends ACF_File {
 			
 			private final int id;
 		
@@ -2074,7 +2251,7 @@ class TreeNodes {
 			}
 		
 			static boolean is(File file) {
-				return AppManifest.getAppIDFromFile(file) != null;
+				return file.isFile() && AppManifest.getAppIDFromFile(file) != null;
 			}
 
 			@Override public String toString() {

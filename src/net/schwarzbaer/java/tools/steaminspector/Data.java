@@ -35,7 +35,7 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Array;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.TraverseException;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenue.FilterOption;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FilterOption;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileNameNExt;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;
@@ -499,14 +499,15 @@ class Data {
 		}
 
 		static Base64String parse(String string, File file) {
-			byte[] bytes_;
+			if (string==null) throw new IllegalArgumentException();
+			byte[] bytes;
 			try {
-				bytes_ = parseBase64(string);
+				bytes = parseBase64(string);
 			} catch (Base64Exception e) {
 				showException(e, file);
-				bytes_ = null;
+				bytes = null;
 			}
-			return new Base64String(string,bytes_);
+			return new Base64String(string,bytes);
 		}
 
 		boolean isEmpty() {

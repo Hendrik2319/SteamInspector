@@ -20,6 +20,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.EnumMap;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
@@ -197,7 +198,7 @@ class SteamInspector {
 
 	private static class AppSettings extends Settings<AppSettings.ValueGroup,AppSettings.ValueKey> {
 		private enum ValueKey {
-			WindowX, WindowY, WindowWidth, WindowHeight, TextEditor, ImageViewer, Browser, SteamClientFolder, SteamLibraryFolders, SelectedTreeType,
+			WindowX, WindowY, WindowWidth, WindowHeight, TextEditor, ImageViewer, Browser, SteamClientFolder, SteamLibraryFolders, SelectedTreeType, ZipViewer,
 		}
 
 		private enum ValueGroup implements Settings.GroupKeys<ValueKey> {
@@ -272,7 +273,7 @@ class SteamInspector {
 			if (path==null) return;
 			showContent(path.getLastPathComponent());
 		});
-		new MainTreeContextMenue(tree,()->treeModel);
+		new MainTreeContextMenu(tree,()->treeModel);
 		
 		JScrollPane treePanel = new JScrollPane(tree);
 		treePanel.setPreferredSize(new Dimension(500, 800));
@@ -641,6 +642,42 @@ class SteamInspector {
 		}
 	}
 	
+	private final static int HEXTABLE_PAGE_SIZE = 0x10000;
+
+	static String toHexTable(byte[] bytes, int page) {
+		StringBuilder text = new StringBuilder();
+		//String text = "";
+		
+		if (bytes==null)
+			text.append("Can't read content");
+		else {
+			int startAddress = page<0 ? 0                 :  page   *HEXTABLE_PAGE_SIZE;
+			int   endAddress = page<0 ? Integer.MAX_VALUE : (page+1)*HEXTABLE_PAGE_SIZE;
+			for (int lineStart=startAddress; lineStart<endAddress && lineStart<bytes.length; lineStart+=16) {
+				StringBuilder hex = new StringBuilder();
+				StringBuilder plain = new StringBuilder();
+				for (int pos=0; pos<16; pos++) {
+					if (pos==8)
+						hex.append(" |");
+					if (lineStart+pos<bytes.length) {
+						byte b = bytes[lineStart+pos];
+						hex.append(String.format(" %02X", b));
+						char ch = (char) b;
+						if (ch=='\t' || ch=='\n' || ch=='\r') ch='.';
+						plain.append(ch);
+					} else {
+						hex.append(" --");
+						plain.append(' ');
+					}
+				}
+				
+				text.append(String.format("%08X: %s  |  %s%n", lineStart, hex, plain));
+			}
+		}
+		
+		return text.toString();
+	}
+
 	private static class FolderSettingsDialog extends StandardDialog {
 		private static final long serialVersionUID = 4253868170530477053L;
 		private static final int RMD = GridBagConstraints.REMAINDER;
@@ -877,9 +914,10 @@ class SteamInspector {
 	}
 	
 	enum ExternalViewerInfo {
-		TextEditor  ( "Text Editor" , AppSettings.ValueKey.TextEditor , AddressType.File),
-		ImageViewer ( "Image Viewer", AppSettings.ValueKey.ImageViewer, AddressType.File),
-		Browser     ( "Browser"     , AppSettings.ValueKey.Browser    , AddressType.URL, AddressType.File),
+		TextEditor  ( "Text Editor"    , AppSettings.ValueKey.TextEditor , AddressType.File),
+		ImageViewer ( "Image Viewer"   , AppSettings.ValueKey.ImageViewer, AddressType.File),
+		Browser     ( "Browser"        , AppSettings.ValueKey.Browser    , AddressType.URL, AddressType.File),
+		ZipViewer   ( "Zip File Viewer", AppSettings.ValueKey.ZipViewer  , AddressType.File),
 		;
 		
 		enum AddressType { Folder, File, URL }
@@ -895,7 +933,7 @@ class SteamInspector {
 			if (this.viewerName==null) throw new IllegalArgumentException();
 			if (this.viewerKey ==null) throw new IllegalArgumentException();
 		}
-		boolean is(AddressType addressType) {
+		boolean accept(AddressType addressType) {
 			for (AddressType at:addressTypes)
 				if (addressType==at) return true;
 			return false;
@@ -939,7 +977,7 @@ class SteamInspector {
 		}
 	}
 
-	static class MainTreeContextMenue extends JPopupMenu {
+	static class MainTreeContextMenu extends JPopupMenu {
 		private static final long serialVersionUID = -3729823093931172004L;
 
 		interface URLBasedNode {
@@ -970,6 +1008,7 @@ class SteamInspector {
 			Filter getFilter();
 		}
 
+		private final JTree tree;
 		private final Supplier<DefaultTreeModel> getCurrentTreeModel;
 		
 		private final JMenuItem miCopyPath;
@@ -978,6 +1017,7 @@ class SteamInspector {
 		private final JMenuItem miSetTitle;
 		private final JMenuItem miCollapseChildren;
 		private final JMenu menuFilterChildren;
+		private final ExtViewerChooseMenu extViewerChooseMenu;
 		
 		private TreePath clickedPath = null;
 		private Object clickedNode = null;
@@ -987,8 +1027,13 @@ class SteamInspector {
 		private ExternalViewerInfo clickedExternalViewerInfo = null;
 		private Filter clickedFilter = null;
 
-		MainTreeContextMenue(JTree tree, Supplier<DefaultTreeModel> getCurrentTreeModel) {
+		MainTreeContextMenu(JTree tree, Supplier<DefaultTreeModel> getCurrentTreeModel) {
+			if (tree==null) throw new IllegalArgumentException();
+			if (getCurrentTreeModel==null) throw new IllegalArgumentException();
+			this.tree = tree;
 			this.getCurrentTreeModel = getCurrentTreeModel;
+			
+			extViewerChooseMenu = new ExtViewerChooseMenu();
 			
 			add(miCopyPath = createMenuItem("Copy Path to Clipboard", true, e->{
 				ClipboardTools.copyToClipBoard(clickedFile.file.getAbsolutePath());
@@ -997,35 +1042,9 @@ class SteamInspector {
 				ClipboardTools.copyToClipBoard(clickedURL);
 			}));
 			add(miExtViewer = createMenuItem("Open in External Viewer", true, e->{
-				File viewer = clickedExternalViewerInfo.getExecutable(tree);
-				if (viewer==null) return;
-				
-				String viewerPath = viewer.getAbsolutePath();
-				String filePath = null;
-				//clickedExternalViewerInfo.
-				for (ExternalViewerInfo.AddressType at:ExternalViewerInfo.AddressType.values())
-					if (clickedExternalViewerInfo.is(at))
-						switch (at) {
-						case URL   : if (clickedURL !=null) filePath = clickedURL; break;
-						case Folder: if (clickedFile!=null && clickedFile.file.isDirectory()) filePath = clickedFile.file.getAbsolutePath(); break;
-						case File  : if (clickedFile!=null && clickedFile.file.isFile     ()) filePath = clickedFile.file.getAbsolutePath();
-						else if (clickedFileCreator!=null) {
-							File file = clickedFileCreator.createFile.get();
-							if (file!=null) filePath = file.getAbsolutePath();
-						}
-							break;
-						}
-				if (viewerPath!=null && filePath!=null)
-					try {
-						System.out.printf("Execute in Shell: \"%s\" \"%s\"%n", viewerPath, filePath);
-						Runtime.getRuntime().exec(new String[] { viewerPath, filePath });
-					} catch (IOException ex) {
-						System.err.println("Exception occured while opening selected file in an external viewer:");
-						System.err.printf ("    external viewer: \"%s\"%n", viewerPath);
-						System.err.printf ("    parameter: \"%s\"%n", filePath);
-						ex.printStackTrace();
-					}
+				openAs(clickedExternalViewerInfo);
 			}));
+			add(extViewerChooseMenu.createMenu());
 			add(miSetTitle = createMenuItem("Set Title", true, e->{
 				DefaultTreeModel treeModel = this.getCurrentTreeModel.get();
 				if (treeModel==null) return;
@@ -1047,56 +1066,98 @@ class SteamInspector {
 			
 			addSeparator();
 			add(miCollapseChildren = createMenuItem("Collapse Children", true, e->{
-				if (tree!=null && clickedPath!=null && clickedNode instanceof TreeNodes.TreeNodeII) {
+				if (clickedPath!=null && clickedNode instanceof TreeNodes.TreeNodeII) {
 					TreeNodes.TreeNodeII treeNodeII = (TreeNodes.TreeNodeII) clickedNode;
 					Iterable<? extends TreeNode> children = treeNodeII.getChildren();
 					if (children!=null) {
-						tree.expandPath(clickedPath);
+						this.tree.expandPath(clickedPath);
 						for (TreeNode child:children)
-							tree.collapsePath(clickedPath.pathByAddingChild(child));
+							this.tree.collapsePath(clickedPath.pathByAddingChild(child));
 					}
 				}
 			}));
 			addSeparator();
 			add(menuFilterChildren = new JMenu("Filter Children"));
 			
-			tree.addMouseListener(new MouseAdapter() {
+			this.tree.addMouseListener(new MouseAdapter() {
 
 				@Override public void mouseClicked(MouseEvent e) {
 					if (e.getButton()==MouseEvent.BUTTON3) {
-						clickedPath = tree.getPathForLocation(e.getX(), e.getY());
+						clickedPath = MainTreeContextMenu.this.tree.getPathForLocation(e.getX(), e.getY());
 						if (clickedPath!=null)
 							clickedNode = clickedPath.getLastPathComponent();
-						prepareMenueItems();
-						show(tree, e.getX(), e.getY());
+						prepareMenuItems();
+						show(MainTreeContextMenu.this.tree, e.getX(), e.getY());
 					}
 				}
 			});
 		}
 
-		protected void prepareMenueItems() {
+		private void openAs(ExternalViewerInfo viewerInfo) {
+			File viewer = viewerInfo.getExecutable(tree);
+			if (viewer==null) return;
+			
+			String viewerPath = viewer.getAbsolutePath();
+			String filePath = getFilePath(viewerInfo);
+			
+			if (viewerPath!=null && filePath!=null)
+				try {
+					System.out.printf("Execute in Shell: \"%s\" \"%s\"%n", viewerPath, filePath);
+					Runtime.getRuntime().exec(new String[] { viewerPath, filePath });
+				} catch (IOException ex) {
+					System.err.println("Exception occured while opening selected file in an external viewer:");
+					System.err.printf ("    external viewer: \"%s\"%n", viewerPath);
+					System.err.printf ("    parameter: \"%s\"%n", filePath);
+					ex.printStackTrace();
+				}
+		}
+
+		private boolean isClickedContentAcceptedBy(ExternalViewerInfo viewerInfo) {
+			if (viewerInfo==null) return false;
+			for (ExternalViewerInfo.AddressType addressType:ExternalViewerInfo.AddressType.values())
+				if (viewerInfo.accept(addressType))
+					switch (addressType) {
+					case URL   : if (   clickedURL !=null                                                                 ) return true; break;
+					case Folder: if (   clickedFile!=null && clickedFile.file.isDirectory()                               ) return true; break;
+					case File  : if ( ( clickedFile!=null && clickedFile.file.isFile     () ) || clickedFileCreator!=null ) return true; break;
+					}
+			return false;
+		}
+
+		private String getFilePath(ExternalViewerInfo viewerInfo) {
+			for (ExternalViewerInfo.AddressType addressType:ExternalViewerInfo.AddressType.values()) {
+				if (viewerInfo.accept(addressType))
+					switch (addressType) {
+					case URL   : if (clickedURL !=null) return clickedURL; break;
+					case Folder: if (clickedFile!=null && clickedFile.file.isDirectory()) return clickedFile.file.getAbsolutePath(); break;
+					case File  : if (clickedFile!=null && clickedFile.file.isFile     ()) return clickedFile.file.getAbsolutePath();
+						if (clickedFileCreator!=null) {
+							File file = clickedFileCreator.createFile.get();
+							if (file!=null) return file.getAbsolutePath();
+						}
+						break;
+					}
+			}
+			return null;
+		}
+
+		protected void prepareMenuItems() {
 			clickedURL                = clickedNode instanceof URLBasedNode       ? ((URLBasedNode      ) clickedNode).getURL()                : null;
 			clickedFile               = clickedNode instanceof FileBasedNode      ? ((FileBasedNode     ) clickedNode).getFile()               : null;
 			clickedFileCreator        = clickedNode instanceof FileCreatingNode   ? ((FileCreatingNode  ) clickedNode).getFilePromise()        : null;
 			clickedExternalViewerInfo = clickedNode instanceof ExternViewableNode ? ((ExternViewableNode) clickedNode).getExternalViewerInfo() : null;
 			clickedFilter             = clickedNode instanceof FilterableNode     ? ((FilterableNode    ) clickedNode).getFilter()             : null;
 			
-			
+			extViewerChooseMenu.prepareMenuItems();
 			
 			miCollapseChildren.setEnabled(clickedNode!=null);
 			miCopyPath .setEnabled(clickedFile!=null);
 			miCopyURL  .setEnabled(clickedURL !=null);
-			miExtViewer.setEnabled(
-				clickedExternalViewerInfo!=null && 
-				(  ( clickedExternalViewerInfo.is(ExternalViewerInfo.AddressType.Folder) &&    clickedFile!=null && clickedFile.file.isDirectory() )
-				|| ( clickedExternalViewerInfo.is(ExternalViewerInfo.AddressType.File  ) && ( (clickedFile!=null && clickedFile.file.isFile     ()) || clickedFileCreator!=null ) )
-				|| ( clickedExternalViewerInfo.is(ExternalViewerInfo.AddressType.URL   ) &&    clickedURL !=null )
-				)
-			);
+			miExtViewer.setEnabled(isClickedContentAcceptedBy(clickedExternalViewerInfo));
 			
 			String pathPrefix = clickedFile!=null ? (clickedFile.file.isFile() ? "File " : clickedFile.file.isDirectory() ? "Folder " : "") : clickedFileCreator!=null ? "File " : "";
 			String viewerName = clickedExternalViewerInfo==null ? "External Viewer" : clickedExternalViewerInfo.viewerName;
-			String fileLabel  = clickedFile!=null ? clickedFile.label : clickedFileCreator!=null ? clickedFileCreator.label : "";
+			String fileLabel  = getFileLabel();
 			
 			miCopyPath .setText(String.format("Copy %sPath to Clipboard", pathPrefix));
 			miExtViewer.setText(String.format("Open %sin %s" , fileLabel.isEmpty() ? "" : fileLabel+" ", viewerName));
@@ -1144,6 +1205,44 @@ class SteamInspector {
 				menuFilterChildren.setEnabled(false);
 				menuFilterChildren.removeAll();
 			}
+		}
+
+		private String getFileLabel() {
+			return clickedFile!=null ? clickedFile.label : clickedFileCreator!=null ? clickedFileCreator.label : clickedURL!=null ? "URL" : "";
+		}
+
+		private class ExtViewerChooseMenu {
+		
+			private JMenu menu;
+			private final EnumMap<ExternalViewerInfo,JMenuItem> menuItems;
+			private boolean setMenuActive;
+
+			public ExtViewerChooseMenu() {
+				menu = null;
+				menuItems = new EnumMap<>(ExternalViewerInfo.class);
+				setMenuActive = true;
+			}
+
+			public JMenu createMenu() {
+				menu = new JMenu("Open in ...");
+				menuItems.clear();
+				for (ExternalViewerInfo evi:ExternalViewerInfo.values())
+					menuItems.put(evi, menu.add(createMenuItem(evi.viewerName, true, e->openAs(evi))));
+				return menu;
+			}
+		
+			public void prepareMenuItems() {
+				String fileLabel  = getFileLabel();
+				menu.setText(String.format("Open %sin ..." , fileLabel.isEmpty() ? "" : fileLabel+" "));
+				setMenuActive = false;
+				menuItems.forEach((evi,mi)->{
+					boolean b = isClickedContentAcceptedBy(evi);
+					if (b) setMenuActive = true;
+					mi.setEnabled(b);
+				});
+				menu.setEnabled(setMenuActive);
+			}
+		
 		}
 		
 	}
@@ -1289,7 +1388,6 @@ class SteamInspector {
 	}
 
 	private static class HexTableOutput extends TextOutput {
-		private final static int PAGE_SIZE = 0x10000;
 		private final JButton prevPageBtn1;
 		private final JButton prevPageBtn2;
 		private final JButton nextPageBtn1;
@@ -1321,8 +1419,8 @@ class SteamInspector {
 		private void enableButtons() {
 			prevPageBtn1.setEnabled(bytes!=null && page>0);
 			prevPageBtn2.setEnabled(bytes!=null && page>0);
-			nextPageBtn1.setEnabled(bytes!=null && (page+1)*PAGE_SIZE<bytes.length);
-			nextPageBtn2.setEnabled(bytes!=null && (page+1)*PAGE_SIZE<bytes.length);
+			nextPageBtn1.setEnabled(bytes!=null && (page+1)*HEXTABLE_PAGE_SIZE<bytes.length);
+			nextPageBtn2.setEnabled(bytes!=null && (page+1)*HEXTABLE_PAGE_SIZE<bytes.length);
 		}
 
 		void setHexTableOutput(byte[] bytes) {
@@ -1338,13 +1436,13 @@ class SteamInspector {
 			}
 			setText("prepare page "+page+" ...");
 			hexTableFormatter = new HexTableFormatter(bytes, page, hexTable->{
-				showMessageFromThread("HexTableOutput.setPage result task started  (page:%d, chars:%d)", this.page, hexTable.length());
+				showMessageFromThread("HexTableOutput.setPage result task started  (page:%d, chars:%d)", page, hexTable.length());
 				setText(hexTable);
-				showMessageFromThread("HexTableOutput.setPage setText finished     (page:%d, chars:%d)", this.page, hexTable.length());
+				showMessageFromThread("HexTableOutput.setPage setText finished     (page:%d, chars:%d)", page, hexTable.length());
 				setScrollPos(0);
 				loadScrollPos();
 				enableButtons();
-				showMessageFromThread("HexTableOutput.setPage result task finished (page:%d, chars:%d)", this.page, hexTable.length());
+				showMessageFromThread("HexTableOutput.setPage result task finished (page:%d, chars:%d)", page, hexTable.length());
 			});
 			hexTableFormatter.execute();
 		}
@@ -1369,9 +1467,9 @@ class SteamInspector {
 			
 			@Override
 			protected String doInBackground() throws Exception {
-				showMessageFromThread("HexTableFormatter.doInBackground started  (page:%d, bytes:%d)", this.page, this.bytes.length);
+				showMessageFromThread("HexTableFormatter.doInBackground started  (page:%d, bytes:%d)", page, bytes.length);
 				String hexTable = toHexTable(bytes, page);
-				showMessageFromThread("HexTableFormatter.doInBackground finished (page:%d, chars:%d)%s", this.page, hexTable.length(), isObsolete?" isObsolete":"");
+				showMessageFromThread("HexTableFormatter.doInBackground finished (page:%d, chars:%d)%s", page, hexTable.length(), isObsolete?" isObsolete":"");
 				return isObsolete ? null : hexTable;
 			}
 
@@ -1394,37 +1492,6 @@ class SteamInspector {
 					showMessageFromThread("HexTableFormatter.done result was send (page:%d, chars:%d)", this.page, hexTable.length());
 				}
 				showMessageFromThread("HexTableFormatter.done finished (page:%d)", this.page);
-			}
-
-			private static String toHexTable(byte[] bytes, int page) {
-				String text = "";
-				
-				if (bytes==null)
-					text = "Can't read content";
-				
-				else
-					for (int lineStart=page*PAGE_SIZE; lineStart<(page+1)*PAGE_SIZE && lineStart<bytes.length; lineStart+=16) {
-						String hex = "";
-						String plain = "";
-						for (int pos=0; pos<16; pos++) {
-							if (pos==8)
-								hex += " |";
-							if (lineStart+pos<bytes.length) {
-								byte b = bytes[lineStart+pos];
-								hex += String.format(" %02X", b);
-								char ch = (char) b;
-								if (ch=='\t' || ch=='\n' || ch=='\r') ch='.';
-								plain += ch;
-							} else {
-								hex += " --";
-								plain += ' ';
-							}
-						}
-						
-						text += String.format("%08X: %s  |  %s%n", lineStart, hex, plain);
-					}
-				
-				return text;
 			}
 			
 			
