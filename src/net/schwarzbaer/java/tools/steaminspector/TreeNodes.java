@@ -601,17 +601,34 @@ class TreeNodes {
 		@Override protected Vector<? extends TreeNode> createChildren() { return new Vector<>(); }
 	}
 
-	private static class RawVDFDataNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource {
+	private static class RawVDFDataNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
 		
 		private final VDFTreeNode rawData;
+		private final File file;
+		private final ExternalViewerInfo viewerInfo;
 
 		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData) {
-			super(parent, title, false, true);
+			this(parent, title, rawData, null, null, null);
+		}
+		@SuppressWarnings("unused")
+		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, Icon icon) {
+			this(parent, title, rawData, null, null, icon);
+		}
+		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, File file, ExternalViewerInfo viewerInfo) {
+			this(parent, title, rawData, file, viewerInfo, null);
+		}
+		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, File file, ExternalViewerInfo viewerInfo, Icon icon) {
+			super(parent, title, false, true, icon!=null ? icon : TreeIcons.VDFFile.getIcon());
 			this.rawData = rawData;
+			this.file = file;
+			this.viewerInfo = viewerInfo;
 		}
 		@Override ContentType getContentType() { return ContentType.DataTree; }
 		@Override public TreeRoot getContentAsTree() { return new TreeRoot(rawData, true, true, new DataTreeNodeContextMenu()); }
 		@Override protected Vector<? extends TreeNode> createChildren() { return null; }
+		@Override public LabeledFile getFile() { return file==null ? null : new LabeledFile(file); }
+		@Override public ExternalViewerInfo getExternalViewerInfo() { return viewerInfo; }
+		
 	}
 
 	@SuppressWarnings("unused")
@@ -790,7 +807,7 @@ class TreeNodes {
 			private Player player;
 
 			public PlayerNode(TreeNode parent, Long playerID, Player player) {
-				super(parent, player.getName()+"  ["+playerID+"]", true, false);
+				super(parent, player.getName(true), true, false);
 				//this.playerID = playerID;
 				this.player = player;
 			}
@@ -817,8 +834,14 @@ class TreeNodes {
 				if (player.configFolder!=null) {
 					children.add(new FileSystem.FolderNode(this, "Config Folder", player.configFolder));
 				}
+				if (player.localconfig!=null) {
+					if (player.localconfig.vdfTreeNode!=null)
+						children.add(new RawVDFDataNode(this, "LocalConfig", player.localconfig.vdfTreeNode, player.localconfig.file, ExternalViewerInfo.TextEditor));
+					else
+						children.add(new FileSystem.VDF_File(this, "LocalConfig", player.localconfig.file));
+				}
 				if (player.friends!=null) {
-					children.add(new FriendListNode(this, player.friends, player.localconfigFile));
+					children.add(new FriendListNode(this, player.friends));
 				}
 				if (player.achievementProgress!=null) {
 					children.add(new AchievementProgressNode(this, player.achievementProgress));
@@ -843,19 +866,14 @@ class TreeNodes {
 			}
 		}
 		
-		private static class FriendListNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, TextContentSource {
+		private static class FriendListNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource {
 
 			private final FriendList data;
-			private final File localconfigFile;
 
-			public FriendListNode(TreeNode parent, FriendList friendList, File localconfigFile) {
+			public FriendListNode(TreeNode parent, FriendList friendList) {
 				super(parent,"Friends",true,false);
 				this.data = friendList;
-				this.localconfigFile = localconfigFile;
 			}
-
-			@Override public ExternalViewerInfo getExternalViewerInfo() { return localconfigFile==null ? null : ExternalViewerInfo.TextEditor; }
-			@Override public LabeledFile getFile() { return localconfigFile==null ? null : new LabeledFile(localconfigFile); }
 
 			@Override ContentType getContentType() { return ContentType.PlainText; }
 			@Override public String getContentAsText() {
@@ -1993,16 +2011,30 @@ class TreeNodes {
 		private static class VDF_File extends TextFile implements ParsedByteBasedTextFileSource {
 			
 			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
+			
 			private VDFParser.Data vdfData;
+			private final String predefinedTitle;
 
+			VDF_File(TreeNode parent, String predefinedTitle, File file) {
+				this(parent, predefinedTitle, file, TreeIcons.VDFFile);
+			}
 			VDF_File(TreeNode parent, File file) {
-				this(parent, file, TreeIcons.VDFFile);
+				this(parent, null, file, TreeIcons.VDFFile);
 			}
-			protected VDF_File(TreeNode parent, File file, TreeIcons icon) {
+			VDF_File(TreeNode parent, File file, TreeIcons icon) {
+				this(parent, null, file, icon);
+			}
+			VDF_File(TreeNode parent, String predefinedTitle,  File file, TreeIcons icon) {
 				super(parent, file, icon, StandardCharsets.UTF_8);
-				vdfData = null;
+				this.predefinedTitle = predefinedTitle;
+				this.vdfData = null;
 			}
 
+			@Override
+			public String toString() {
+				if (predefinedTitle!=null) return predefinedTitle;
+				return super.toString();
+			}
 			static boolean is(File file) {
 				return fileNameEndsWith(file,".vdf");
 			}

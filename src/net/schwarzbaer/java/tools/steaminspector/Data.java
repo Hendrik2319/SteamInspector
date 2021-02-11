@@ -634,10 +634,9 @@ class Data {
 		final File folder;
 		final File configFolder;
 		final File gameStateFolder;
-		final File localconfigFile;
 		final HashMap<Integer, File> steamCloudFolders;
 		final ScreenShotLists screenShots;
-		final VDFTreeNode localconfig;
+		final LocalConfig localconfig;
 		final HashMap<Integer,GameInfos> gameInfos;
 		final AchievementProgress achievementProgress;
 		final FriendList friends;
@@ -667,35 +666,22 @@ class Data {
 			} else
 				configFolder = null;
 			
-			File localconfigFile = null;
-			if (configFolder!=null)
-				localconfigFile = new File(configFolder,"localconfig.vdf");
+			if (configFolder!=null) {
+				File localconfigFile = new File(configFolder,"localconfig.vdf");
+				if (localconfigFile.isFile())
+					localconfig = new LocalConfig(localconfigFile,playerID);
+				else
+					localconfig = null;
+			} else
+				localconfig = null;
+			
 			
 			// localconfig
-			VDFParser.Data localconfigData = null;
-			if (localconfigFile!=null && localconfigFile.isFile()) {
-				try { localconfigData = VDFParser.parse(localconfigFile,StandardCharsets.UTF_8); }
-				catch (VDFParser.ParseException e) { showException(e, localconfigFile); }
-			}
-			if (localconfigData!=null) {
-				this.localconfig = localconfigData.createVDFTreeNode();
-				this.localconfigFile = localconfigFile;
-			} else {
-				this.localconfig = null;
-				this.localconfigFile = null;
-			}
 			
-			FriendList preFriends = null;
 			if (localconfig!=null) {
-				VDFTreeNode friendsNode = localconfig.getSubNode("UserLocalConfigStore","friends");
-				if (friendsNode!=null) {
-					try { preFriends = FriendList.parse(friendsNode,playerID); }
-					catch (VDFTraverseException e) { showException(e, localconfigFile); }
-					if (preFriends==null)
-						preFriends = new FriendList(friendsNode);
-				}
-			}
-			friends = preFriends;
+				friends = localconfig.parseFriendList();
+			} else
+				friends = null;
 			
 			gameInfos = new HashMap<>();
 			AchievementProgress preAchievementProgress = null;
@@ -747,14 +733,66 @@ class Data {
 		}
 
 		public String getName() {
+			return getName(false);
+		}
+		
+		public String getName(boolean addPlayerID) {
 			if (localconfig != null) {
-				VDFTreeNode nameNode = localconfig.getSubNode("UserLocalConfigStore","friends","PersonaName");
-				if (nameNode!=null && nameNode.value!=null && !nameNode.value.isEmpty())
-					return nameNode.value;
+				String name = localconfig.getPlayerName();
+				if (name!=null) return name + (addPlayerID? "  ["+playerID+"]" : "");
 			}
 			return "Player "+playerID;
 		}
+
+		static class LocalConfig {
 		
+			final long playerID;
+			final File file;
+			final VDFParser.Data vdfData;
+			final VDFTreeNode vdfTreeNode;
+		
+			public LocalConfig(File file, long playerID) {
+				if (file==null || !file.isFile())
+					throw new IllegalArgumentException();
+				this.playerID = playerID;
+				this.file = file;
+				
+				VDFParser.Data localconfigData_ = null;
+				try { localconfigData_ = VDFParser.parse(this.file,StandardCharsets.UTF_8); }
+				catch (VDFParser.ParseException e) { showException(e, this.file); }
+				vdfData = localconfigData_;
+				
+				if (vdfData!=null)
+					vdfTreeNode = vdfData.createVDFTreeNode();
+				else
+					vdfTreeNode = null;
+			}
+
+			public String getPlayerName() {
+				if (vdfTreeNode!=null) {
+					VDFTreeNode nameNode = vdfTreeNode.getSubNode("UserLocalConfigStore","friends","PersonaName");
+					if (nameNode!=null && nameNode.type==VDFTreeNode.Type.String && nameNode.value!=null && !nameNode.value.isEmpty())
+						return nameNode.value;
+				}
+				return null;
+			}
+
+			public FriendList parseFriendList() {
+				if (vdfTreeNode==null) return null;
+				VDFTreeNode friendsNode = vdfTreeNode.getSubNode("UserLocalConfigStore","friends");
+				if (friendsNode!=null) {
+					try {
+						return FriendList.parse(friendsNode,playerID);
+					} catch (VDFTraverseException e) {
+						showException(e, file);
+						return new FriendList(friendsNode);
+					}
+				}
+				return null;
+			}
+		
+		}
+
 		static class FriendList {
 			
 			//static final HashSet<String> unknownValueNames = new HashSet<>();
@@ -776,8 +814,8 @@ class Data {
 			}
 
 			public static FriendList parse(VDFTreeNode friendsNode, long playerID) throws VDFTraverseException {
-				if (friendsNode==null) throw new VDFTraverseException("FriendList: base VDFTreeNode is NULL");
-				if (friendsNode.type!=VDFTreeNode.Type.Array) throw new VDFTraverseException("FriendList: base VDFTreeNode is not an Array");
+				if (friendsNode==null) throw new VDFTraverseException("FriendList[Player %d]: base VDFTreeNode is NULL", playerID);
+				if (friendsNode.type!=VDFTreeNode.Type.Array) throw new VDFTraverseException("FriendList[Player %d]: base VDFTreeNode is not an Array", playerID);
 				FriendList friendList = new FriendList();
 				friendsNode.forEach((subNode, type, name, value)->{
 					switch (type) {
