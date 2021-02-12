@@ -20,7 +20,6 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Vector;
 import java.util.function.BiFunction;
@@ -38,6 +37,8 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FilterOption;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileNameNExt;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
+import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFParseException;
+import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTraverseException;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;
 
 class Data {
@@ -310,19 +311,12 @@ class Data {
 			return baseValue.extra.hasUnprocessedChildren;
 		}
 	}
-	
-	private static class VDFTraverseException extends Exception {
-		private static final long serialVersionUID = -7150324499542307039L;
-		VDFTraverseException(String format, Object...args) {
-			super(String.format(Locale.ENGLISH, format, args));
-		}
-	}
 
-	static void showException(JSON_Data.TraverseException e, File file) { showException("JSON_TraverseException", e, file); }
+	static void showException(JSON_Data.TraverseException e, File file) { showException("JSON_TraverseException"    , e, file); }
 	static void showException(JSON_Parser.ParseException  e, File file) { showException("JSON_Parser.ParseException", e, file); }
-	static void showException(VDFParser.ParseException    e, File file) { showException("VDFParser.ParseException", e, file); }
-	static void showException(VDFTraverseException        e, File file) { showException("VDFTraverseException", e, file); }
-	static void showException(Base64Exception             e, File file) { showException("Base64Exception", e, file); }
+	static void showException(VDFParseException           e, File file) { showException("VDFParseException"         , e, file); }
+	static void showException(VDFTraverseException        e, File file) { showException("VDFTraverseException"      , e, file); }
+	static void showException(Base64Exception             e, File file) { showException("Base64Exception"           , e, file); }
 
 	static void showException(String prefix, Throwable e, File file) {
 		String str = String.format("%s: %s%n", prefix, e.getMessage());
@@ -750,7 +744,7 @@ class Data {
 		
 			final long playerID;
 			final File file;
-			final VDFParser.Data vdfData;
+			final VDFParser.Result vdfData;
 			final VDFTreeNode vdfTreeNode;
 		
 			public LocalConfig(File file, long playerID) {
@@ -759,9 +753,9 @@ class Data {
 				this.playerID = playerID;
 				this.file = file;
 				
-				VDFParser.Data localconfigData_ = null;
+				VDFParser.Result localconfigData_ = null;
 				try { localconfigData_ = VDFParser.parse(this.file,StandardCharsets.UTF_8); }
-				catch (VDFParser.ParseException e) { showException(e, this.file); }
+				catch (VDFParseException e) { showException(e, this.file); }
 				vdfData = localconfigData_;
 				
 				if (vdfData!=null)
@@ -2161,9 +2155,9 @@ class Data {
 			
 			if (this.file!=null) {
 				
-				VDFParser.Data vdfData = null;
+				VDFParser.Result vdfData = null;
 				try { vdfData = VDFParser.parse(this.file,StandardCharsets.UTF_8); }
-				catch (VDFParser.ParseException e) {}
+				catch (VDFParseException e) {}
 				
 				vdfTree = vdfData!=null ? vdfData.createVDFTreeNode() : null;
 				

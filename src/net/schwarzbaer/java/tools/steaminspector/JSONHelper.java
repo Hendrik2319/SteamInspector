@@ -153,7 +153,6 @@ class JSONHelper {
 		@Override public String getFullInfo() {
 			String str = DataTreeNode.super.getFullInfo();
 			str += String.format("Value Hash      : 0x%08X%n", value.hashCode());
-			str += String.format("Value.Extra Hash: 0x%08X%n", value.extra.hashCode());
 			str += String.format("was processed   : %s%n", value.extra.wasProcessed);
 			str += String.format("has unprocessed children: %s%n", value.extra.hasUnprocessedChildren());
 			return str;

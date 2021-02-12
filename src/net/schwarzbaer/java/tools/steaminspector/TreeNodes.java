@@ -79,6 +79,7 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContentSourc
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FolderNode;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.PlayersNGames.GameChangeListeners.GameChangeListener;
+import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFParseException;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;
 import net.schwarzbaer.system.ClipboardTools;
 
@@ -2237,7 +2238,7 @@ class TreeNodes {
 			
 			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
 			
-			private VDFParser.Data vdfData;
+			private VDFParser.Result vdfData;
 			private final String predefinedTitle;
 
 			VDF_File(TreeNode parent, String predefinedTitle, File file) {
@@ -2274,7 +2275,7 @@ class TreeNodes {
 					String text = getContentAsText();
 					try {
 						vdfData = VDFParser.parse(text);
-					} catch (VDFParser.ParseException e) {
+					} catch (VDFParseException e) {
 						System.err.printf("ParseException: %s%n", e.getMessage());
 						//e.printStackTrace();
 						return SimpleTextNode.createSingleTextLineTree("Parse Error: %s", e.getMessage());

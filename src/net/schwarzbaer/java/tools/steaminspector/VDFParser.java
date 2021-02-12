@@ -42,7 +42,7 @@ class VDFParser {
 		this.text = text;
 	}
 	
-	public static Data parse(File file, Charset charset) throws ParseException {
+	public static Result parse(File file, Charset charset) throws VDFParseException {
 		try {
 			byte[] bytes = Files.readAllBytes(file.toPath());
 			return parse(new String(bytes,charset));
@@ -51,12 +51,12 @@ class VDFParser {
 		}
 	}
 
-	public static Data parse(String text) throws ParseException {
+	public static Result parse(String text) throws VDFParseException {
 		return new VDFParser(text).parse();
 	}
 
-	private Data parse() throws ParseException {
-		Data data = new Data();
+	private Result parse() throws VDFParseException {
+		Result data = new Result();
 		
 		try (LineNumberReader textIn = new LineNumberReader(new StringReader(text));) {
 			textIn.setLineNumber(1);
@@ -67,11 +67,11 @@ class VDFParser {
 			}
 			
 		} catch (IOException e) { // automatic close
-			throw new ParseException(e, -1, "Closing StringReader: IOException occured.");
+			throw new VDFParseException(e, -1, "Closing StringReader: IOException occured.");
 		}
 		
 		if (data.rootPairs.isEmpty())
-			throw new ParseException(-1, "Parsed VDF File is empty.");
+			throw new VDFParseException(-1, "Parsed VDF File is empty.");
 		
 		return data;
 	}
@@ -107,10 +107,10 @@ class VDFParser {
 			return label.isClosingBracketDummy() || datablock.isClosingBracketDummy();
 		}
 
-		private static ValuePair read(LineNumberReader textIn) throws ParseException {
+		private static ValuePair read(LineNumberReader textIn) throws VDFParseException {
 			return read(textIn,false);
 		}
-		private static ValuePair read(LineNumberReader textIn, boolean allowClosingBracket) throws ParseException {
+		private static ValuePair read(LineNumberReader textIn, boolean allowClosingBracket) throws VDFParseException {
 			int lineNumber;
 			Block block;
 			
@@ -121,14 +121,14 @@ class VDFParser {
 			if (allowClosingBracket && block.isClosingBracketDummy())
 				return ValuePair.createClosingBracketDummy();
 			if (block.type!=Block.Type.String)
-				throw new ParseException(lineNumber,textIn.getLineNumber(), "Reading label of ValuePair: String Block expected. Got %s Block. [%s]", block.type, block);
+				throw new VDFParseException(lineNumber,textIn.getLineNumber(), "Reading label of ValuePair: String Block expected. Got %s Block. [%s]", block.type, block);
 			
 			Block label = block;
 			
 			lineNumber = textIn.getLineNumber();
 			block = Block.read(textIn);
 			if (block==null)
-				throw new ParseException(lineNumber,textIn.getLineNumber(), "Reading data block of ValuePair: Block expected. Got End-Of-File.");
+				throw new VDFParseException(lineNumber,textIn.getLineNumber(), "Reading data block of ValuePair: Block expected. Got End-Of-File.");
 			
 			return new ValuePair(label, block);
 		}
@@ -178,10 +178,10 @@ class VDFParser {
 			return type==null && str==null && array==null;
 		}
 
-		static Block read(LineNumberReader textIn) throws ParseException {
+		static Block read(LineNumberReader textIn) throws VDFParseException {
 			return read(textIn, false);
 		}
-		static Block read(LineNumberReader textIn, boolean allowClosingBracket) throws ParseException {
+		static Block read(LineNumberReader textIn, boolean allowClosingBracket) throws VDFParseException {
 			
 			Token token = Token.read(textIn);
 			int lineNumber = textIn.getLineNumber();
@@ -197,10 +197,10 @@ class VDFParser {
 			if (token.type==Token.Type.ClosingBracket && allowClosingBracket)
 				return Block.createClosingBracketDummy();
 			
-			throw new ParseException(lineNumber,textIn.getLineNumber(), "Reading Block: String Token or OpeningBracket Token%s expected. Got %s Token. (%s)", allowClosingBracket ? " or ClosingBracket  Token" : "", token.type, token);
+			throw new VDFParseException(lineNumber,textIn.getLineNumber(), "Reading Block: String Token or OpeningBracket Token%s expected. Got %s Token. (%s)", allowClosingBracket ? " or ClosingBracket  Token" : "", token.type, token);
 		}
 
-		private static Block readArray(LineNumberReader textIn) throws ParseException {
+		private static Block readArray(LineNumberReader textIn) throws VDFParseException {
 			
 			Vector<ValuePair> array = new Vector<>();
 			ValuePair vp;
@@ -211,7 +211,7 @@ class VDFParser {
 				array.add(vp);
 				lineNumber = textIn.getLineNumber();
 			}
-			throw new ParseException(lineNumber,textIn.getLineNumber(), "Reading Array Block: Reached End-Of-File before ClosingBracket Token.");
+			throw new VDFParseException(lineNumber,textIn.getLineNumber(), "Reading Array Block: Reached End-Of-File before ClosingBracket Token.");
 		}
 	}
 
@@ -226,7 +226,7 @@ class VDFParser {
 			this.str = str;
 		}
 
-		static Token read(LineNumberReader textIn) throws ParseException {
+		static Token read(LineNumberReader textIn) throws VDFParseException {
 			
 			try {
 				
@@ -263,38 +263,38 @@ class VDFParser {
 							}
 							sb.append((char)ch);
 						}
-						if (ch<0) throw new ParseException(textIn.getLineNumber(), "Reading String Token: Reached End-Of-File before closing \" char.");
+						if (ch<0) throw new VDFParseException(textIn.getLineNumber(), "Reading String Token: Reached End-Of-File before closing \" char.");
 					}
 					if (ch=='/') {
 						ch=textIn.read();
-						if (ch==0)   throw new ParseException(textIn.getLineNumber(), "Reading Token: Unexpected char at end of file: \"/\" [%d]", (int)'/');
-						if (ch!='/') throw new ParseException(textIn.getLineNumber(), "Reading Token: Unexpected chars: \"/%s\" [%d+%d]", (char)ch, (int)'/', ch);
+						if (ch==0)   throw new VDFParseException(textIn.getLineNumber(), "Reading Token: Unexpected char at end of file: \"/\" [%d]", (int)'/');
+						if (ch!='/') throw new VDFParseException(textIn.getLineNumber(), "Reading Token: Unexpected chars: \"/%s\" [%d+%d]", (char)ch, (int)'/', ch);
 						while ( (ch=textIn.read())>=0 && ch!='\n') {
 						}
 						if (ch<0) break; // End-Of-File after line comment
 						continue;
 					}
-					throw new ParseException(textIn.getLineNumber(), "Reading Token: Unexpected char: \"%s\" [%d]", (char)ch, ch);
+					throw new VDFParseException(textIn.getLineNumber(), "Reading Token: Unexpected char: \"%s\" [%d]", (char)ch, ch);
 				}
 			
 			} catch (IOException e) {
-				throw new ParseException(e, textIn.getLineNumber(), "Reading Token: IOException occured.");
+				throw new VDFParseException(e, textIn.getLineNumber(), "Reading Token: IOException occured.");
 			}
 			
 			return null; // End-Of-File
 		}
 	}
 	
-	static class ParseException extends Exception {
+	static class VDFParseException extends Exception {
 		private static final long serialVersionUID = 365326060770041096L;
 
-		private ParseException(Throwable cause, int line, String format, Object... args) {
+		private VDFParseException(Throwable cause, int line, String format, Object... args) {
 			super(constructMsg(line, line, format, args), cause);
 		}
-		private ParseException(int startLine, int endLine, String format, Object... args) {
+		private VDFParseException(int startLine, int endLine, String format, Object... args) {
 			super(constructMsg(startLine, endLine, format, args));
 		}
-		private ParseException(int line, String format, Object... args) {
+		private VDFParseException(int line, String format, Object... args) {
 			super(constructMsg(line, line, format, args));
 		}
 
@@ -309,11 +309,19 @@ class VDFParser {
 		}
 	}
 
-	static class Data {
+	static class VDFTraverseException extends Exception {
+		private static final long serialVersionUID = 3887870847155384728L;
+	
+		VDFTraverseException(String format, Object...args) {
+			super(String.format(Locale.ENGLISH, format, args));
+		}
+	}
+
+	static class Result {
 		
 		private final Vector<ValuePair> rootPairs;
 		
-		private Data() {
+		private Result() {
 			rootPairs = new Vector<>();
 		}
 
@@ -334,11 +342,7 @@ class VDFParser {
 	
 	static class VDFTreeNode extends SteamInspector.BaseTreeNode<VDFTreeNode,VDFTreeNode> implements DataTreeNode {
 		
-		enum Type {
-			Root(null), String(Block.Type.String), Array(Block.Type.Array);
-			private final Block.Type blockType;
-			Type(Block.Type blockType) { this.blockType = blockType; }
-		}
+		enum Type { Root, String, Array }
 		
 		private final ValuePair base;
 		private final Vector<ValuePair> valuePairArray;
@@ -356,31 +360,93 @@ class VDFParser {
 			this.value = null;
 			this.childrenOrder=null;
 		}
-		VDFTreeNode(VDFTreeNode parent, ValuePair base, String name, String value) { // String Value
-			super(parent, String.format("%s : \"%s\"", name, value), false, true);
-			this.base = base;
-			this.type = Type.String;
-			this.valuePairArray = null;
-			this.name = name;
-			this.value = value;
-			this.base.hasUnprocessedChildren = false;
-			this.childrenOrder=null;
-			if (this.base==null) throw new IllegalArgumentException();
-			if (this.base.datablock.type!=type.blockType) throw new IllegalArgumentException();
-			if (this.value==null) throw new IllegalArgumentException();
+		private static boolean isLeaf(ValuePair base) {
+			if (base==null) throw new IllegalArgumentException();
+			if (base.datablock==null) throw new IllegalStateException();
+			if (base.datablock.type!=Block.Type.Array) return true;
+			if (base.datablock.array==null)  throw new IllegalStateException();
+			return base.datablock.array.isEmpty();
 		}
-		VDFTreeNode(VDFTreeNode parent, ValuePair base, String name, Vector<ValuePair> valuePairArray) { // Array Value
-			super(parent, name, true,valuePairArray==null || valuePairArray.isEmpty());
-			this.base = base;
-			this.type = Type.Array;
-			this.valuePairArray = valuePairArray;
-			this.name = name;
-			this.value = null;
-			this.childrenOrder=null;
-			if (this.base==null) throw new IllegalArgumentException();
-			if (this.base.datablock.type!=type.blockType) throw new IllegalArgumentException();
-			if (this.valuePairArray==null) throw new IllegalArgumentException();
+		private static boolean allowsChildren(ValuePair base) {
+			if (base==null) throw new IllegalArgumentException();
+			if (base.datablock==null) throw new IllegalStateException();
+			return base.datablock.type==Block.Type.Array;
 		}
+		private static String getTitle(ValuePair base) {
+			if (base==null) throw new IllegalArgumentException();
+			if (base.datablock==null) throw new IllegalStateException();
+			if (base.datablock.type==null) throw new IllegalStateException();
+			if (base.label==null) throw new IllegalStateException();
+			if (base.label.type!=Block.Type.String) throw new IllegalStateException();
+			if (base.label.str==null) throw new IllegalStateException();
+			switch (base.datablock.type) {
+			case Array:
+				return base.label.str;
+			case String:
+				if (base.datablock.str==null) throw new IllegalStateException();
+				return String.format("%s : \"%s\"", base.label.str, base.datablock.str);
+			}
+			throw new IllegalStateException();
+		}
+		VDFTreeNode(VDFTreeNode parent, ValuePair base) {
+			super(parent, getTitle(base), allowsChildren(base), isLeaf(base));
+			this.base = base;
+			if (this.base==null) throw new IllegalArgumentException();
+			if (this.base.datablock==null) throw new IllegalStateException();
+			if (this.base.datablock.type==null) throw new IllegalStateException();
+			if (this.base.label==null) throw new IllegalStateException();
+			if (this.base.label.type!=Block.Type.String) throw new IllegalStateException();
+			if (this.base.label.str==null) throw new IllegalStateException();
+			
+			switch (this.base.datablock.type) {
+			
+			case Array:
+				if (this.base.datablock.array==null) throw new IllegalStateException();
+				this.type = Type.Array;
+				this.valuePairArray = this.base.datablock.array;
+				this.value = null;
+				break;
+				
+			case String:
+				if (this.base.datablock.str==null) throw new IllegalStateException();
+				this.type = Type.String;
+				this.valuePairArray = null;
+				this.value = this.base.datablock.str;
+				this.base.hasUnprocessedChildren = false;
+				break;
+				
+			default:
+				throw new IllegalStateException();
+
+			}
+			this.name = this.base.label.str;
+			this.childrenOrder=null;
+		}
+		//VDFTreeNode(VDFTreeNode parent, ValuePair base, String name, String value) { // String Value
+		//	super(parent, String.format("%s : \"%s\"", name, value), false, true);
+		//	this.base = base;
+		//	this.type = Type.String;
+		//	this.valuePairArray = null;
+		//	this.name = name;
+		//	this.value = value;
+		//	this.base.hasUnprocessedChildren = false;
+		//	this.childrenOrder=null;
+		//	if (this.base==null) throw new IllegalArgumentException();
+		//	if (this.base.datablock.type!=type.blockType) throw new IllegalArgumentException();
+		//	if (this.value==null) throw new IllegalArgumentException();
+		//}
+		//VDFTreeNode(VDFTreeNode parent, ValuePair base, String name, Vector<ValuePair> valuePairArray) { // Array Value
+		//	super(parent, name, true,valuePairArray==null || valuePairArray.isEmpty());
+		//	this.base = base;
+		//	this.type = Type.Array;
+		//	this.valuePairArray = valuePairArray;
+		//	this.name = name;
+		//	this.value = null;
+		//	this.childrenOrder=null;
+		//	if (this.base==null) throw new IllegalArgumentException();
+		//	if (this.base.datablock.type!=type.blockType) throw new IllegalArgumentException();
+		//	if (this.valuePairArray==null) throw new IllegalArgumentException();
+		//}
 		
 		TreeRoot getTreeRoot(TreeContextMenuHandler tcmh) {
 			return new TreeRoot(this, type!=Type.Root, true, tcmh);
@@ -418,7 +484,13 @@ class VDFParser {
 		}
 		
 		@Override public String getAccessCall() {
-			return String.format("<root>.getSubNode(%s)", getAccessPath());
+			String methodName = "getSubNode";
+			switch (type) {
+			case Root: break;
+			case Array : methodName = "getArray"; break;
+			case String: methodName = "getString"; break;
+			}
+			return String.format("<root>.%s(%s)", methodName, getAccessPath());
 		}
 		private String getAccessPath() {
 			if (parent==null) return "";
@@ -438,7 +510,6 @@ class VDFParser {
 
 		@Override public String getFullInfo() {
 			String str = DataTreeNode.super.getFullInfo();
-			str += String.format("Value Hash      : 0x%08X%n", hashCode());
 			str += String.format("was processed   : %s%n", wasProcessed());
 			str += String.format("has unprocessed children: %s%n", hasUnprocessedChildren());
 			return str;
@@ -476,14 +547,15 @@ class VDFParser {
 				if (childrenOrder!=null)
 					switch (childrenOrder) {
 					case ByName:
-						vector.sort(Comparator.<ValuePair,String>comparing(vp->vp.label.str,net.schwarzbaer.java.tools.steaminspector.Data.createNumberStringOrder()));
+						vector.sort(Comparator.<ValuePair,String>comparing(vp->vp.label.str,Data.createNumberStringOrder()));
 						break;
 					}
 				for (ValuePair valuePair:vector)
-					switch (valuePair.datablock.type) {
-					case String: children.add(new VDFTreeNode(this, valuePair, valuePair.label.str, valuePair.datablock.str  )); break;
-					case Array : children.add(new VDFTreeNode(this, valuePair, valuePair.label.str, valuePair.datablock.array)); break;
-					}
+					children.add(new VDFTreeNode(this, valuePair));
+					//switch (valuePair.datablock.type) {
+					//case String: children.add(new VDFTreeNode(this, valuePair, valuePair.label.str, valuePair.datablock.str  )); break;
+					//case Array : children.add(new VDFTreeNode(this, valuePair, valuePair.label.str, valuePair.datablock.array)); break;
+					//}
 			}
 			return children;
 		}
@@ -499,9 +571,19 @@ class VDFParser {
 			boolean applyTo(VDFTreeNode subNode, Type type, String name, String value);
 		}
 		
-		VDFTreeNode getSubNode(String... path) {
-			return getSubNode_intern("getSubNode()", path);
+		VDFTreeNode getSubNode(String... path) { return getSubNode_intern("getSubNode()", path); }
+		String      getString (String... path) { return getValue(Type.String, node->node.value, "getString", path); }
+		VDFTreeNode getArray  (String... path) { return getValue(Type.Array , node->node      , "getArray" , path); }
+		
+		private <ValueType> ValueType getValue(Type type, Function<VDFTreeNode,ValueType> getValue, String functionName, String... path) {
+			VDFTreeNode node = getSubNode_intern(functionName, path);
+			if (node!=null && node.type==type) {
+				node.markAsProcessed();
+				return getValue.apply(node);
+			}
+			return null;
 		}
+		
 		private VDFTreeNode getSubNode_intern(String functionName, String... path) {
 			VDFTreeNode node = this;
 			int i = 0;
@@ -527,37 +609,6 @@ class VDFParser {
 					return null;
 			}
 			return node;
-		}
-		
-		String      getString(String... path) { return getValue(Type.String, node->node.value, "getString", path); }
-		VDFTreeNode getArray (String... path) { return getValue(Type.Array , node->node      , "getArray" , path); }
-		
-		private <ValueType> ValueType getValue(Type type, Function<VDFTreeNode,ValueType> getValue, String functionName, String... path) {
-			VDFTreeNode node = getSubNode_intern(functionName, path);
-			if (node==null) return null;
-			return node.getValue(type, getValue);
-		}
-		
-//		String      getString(String name) { return getValue(name, Type.String, node->node.value, "getString"); }
-//		VDFTreeNode getArray (String name) { return getValue(name, Type.Array , node->node      , "getArray" ); }
-//		
-//		private <ValueType> ValueType getValue(String name, Type type, Function<VDFTreeNode,ValueType> getValue, String functionName) {
-//			if (name==null) return null;
-//			checkChildren(String.format("%s(\"%s\")", functionName, name));
-//			for (VDFTreeNode child:children) {
-//				if (name.equals(child.name)) {
-//					return child.getValue(type, getValue);
-//				}
-//			}
-//			return null;
-//		}
-		
-		private <ValueType> ValueType getValue(Type type, Function<VDFTreeNode, ValueType> getValue) {
-			if (this.type==type) {
-				markAsProcessed();
-				return getValue.apply(this);
-			} else
-				return null;
 		}
 		
 	}
