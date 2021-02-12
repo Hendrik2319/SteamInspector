@@ -675,7 +675,7 @@ class Data {
 			// localconfig
 			
 			if (localconfig!=null) {
-				friends = localconfig.parseFriendList();
+				friends = localconfig.friendList;
 			} else
 				friends = null;
 			
@@ -697,10 +697,10 @@ class Data {
 								catch (JSON_Parser.ParseException e) { showException(e, file); }
 								if (result!=null) {
 									try {
-										preAchievementProgress = new AchievementProgress(file,JSON_Data.getObjectValue(result, "AchievementProgress"));
+										preAchievementProgress = new AchievementProgress(file,result);
 									} catch (TraverseException e) {
 										showException(e, file);
-										preAchievementProgress = new AchievementProgress(file,result);
+										preAchievementProgress = AchievementProgress.createRawData(file,result);
 									}
 								}
 								
@@ -734,7 +734,7 @@ class Data {
 		
 		public String getName(boolean addPlayerID) {
 			if (localconfig != null) {
-				String name = localconfig.getPlayerName();
+				String name = localconfig.playerName;
 				if (name!=null) return name + (addPlayerID? "  ["+playerID+"]" : "");
 			}
 			return "Player "+playerID;
@@ -746,6 +746,8 @@ class Data {
 			final File file;
 			final VDFParser.Result vdfData;
 			final VDFTreeNode vdfTreeNode;
+			final String playerName;
+			final FriendList friendList;
 		
 			public LocalConfig(File file, long playerID) {
 				if (file==null || !file.isFile())
@@ -762,28 +764,36 @@ class Data {
 					vdfTreeNode = vdfData.createVDFTreeNode();
 				else
 					vdfTreeNode = null;
-			}
-
-			public String getPlayerName() {
-				String name = null;
-				if (vdfTreeNode!=null) name = vdfTreeNode.getString("UserLocalConfigStore","friends","PersonaName");
-				return name;
-			}
-
-			public FriendList parseFriendList() {
-				if (vdfTreeNode==null) return null;
-				VDFTreeNode friendsNode = vdfTreeNode.getSubNode("UserLocalConfigStore","friends");
-				if (friendsNode!=null) {
+				
+				if (vdfTreeNode == null) {
+					playerName = null;
+					friendList = null;
+				} else {
+					
+					String str = null;
+					try { str = vdfTreeNode.getString("UserLocalConfigStore","friends","PersonaName"); }
+					catch (VDFTraverseException e) { showException(e, this.file); }
+					playerName = str;
+					
+					VDFTreeNode friendsNode;
 					try {
-						return FriendList.parse(friendsNode,playerID);
+						friendsNode = vdfTreeNode.getSubNode("UserLocalConfigStore","friends");
 					} catch (VDFTraverseException e) {
 						showException(e, file);
-						return new FriendList(friendsNode);
+						friendsNode = null;
 					}
+					
+					FriendList parsedFriendList = null;
+					if (friendsNode!=null)
+						try {
+							parsedFriendList = FriendList.parse(friendsNode,playerID,file);
+						} catch (VDFTraverseException e) {
+							showException(e, file);
+							parsedFriendList = new FriendList(friendsNode);
+						}
+					friendList = parsedFriendList;
 				}
-				return null;
 			}
-		
 		}
 
 		static class FriendList {
@@ -806,7 +816,7 @@ class Data {
 				values = null;
 			}
 
-			public static FriendList parse(VDFTreeNode friendsNode, long playerID) throws VDFTraverseException {
+			public static FriendList parse(VDFTreeNode friendsNode, long playerID, File file) throws VDFTraverseException {
 				if ( friendsNode==null) throw new VDFTraverseException("FriendList[Player %d]: base VDFTreeNode is NULL", playerID);
 				if (!friendsNode.is(VDFTreeNode.Type.Array)) throw new VDFTraverseException("FriendList[Player %d]: base VDFTreeNode is not an Array", playerID);
 				FriendList friendList = new FriendList();
@@ -818,7 +828,12 @@ class Data {
 						break;
 
 					case Array: // Friend
-						friendList.friends.add(new Friend(name,subNode));
+						try {
+							friendList.friends.add(new Friend(name,subNode));
+						} catch (VDFTraverseException e) {
+							showException(e, file);
+							friendList.friends.add(new Friend(subNode));
+						}
 						return true;
 						
 					case String: // simple value
@@ -838,24 +853,39 @@ class Data {
 						.add("NameHistory", VDFTreeNode.Type.Array);
 				
 				final VDFTreeNode rawData;
-				final String idStr;
-				final Long id;
+				final boolean hasParsedData;
+				final long id;
 				final String name;
 				final String tag;
 				final String avatar;
 				final HashMap<Integer, String> nameHistory;
 
-				public Friend(String idStr, VDFTreeNode node) {
-					this.idStr = idStr;
-					this.id = parseLongNumber(idStr);
+
+				public Friend(VDFTreeNode rawData) {
+					this.rawData = rawData;
+					hasParsedData = false;
+					id     = -1;
+					name   = null;
+					tag    = null;
+					avatar = null;
+					nameHistory = null;
+				}
+
+				public Friend(String nodeName, VDFTreeNode node) throws VDFTraverseException {
 					this.rawData = null;
-					//this.rawData = node;
+					hasParsedData = true;
+					
 					//DevHelper.scanVdfStructure(node,"Friend");
 					
-					name   = node.getString("name"  );
-					tag    = node.getString("tag"   );
-					avatar = node.getString("avatar");
-					VDFTreeNode arrayNode = node.getArray("NameHistory");
+					Long parsedNodeName = parseLongNumber(nodeName);
+					if (parsedNodeName==null)
+						throw new VDFTraverseException("Name of node [%s] isn't a number.", node.getPath());
+						
+					id     = parsedNodeName;
+					name   = node.getString(true,"name"  );
+					tag    = node.getString(true,"tag"   );
+					avatar = node.getString(true,"avatar");
+					VDFTreeNode arrayNode = node.getArray(true,"NameHistory");
 					if (arrayNode!=null) {
 						nameHistory = new HashMap<Integer,String>();
 						arrayNode.forEach((subNode,t,n,v) -> {
@@ -885,51 +915,62 @@ class Data {
 			final File file;
 			final JSON_Data.Value<NV, V> rawData;
 			final boolean hasParsedData;
-			final JSON_Object<NV, V> sourceData;
 			final Long version;
 			final HashMap<Integer,AchievementProgress.AchievementProgressInGame> gameStates;
 			final Vector<AchievementProgress.AchievementProgressInGame> gameStates_withoutID;
 
-			AchievementProgress(File file, JSON_Data.Value<NV, V> rawData) {
-				this.file = file;
-				this.rawData = rawData;
-				hasParsedData = false;
-				sourceData = null;
-				version    = null;
-				gameStates = null;
-				gameStates_withoutID = null;
-			}
-			AchievementProgress(File file, JSON_Object<NV,V> object) throws TraverseException {
-				this.file = file;
-				rawData = null;
-				hasParsedData = true;
-				sourceData = object;
-				//DevHelper.scanJsonStructure(object, "AchievementProgress");
-				String prefixStr = "AchievementProgress";
-				if (object==null) throw new TraverseException("%s == <NULL>", prefixStr);
-				version                    = JSON_Data.getIntegerValue(object, "nVersion", prefixStr);
-				JSON_Object<NV,V> mapCache = JSON_Data.getObjectValue (object, "mapCache", prefixStr);
-				gameStates = new HashMap<>();
-				gameStates_withoutID = new Vector<AchievementProgress.AchievementProgressInGame>();
-				for (JSON_Data.NamedValue<NV,V> nv:mapCache) {
-					AchievementProgress.AchievementProgressInGame progress;
-					try {
-						progress = new AchievementProgressInGame(nv.name,nv.value);
-					} catch (TraverseException e) {
-						showException(e, file);
-						progress = new AchievementProgressInGame(nv);
-					}
-					
-					Integer gameID = parseNumber(nv.name);
-					if (gameID==null && progress.hasParsedData)
-						gameID = (int) progress.appID;
-					
-					if (gameID!=null)
-						gameStates.put(gameID, progress);
-					else
-						gameStates_withoutID.add(progress);
+			static AchievementProgress createRawData(File file, JSON_Data.Value<NV, V> rawData) {
+				try {
+					return new AchievementProgress(file, rawData, true);
+				} catch (TraverseException e) {
+					throw new IllegalStateException();
 				}
-				DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"TreeNodes.Player.AchievementProgress");
+			}
+			AchievementProgress(File file, JSON_Data.Value<NV, V> rawData) throws TraverseException {
+				this(file, rawData, false);
+			}
+			AchievementProgress(File file, JSON_Data.Value<NV, V> value, boolean asRawData) throws TraverseException {
+				this.file = file;
+				this.rawData = value;
+				
+				if (asRawData) {
+					hasParsedData = false;
+					version    = null;
+					gameStates = null;
+					gameStates_withoutID = null;
+					
+				} else {
+					
+					hasParsedData = true;
+					String prefixStr = "AchievementProgress";
+					//DevHelper.scanJsonStructure(object, "AchievementProgress");
+					
+					JSON_Object<NV,V> object   = JSON_Data.getObjectValue (value, prefixStr);
+					version                    = JSON_Data.getIntegerValue(object, "nVersion", prefixStr);
+					JSON_Object<NV,V> mapCache = JSON_Data.getObjectValue (object, "mapCache", prefixStr);
+					
+					gameStates = new HashMap<>();
+					gameStates_withoutID = new Vector<AchievementProgress.AchievementProgressInGame>();
+					for (JSON_Data.NamedValue<NV,V> nv:mapCache) {
+						AchievementProgress.AchievementProgressInGame progress;
+						try {
+							progress = new AchievementProgressInGame(nv.name,nv.value);
+						} catch (TraverseException e) {
+							showException(e, file);
+							progress = new AchievementProgressInGame(nv);
+						}
+						
+						Integer gameID = parseNumber(nv.name);
+						if (gameID==null && progress.hasParsedData)
+							gameID = (int) progress.appID;
+						
+						if (gameID!=null)
+							gameStates.put(gameID, progress);
+						else
+							gameStates_withoutID.add(progress);
+					}
+					DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"TreeNodes.Player.AchievementProgress");
+				}
 			}
 			
 			static class AchievementProgressInGame {
@@ -2178,7 +2219,9 @@ class Data {
 
 		String getGameTitle() {
 			String appName = null;
-			if (vdfTree!=null) appName = vdfTree.getString("AppState","name");
+			if (vdfTree!=null)
+				try { appName = vdfTree.getString("AppState","name"); }
+				catch (VDFTraverseException e) {}
 			return appName;
 		}
 	}

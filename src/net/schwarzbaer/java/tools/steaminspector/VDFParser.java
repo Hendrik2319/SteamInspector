@@ -571,25 +571,31 @@ class VDFParser {
 			boolean applyTo(VDFTreeNode subNode, Type type, String name, String value);
 		}
 		
-		VDFTreeNode getSubNode(String... path) { return getSubNode_intern("getSubNode()", path); }
-		String      getString (String... path) { return getValue(Type.String, node->node.value, "getString", path); }
-		VDFTreeNode getArray  (String... path) { return getValue(Type.Array , node->node      , "getArray" , path); }
+		VDFTreeNode getSubNode(String... path) throws VDFTraverseException { return getSubNode_intern("getSubNode()", false, path); }
+		String      getString (String... path) throws VDFTraverseException { return getString (false, path); }
+		VDFTreeNode getArray  (String... path) throws VDFTraverseException { return getArray  (false, path); }
+		String      getString (boolean optionalValue, String... path) throws VDFTraverseException { return getValue(Type.String, optionalValue, node->node.value, "getString", path); }
+		VDFTreeNode getArray  (boolean optionalValue, String... path) throws VDFTraverseException { return getValue(Type.Array , optionalValue, node->node      , "getArray" , path); }
 		
-		private <ValueType> ValueType getValue(Type type, Function<VDFTreeNode,ValueType> getValue, String functionName, String... path) {
-			VDFTreeNode node = getSubNode_intern(functionName, path);
-			if (node!=null && node.type==type) {
-				node.markAsProcessed();
-				return getValue.apply(node);
+		private <ValueType> ValueType getValue(Type type, boolean optionalValue, Function<VDFTreeNode,ValueType> getValue, String functionName, String... path) throws VDFTraverseException {
+			VDFTreeNode node = getSubNode_intern(functionName, optionalValue, path);
+			if (node==null) {
+				if (optionalValue) return null;
+				throw new IllegalStateException();
 			}
-			return null;
+			if (node.type != type)
+				throw new VDFTraverseException("Node at path [%s] isn't a %s node.", node.getAccessPath(), type);
+			
+			node.markAsProcessed();
+			return getValue.apply(node);
 		}
 		
-		private VDFTreeNode getSubNode_intern(String functionName, String... path) {
+		private VDFTreeNode getSubNode_intern(String functionName, boolean lastValueIsOptional, String... path) throws VDFTraverseException {
 			VDFTreeNode node = this;
 			int i = 0;
 			while (path!=null && i<path.length) {
-				if (node.valuePairArray==null)
-					return null;
+				if ((node.type!=Type.Array && node.type!=Type.Root) || node.valuePairArray==null)
+					throw new VDFTraverseException("Node at path [%s] isn't either a Root node or an Array node.", node.getAccessPath());
 				
 				node.markAsProcessed();
 				
@@ -605,8 +611,10 @@ class VDFParser {
 						i++;
 						break;
 					}
-				if (!subNodeFound)
-					return null;
+				if (!subNodeFound) {
+					if (i==path.length-1 && lastValueIsOptional) return null;
+					throw new VDFTraverseException("Can't find subnode \"%s\" in node at path [%s].", subNodeName, node.getAccessPath());
+				}
 			}
 			return node;
 		}

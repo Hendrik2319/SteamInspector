@@ -1006,43 +1006,44 @@ class TreeNodes {
 					children.add( new RawVDFDataNode(this, "Raw VDF Data", data.rawData) );
 				if (data.friends!=null) {
 					Vector<FriendList.Friend> vector = new Vector<>(data.friends);
-					vector.sort(Comparator.<FriendList.Friend,Long>comparing(friend->friend.id,Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(friend->friend.idStr));
+					vector.sort(Comparator.<FriendList.Friend,Long>comparing(friend->friend.hasParsedData ? friend.id : null,Comparator.nullsFirst(Comparator.naturalOrder())));
 					for (FriendList.Friend friend:vector)
 						children.add( new FriendNode(this, friend) );
 				}
 				return children;
 			}
 			
-			static class FriendNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource {
+			static class FriendNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource, TreeContentSource {
 				
 				private final FriendList.Friend friend;
 				
 				FriendNode(TreeNode parent, FriendList.Friend friend) {
-					super(parent, generateTitle(friend), friend!=null && friend.rawData!=null, friend==null || friend.rawData==null);
+					super(parent, generateTitle(friend), false, true);
 					this.friend = friend;
+					if (friend==null) throw new IllegalArgumentException();
 				}
 
 				private static String generateTitle(FriendList.Friend friend) {
-					if (friend==null) return "(NULL) Friend ";
+					if (friend==null) return "(NULL) Friend";
 					String str = "Friend";
-					if (friend.rawData!=null) str = "(Raw Data)" + str;
-					if (friend.id  !=null) str += String.format(" %016X", friend.id);
-					else                   str += String.format(" [%s]", friend.idStr);
-					if (friend.name!=null) str += String.format(" \"%s\"", friend.name);
-					if (friend.tag !=null) str += String.format(" (Tag:%s)", friend.tag);
+					if (friend.hasParsedData) {
+						str += String.format(" %016X", friend.id);
+						if (friend.name!=null) str += String.format(" \"%s\"", friend.name);
+						if (friend.tag !=null) str += String.format(" (Tag:%s)", friend.tag);
+					} else
+						if (friend.rawData!=null) str = "(Raw Data) " + str;
 					return str;
 				}
 
-				@Override ContentType getContentType() { return ContentType.PlainText; }
+				@Override ContentType getContentType() { return friend.hasParsedData ? ContentType.PlainText : friend.rawData!=null ? ContentType.DataTree : null; }
 				@Override public String getContentAsText() {
+					if (!friend.hasParsedData) return null;
 					String str = "";
 					if (friend.name  !=null) str += String.format("Name  :  \"%s\"%n", friend.name);
 					if (friend.tag   !=null) str += String.format("Tag   :  \"%s\"%n", friend.tag);
-					if (friend.id    !=null) {
-						str += String.format("ID    :  %d%n", friend.id);
-						str += String.format("         0x%016X%n", friend.id);
-						str += String.format("         [b0..b31]%d [b32..b63]%d%n", friend.id & 0xFFFFFFFFL, friend.id>>32);
-					} else                   str += String.format("ID    :  [%s]%n", friend.idStr);
+					str += String.format("ID    :  %d%n", friend.id);
+					str += String.format("         0x%016X%n", friend.id);
+					str += String.format("         [b0..b31]%d [b32..b63]%d%n", friend.id & 0xFFFFFFFFL, friend.id>>32);
 					if (friend.avatar!=null) str += String.format("Avatar:  \"%s\"%n", friend.avatar);
 					if (friend.nameHistory!=null) {
 						str += "Name History:\r\n";
@@ -1055,13 +1056,11 @@ class TreeNodes {
 					}
 					return str;
 				}
-
-				@Override
-				protected Vector<? extends TreeNode> createChildren() {
-					Vector<TreeNode> children = new Vector<>();
-					if (friend.rawData!=null) children.add( new RawVDFDataNode(this, "Raw VDF Data", friend.rawData) );
-					return children;
+				@Override public TreeRoot getContentAsTree() {
+					return friend.rawData==null ? null : friend.rawData.getTreeRoot(new DataTreeNodeContextMenu());
 				}
+
+				@Override protected Vector<? extends TreeNode> createChildren() { return null; }
 			}
 		}
 		
@@ -1082,10 +1081,10 @@ class TreeNodes {
 				return str;
 			}
 
-			@Override ContentType getContentType() { return data.sourceData!=null ? ContentType.DataTree : null; }
+			@Override ContentType getContentType() { return data.rawData!=null ? ContentType.DataTree : null; }
 			@Override public TreeRoot getContentAsTree() {
-				if (data.sourceData!=null)
-					return JSONHelper.createTreeRoot(data.sourceData, false);
+				if (data.rawData!=null)
+					return JSONHelper.createTreeRoot(data.rawData, false);
 				return null;
 			}
 

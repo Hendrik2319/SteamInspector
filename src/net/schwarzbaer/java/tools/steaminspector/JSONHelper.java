@@ -9,10 +9,6 @@ import java.util.function.Function;
 import javax.swing.tree.DefaultTreeModel;
 
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
-import net.schwarzbaer.java.lib.jsonparser.JSON_Data.ArrayValue;
-import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Array;
-import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
-import net.schwarzbaer.java.lib.jsonparser.JSON_Data.ObjectValue;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.TraverseException;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
@@ -49,20 +45,21 @@ class JSONHelper {
 		}
 	}
 
+	/*
 	static ArrayValue<NV, V> createArrayValue(JSON_Array<NV, V> array) {
 		V extra = new V(Value.Type.Array);
 		ArrayValue<NV, V> host = new ArrayValue<>(array,extra);
 		extra.setHost(host);
 		return host;
 	}
-
+    
 	static ObjectValue<NV, V> createObjectValue(JSON_Object<NV, V> object) {
 		V extra = new V(Value.Type.Object);
 		ObjectValue<NV, V> host = new ObjectValue<>(object,extra);
 		extra.setHost(host);
 		return host;
 	}
-
+    
 	
 	static TreeRoot createTreeRoot(JSON_Array<NV, V> array, boolean isLarge) {
 		if (array == null) return null;
@@ -73,6 +70,7 @@ class JSONHelper {
 		if (object == null) return null;
 		return new TreeRoot(JSON_TreeNode.create(null,null,createObjectValue(object)),true,!isLarge,JSON_TreeNode.contextMenu);
 	}
+	*/
 	
 	static TreeRoot createTreeRoot(Value<NV, V> value, boolean isLarge) {
 		return new TreeRoot(JSON_TreeNode.create(null,null,value),true,!isLarge,JSON_TreeNode.contextMenu);
