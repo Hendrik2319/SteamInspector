@@ -456,6 +456,9 @@ class Data {
 		if (game==null) return false;
 		return game.hasATitle();
 	}
+	static Comparator<String> createNumberStringOrder() {
+		return Comparator.<String,Long>comparing(str->parseLongNumber(str), Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
+	}
 	static Comparator<Integer> createGameIdOrder() {
 		//return Comparator.<Integer,Game>comparing(games::get,Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
 		

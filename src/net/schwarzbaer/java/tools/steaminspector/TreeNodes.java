@@ -17,6 +17,7 @@ import java.util.Base64;
 import java.util.Calendar;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -32,7 +33,9 @@ import java.util.function.Supplier;
 import javax.imageio.ImageIO;
 import javax.swing.BorderFactory;
 import javax.swing.Icon;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFileChooser;
+import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JTextArea;
 import javax.swing.JTree;
@@ -263,7 +266,17 @@ class TreeNodes {
 		String getAccessCall();
 		boolean hasName();
 		boolean hasValue();
+		boolean areChildrenSortable();
+		void setChildrenOrder(ChildrenOrder order, DefaultTreeModel currentTreeModel);
+		ChildrenOrder getChildrenOrder();
 		
+		enum ChildrenOrder {
+			ByName("by Name");
+			private String title;
+			ChildrenOrder(String title) { this.title = title;}
+			@Override public String toString() { return title==null ? name() : title; }
+			
+		}
 	}
 
 	static class DataTreeNodeContextMenu extends AbstractTreeContextMenu {
@@ -275,11 +288,12 @@ class TreeNodes {
 		private final JMenuItem miAccessCall;
 		private final JMenuItem miFullInfo;
 		private final JMenuItem miCollapseChildren;
+		private final SortChildrenMenu menuSortChildren;
+		
 		private DataTreeNode clickedTreeNode;
 		private TreePath clickedTreePath;
 		private JTree tree;
-
-
+		private DefaultTreeModel currentTreeModel;
 		
 		DataTreeNodeContextMenu() {
 			clickedTreeNode = null;
@@ -306,11 +320,19 @@ class TreeNodes {
 					}
 				}
 			}));
+			add(menuSortChildren = new SortChildrenMenu("Sort Children"));
+			
+		}
+		
+		private void setChildrenOrder(DataTreeNode.ChildrenOrder order) {
+			if (clickedTreeNode==null) return;
+			clickedTreeNode.setChildrenOrder(order, currentTreeModel);
 		}
 		
 		@Override
-		public void showContextMenu(JTree tree, int x, int y, TreePath clickedTreePath, Object clickedTreeNode) {
+		public void showContextMenu(JTree tree, DefaultTreeModel currentTreeModel, int x, int y, TreePath clickedTreePath, Object clickedTreeNode) {
 			this.tree = tree;
+			this.currentTreeModel = currentTreeModel;
 			this.clickedTreePath = clickedTreePath;
 			this.clickedTreeNode = null;
 			if (clickedTreeNode instanceof DataTreeNode)
@@ -323,7 +345,42 @@ class TreeNodes {
 			miFullInfo  .setEnabled(this.clickedTreeNode!=null);
 			miCollapseChildren.setEnabled(this.clickedTreeNode!=null);
 			
+			menuSortChildren.prepareMenuItems();
+			
 			show(tree, x, y);
+		}
+		
+		private class SortChildrenMenu extends JMenu {
+			private static final long serialVersionUID = -6772692062748277925L;
+			
+			private final JCheckBoxMenuItem miOriginalOrder;
+			private final EnumMap<DataTreeNode.ChildrenOrder,JCheckBoxMenuItem> menuItems;
+
+			public SortChildrenMenu(String title) {
+				super(title);
+				add(miOriginalOrder = SteamInspector.createCheckBoxMenuItem("<Original Order>", false, true, b->setChildrenOrder(null)));
+				menuItems = new EnumMap<>(DataTreeNode.ChildrenOrder.class);
+				addSeparator();
+				for (DataTreeNode.ChildrenOrder order:DataTreeNode.ChildrenOrder.values()) {
+					JCheckBoxMenuItem mi = SteamInspector.createCheckBoxMenuItem(order.toString(), false, true, e->setChildrenOrder(order));
+					menuItems.put(order,mi);
+					add(mi);
+				}
+			}
+
+			public void prepareMenuItems() {
+				setEnabled(clickedTreeNode!=null && clickedTreeNode.areChildrenSortable());
+				
+				DataTreeNode.ChildrenOrder childrenOrder;
+				if (clickedTreeNode!=null && clickedTreeNode.areChildrenSortable())
+					childrenOrder = clickedTreeNode.getChildrenOrder();
+				else
+					childrenOrder = null;
+				
+				miOriginalOrder.setSelected(childrenOrder==null);
+				menuItems.forEach((order,mi)->mi.setSelected(order==childrenOrder));
+			}
+			
 		}
 	}
 

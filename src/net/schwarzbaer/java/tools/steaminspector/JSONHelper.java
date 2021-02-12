@@ -2,8 +2,11 @@ package net.schwarzbaer.java.tools.steaminspector;
 
 import java.awt.Color;
 import java.io.File;
+import java.util.Comparator;
 import java.util.Vector;
 import java.util.function.Function;
+
+import javax.swing.tree.DefaultTreeModel;
 
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.ArrayValue;
@@ -97,6 +100,7 @@ class JSONHelper {
 		private final Function<ChildValueType, Value<NV,V>> getChildValue;
 		final String name;
 		final Value<NV,V> value;
+		private ChildrenOrder childrenOrder;
 
 		private JSON_TreeNode(JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, Value<NV,V> value, Vector<ChildValueType> childValues, Function<ChildValueType,String> getChildName, Function<ChildValueType,Value<NV,V>> getChildValue) {
 			super(parent, title, childValues!=null, childValues==null || childValues.isEmpty(), icon==null ? null : icon.getIcon());
@@ -105,6 +109,7 @@ class JSONHelper {
 			this.childValues = childValues;
 			this.getChildName = getChildName;
 			this.getChildValue = getChildValue;
+			this.childrenOrder = null;
 			if (this.value==null) throw new IllegalArgumentException("JSON_TreeNode( ... , value == null, ... ) is not allowed");
 		}
 
@@ -145,11 +150,37 @@ class JSONHelper {
 		@Override public boolean hasName () { return name !=null; }
 		@Override public boolean hasValue() { return value!=null; }
 
+		@Override public String getFullInfo() {
+			String str = DataTreeNode.super.getFullInfo();
+			str += String.format("Value Hash      : 0x%08X%n", value.hashCode());
+			str += String.format("Value.Extra Hash: 0x%08X%n", value.extra.hashCode());
+			str += String.format("was processed   : %s%n", value.extra.wasProcessed);
+			str += String.format("has unprocessed children: %s%n", value.extra.hasUnprocessedChildren());
+			return str;
+		}
+
+		@Override public boolean areChildrenSortable() { return value.type==JSON_Data.Value.Type.Object; }
+		@Override public ChildrenOrder getChildrenOrder() { return childrenOrder; }
+		@Override public void setChildrenOrder(ChildrenOrder childrenOrder, DefaultTreeModel currentTreeModel) {
+			this.childrenOrder = childrenOrder;
+			rebuildChildren(currentTreeModel);
+		}
+
 		@Override
 		protected Vector<? extends JSON_TreeNode<?>> createChildren() {
 			if (childValues==null) return null;
+			
+			Vector<ChildValueType> vector = new Vector<>(childValues);
+			if (childrenOrder!=null)
+				switch (childrenOrder) {
+				case ByName:
+					vector.sort(Comparator.comparing(getChildName,Data.createNumberStringOrder()));
+					break;
+				}
+			
 			Vector<JSON_TreeNode<?>> childNodes = new Vector<>();
-			for (ChildValueType value:childValues) childNodes.add(create(this,getChildName.apply(value),getChildValue.apply(value)));
+			for (ChildValueType value:vector)
+				childNodes.add(create(this,getChildName.apply(value),getChildValue.apply(value)));
 			return childNodes;
 		}
 		

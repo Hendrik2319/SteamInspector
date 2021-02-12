@@ -7,11 +7,13 @@ import java.io.LineNumberReader;
 import java.io.StringReader;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
+import java.util.Comparator;
 import java.util.Locale;
 import java.util.Vector;
 import java.util.function.Function;
 
 import javax.swing.Icon;
+import javax.swing.tree.DefaultTreeModel;
 
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContextMenuHandler;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
@@ -74,14 +76,18 @@ class VDFParser {
 		return data;
 	}
 
-	static class ValuePair {
+	private static class ValuePair {
 		
 		private final Block label;
 		private final Block datablock;
+		private boolean wasProcessed;
+		private Boolean hasUnprocessedChildren;
 		
 		private ValuePair(Block label, Block datablock) {
 			this.label = label;
 			this.datablock = datablock;
+			this.wasProcessed = false;
+			this.hasUnprocessedChildren = null;
 			if (this.label==null || this.datablock==null)
 				throw new IllegalArgumentException("Both Blocks in a ValuePair must be non-null");
 			if (this.label.isClosingBracketDummy() != this.datablock.isClosingBracketDummy())
@@ -328,41 +334,52 @@ class VDFParser {
 	
 	static class VDFTreeNode extends SteamInspector.BaseTreeNode<VDFTreeNode,VDFTreeNode> implements DataTreeNode {
 		
-		enum Type { Root, String, Array }
+		enum Type {
+			Root(null), String(Block.Type.String), Array(Block.Type.Array);
+			private final Block.Type blockType;
+			Type(Block.Type blockType) { this.blockType = blockType; }
+		}
 		
+		private final ValuePair base;
 		private final Vector<ValuePair> valuePairArray;
 		private final String name;
 		private final String value;
 		private final Type type;
-		boolean wasProcessed;
-		Boolean hasUnprocessedChildren;
+		private ChildrenOrder childrenOrder;
 
 		VDFTreeNode(Vector<ValuePair> valuePairArray) { // Root
 			super(null,"VDF Tree Root",true,valuePairArray==null || valuePairArray.isEmpty());
+			this.base = null;
 			this.type = Type.Root;
 			this.valuePairArray = valuePairArray;
 			this.name = null;
 			this.value = null;
-			this.wasProcessed = false;
-			this.hasUnprocessedChildren = null;
+			this.childrenOrder=null;
 		}
-		VDFTreeNode(VDFTreeNode parent, String name, String value) { // String Value
+		VDFTreeNode(VDFTreeNode parent, ValuePair base, String name, String value) { // String Value
 			super(parent, String.format("%s : \"%s\"", name, value), false, true);
+			this.base = base;
 			this.type = Type.String;
 			this.valuePairArray = null;
 			this.name = name;
 			this.value = value;
-			this.wasProcessed = false;
-			this.hasUnprocessedChildren = false;
+			this.base.hasUnprocessedChildren = false;
+			this.childrenOrder=null;
+			if (this.base==null) throw new IllegalArgumentException();
+			if (this.base.datablock.type!=type.blockType) throw new IllegalArgumentException();
+			if (this.value==null) throw new IllegalArgumentException();
 		}
-		VDFTreeNode(VDFTreeNode parent, String name, Vector<ValuePair> valuePairArray) { // Array Value
+		VDFTreeNode(VDFTreeNode parent, ValuePair base, String name, Vector<ValuePair> valuePairArray) { // Array Value
 			super(parent, name, true,valuePairArray==null || valuePairArray.isEmpty());
+			this.base = base;
 			this.type = Type.Array;
 			this.valuePairArray = valuePairArray;
 			this.name = name;
 			this.value = null;
-			this.wasProcessed = false;
-			this.hasUnprocessedChildren = null;
+			this.childrenOrder=null;
+			if (this.base==null) throw new IllegalArgumentException();
+			if (this.base.datablock.type!=type.blockType) throw new IllegalArgumentException();
+			if (this.valuePairArray==null) throw new IllegalArgumentException();
 		}
 		
 		TreeRoot getTreeRoot(TreeContextMenuHandler tcmh) {
@@ -372,21 +389,27 @@ class VDFParser {
 		boolean is(Type type) { return this.type==type; }
 		
 		void markAsProcessed() {
-			wasProcessed = true;
+			if (type!=Type.Root)
+				base.wasProcessed = true;
+		}
+		
+		private boolean wasProcessed() {
+			if (type==Type.Root) return true;
+			return base.wasProcessed;
 		}
 		
 		boolean hasUnprocessedChildren() {
-			if (hasUnprocessedChildren==null) {
-				hasUnprocessedChildren=false;
+			if (type==Type.Root || base.hasUnprocessedChildren==null) {
+				if (base!=null) base.hasUnprocessedChildren=false;
 				checkChildren("hasUnprocessedChildren()");
 				for (VDFTreeNode child:children) {
-					if (!child.wasProcessed || child.hasUnprocessedChildren()) {
-						hasUnprocessedChildren=true;
-						break;
+					if (!child.wasProcessed() || child.hasUnprocessedChildren()) {
+						if (base!=null) base.hasUnprocessedChildren=true;
+						return true;
 					}
 				}
 			}
-			return hasUnprocessedChildren;
+			return false;
 		}
 		
 		@Override public String getPath() {
@@ -412,6 +435,14 @@ class VDFParser {
 			if (valuePairArray!=null) return String.format("Array[%d]", valuePairArray.size());
 			return null;
 		}
+
+		@Override public String getFullInfo() {
+			String str = DataTreeNode.super.getFullInfo();
+			str += String.format("Value Hash      : 0x%08X%n", hashCode());
+			str += String.format("was processed   : %s%n", wasProcessed());
+			str += String.format("has unprocessed children: %s%n", hasUnprocessedChildren());
+			return str;
+		}
 		
 		@Override
 		Icon getIcon() {
@@ -427,19 +458,33 @@ class VDFParser {
 			return super.getIcon();
 		}
 		@Override Color getTextColor() {
-			return JSONHelper.getTextColor(wasProcessed,hasUnprocessedChildren());
+			return JSONHelper.getTextColor(wasProcessed(),hasUnprocessedChildren());
+		}
+		
+		@Override public boolean areChildrenSortable() { return type == Type.Array; }
+		@Override public ChildrenOrder getChildrenOrder() { return childrenOrder; }
+		@Override public void setChildrenOrder(ChildrenOrder childrenOrder, DefaultTreeModel currentTreeModel) {
+			this.childrenOrder = childrenOrder;
+			rebuildChildren(currentTreeModel);
 		}
 		
 		@Override
 		protected Vector<? extends VDFTreeNode> createChildren() {
 			Vector<VDFTreeNode> children = new Vector<>();
-			if (valuePairArray!=null)
-				valuePairArray.forEach(valuePair->{
-					switch (valuePair.datablock.type) {
-					case String: children.add(new VDFTreeNode(this, valuePair.label.str, valuePair.datablock.str  )); break;
-					case Array : children.add(new VDFTreeNode(this, valuePair.label.str, valuePair.datablock.array)); break;
+			if (valuePairArray!=null) {
+				Vector<ValuePair> vector = new Vector<>(valuePairArray);
+				if (childrenOrder!=null)
+					switch (childrenOrder) {
+					case ByName:
+						vector.sort(Comparator.<ValuePair,String>comparing(vp->vp.label.str,net.schwarzbaer.java.tools.steaminspector.Data.createNumberStringOrder()));
+						break;
 					}
-				});
+				for (ValuePair valuePair:vector)
+					switch (valuePair.datablock.type) {
+					case String: children.add(new VDFTreeNode(this, valuePair, valuePair.label.str, valuePair.datablock.str  )); break;
+					case Array : children.add(new VDFTreeNode(this, valuePair, valuePair.label.str, valuePair.datablock.array)); break;
+					}
+			}
 			return children;
 		}
 		

@@ -445,8 +445,7 @@ class SteamInspector {
 		fileContentPanel.repaint();
 	}
 
-	@SuppressWarnings("unused")
-	private static JRadioButton createRadioButton(String title, boolean isSelected, boolean isEnabled, ButtonGroup bg, Consumer<Boolean> setValue) {
+	static JRadioButton createRadioButton(String title, boolean isSelected, boolean isEnabled, ButtonGroup bg, Consumer<Boolean> setValue) {
 		JRadioButton comp = new JRadioButton(title, isSelected);
 		comp.setEnabled(isEnabled);
 		if (bg!=null) bg.add(comp);
@@ -454,14 +453,14 @@ class SteamInspector {
 		return comp;
 	}
 	
-	private static JButton createButton(String title, boolean enabled, ActionListener al) {
+	static JButton createButton(String title, boolean enabled, ActionListener al) {
 		JButton comp = new JButton(title);
 		comp.setEnabled(enabled);
 		if (al!=null) comp.addActionListener(al);
 		return comp;
 	}
 	
-	private static JCheckBoxMenuItem createCheckBoxMenuItem(String title, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
+	static JCheckBoxMenuItem createCheckBoxMenuItem(String title, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
 		JCheckBoxMenuItem comp = new JCheckBoxMenuItem(title, isSelected);
 		comp.setEnabled(isEnabled);
 		if (setValue!=null) comp.addActionListener(e->setValue.accept(comp.isSelected()));
@@ -475,27 +474,26 @@ class SteamInspector {
 		return comp;
 	}
 	
-	@SuppressWarnings("unused")
-	private static JCheckBox createCheckBox(String title, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
+	static JCheckBox createCheckBox(String title, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
 		JCheckBox comp = new JCheckBox(title, isSelected);
 		comp.setEnabled(isEnabled);
 		if (setValue!=null) comp.addActionListener(e->setValue.accept(comp.isSelected()));
 		return comp;
 	}
 
-	private static Component createHorizontalLine() {
+	static Component createHorizontalLine() {
 		JLabel comp = new JLabel();
 		comp.setBorder(BorderFactory.createEtchedBorder());
 		return comp;
 	}
 
-	private static JLabel createLabel(String text, int vertAlign) {
+	static JLabel createLabel(String text, int vertAlign) {
 		JLabel comp = new JLabel(text);
 		comp.setVerticalAlignment(vertAlign);
 		return comp;
 	}
 
-	private static ToggleBox createToggleBox(Boolean value, int minWidth, int minHeight, String strTrue, String strFalse, String strNull, Color colorTrue, Color colorFalse, Color colorNull) {
+	static ToggleBox createToggleBox(Boolean value, int minWidth, int minHeight, String strTrue, String strFalse, String strNull, Color colorTrue, Color colorFalse, Color colorNull) {
 		ToggleBox comp = new ToggleBox(value, strTrue, strFalse, strNull, colorTrue, colorFalse, colorNull);
 		Dimension size = new Dimension(minWidth,minHeight);
 		comp.setMinimumSize(size);
@@ -503,53 +501,11 @@ class SteamInspector {
 		return comp;
 	}
 	
-	private static class ModifiedTextField<A> extends JTextField {
-		private static final long serialVersionUID = -814226398681252148L;
-		private final Color defaultBG;
-		private final Color errorBG;
-		private Function<String, A> convert;
-		private Predicate<A> check;
-		private Consumer<A> setValue;
-
-		public ModifiedTextField(String initialValue, Function<String, A> convert, Predicate<A> check, Consumer<A> setValue) {
-			super(initialValue);
-			this.convert = convert;
-			this.check = check;
-			this.setValue = setValue;
-			defaultBG = getBackground();
-			errorBG = Color.RED;
-			if (this.setValue!=null && this.convert!=null) {
-				addActionListener(e->sendChangedValue());
-				addFocusListener(new FocusListener() {
-					@Override public void focusGained(FocusEvent e) {}
-					@Override public void focusLost  (FocusEvent e) { sendChangedValue(); }
-				});
-			}
-		}
-
-		public void setValue(A value, Function<A, String> convert) {
-			setText(convert.apply(value));
-			setBackground(check.test(value) ? defaultBG : errorBG);
-		}
-
-		private void sendChangedValue() {
-			String str = getText();
-			A value = convert.apply(str);
-			if (check.test(value)) {
-				setBackground(defaultBG);
-				setValue.accept(value);
-			} else
-				setBackground(errorBG);
-		}
-		
-	}
-	
-	private static <A> ModifiedTextField<A> createModifiedTextField(String initialValue, Function<String,A> convert, Predicate<A> check, Consumer<A> setValue) {
+	static <A> ModifiedTextField<A> createModifiedTextField(String initialValue, Function<String,A> convert, Predicate<A> check, Consumer<A> setValue) {
 		return new ModifiedTextField<A>(initialValue, convert, check, setValue);
 	}
 	
-	@SuppressWarnings("unused")
-	private static <A> JTextField createTextField(String initialValue, Function<String,A> convert, Predicate<A> check, Consumer<A> setValue) {
+	static <A> JTextField createTextField(String initialValue, Function<String,A> convert, Predicate<A> check, Consumer<A> setValue) {
 		JTextField comp = new JTextField(initialValue);
 		Color defaultBG = comp.getBackground();
 		Color errorBG = Color.RED;
@@ -573,6 +529,47 @@ class SteamInspector {
 		return comp;
 	}
 	
+	static class ModifiedTextField<A> extends JTextField {
+		private static final long serialVersionUID = -814226398681252148L;
+		private final Color defaultBG;
+		private final Color errorBG;
+		private Function<String, A> convert;
+		private Predicate<A> check;
+		private Consumer<A> setValue;
+	
+		public ModifiedTextField(String initialValue, Function<String, A> convert, Predicate<A> check, Consumer<A> setValue) {
+			super(initialValue);
+			this.convert = convert;
+			this.check = check;
+			this.setValue = setValue;
+			defaultBG = getBackground();
+			errorBG = Color.RED;
+			if (this.setValue!=null && this.convert!=null) {
+				addActionListener(e->sendChangedValue());
+				addFocusListener(new FocusListener() {
+					@Override public void focusGained(FocusEvent e) {}
+					@Override public void focusLost  (FocusEvent e) { sendChangedValue(); }
+				});
+			}
+		}
+	
+		public void setValue(A value, Function<A, String> convert) {
+			setText(convert.apply(value));
+			setBackground(check.test(value) ? defaultBG : errorBG);
+		}
+	
+		private void sendChangedValue() {
+			String str = getText();
+			A value = convert.apply(str);
+			if (check.test(value)) {
+				setBackground(defaultBG);
+				setValue.accept(value);
+			} else
+				setBackground(errorBG);
+		}
+		
+	}
+
 	private static class ToggleBox extends JLabel {
 		private static final long serialVersionUID = 8024197163969547939L;
 		
@@ -1076,7 +1073,6 @@ class SteamInspector {
 					}
 				}
 			}));
-			addSeparator();
 			add(menuFilterChildren = new JMenu("Filter Children"));
 			
 			this.tree.addMouseListener(new MouseAdapter() {
@@ -1574,12 +1570,14 @@ class SteamInspector {
 	}
 
 	private static class DataTreeOutput extends FileContentOutput {
-		private JTree view;
-		private JScrollPane scrollPane;
+		private final JTree view;
+		private final JScrollPane scrollPane;
 		private TreeRoot treeRoot;
+		private DefaultTreeModel currentTreeModel;
 
 		DataTreeOutput() {
 			treeRoot = null;
+			currentTreeModel = null;
 			view = new JTree();
 			view.setRootVisible(false);
 			view.setCellRenderer(new BaseTreeNodeRenderer());
@@ -1593,8 +1591,8 @@ class SteamInspector {
 				@Override public void mouseClicked(MouseEvent e) {
 					if (e.getButton()==MouseEvent.BUTTON3) {
 						TreePath path = view.getPathForLocation(e.getX(), e.getY());
-						if (treeRoot==null) return;
-						treeRoot.showContextMenu(view, e.getX(), e.getY(), path, path==null ? null : path.getLastPathComponent());
+						if (treeRoot==null || currentTreeModel==null) return;
+						treeRoot.showContextMenu(view, currentTreeModel, e.getX(), e.getY(), path, path==null ? null : path.getLastPathComponent());
 					}
 				}
 			});
@@ -1607,7 +1605,7 @@ class SteamInspector {
 			showMessageFromThread("ParsedTreeOutput.setRoot started");
 			this.treeRoot = treeRoot;
 			showMessageFromThread("ParsedTreeOutput.setRoot set root node");
-			view.setModel(new DefaultTreeModel(treeRoot.node));
+			view.setModel(currentTreeModel = new DefaultTreeModel(treeRoot.node));
 			view.setRootVisible(treeRoot.isRootVisible);
 			if (treeRoot.expandAllRows) {
 				showMessageFromThread("ParsedTreeOutput.setRoot expand full tree");
@@ -1892,7 +1890,7 @@ class SteamInspector {
 	interface ParsedByteBasedTextFileSource extends ParsedByteBasedTextContentSource, FileBasedSource {}
 	
 	interface TreeContextMenuHandler {
-		void showContextMenu(JTree invoker, int x, int y, TreePath clickedTreePath, Object clickedTreeNode);
+		void showContextMenu(JTree invoker, DefaultTreeModel currentTreeModel, int x, int y, TreePath clickedTreePath, Object clickedTreeNode);
 	}
 	
 	static abstract class AbstractTreeContextMenu extends JPopupMenu implements TreeContextMenuHandler {
@@ -1914,9 +1912,9 @@ class SteamInspector {
 			this.expandAllRows = expandAllRows;
 			this.tcmh = tcmh;
 		}
-		@Override public void showContextMenu(JTree invoker, int x, int y, TreePath clickedTreePath, Object clickedTreeNode) {
+		@Override public void showContextMenu(JTree invoker, DefaultTreeModel currentTreeModel, int x, int y, TreePath clickedTreePath, Object clickedTreeNode) {
 			if (tcmh!=null)
-				tcmh.showContextMenu(invoker, x, y, clickedTreePath, clickedTreeNode);
+				tcmh.showContextMenu(invoker, currentTreeModel, x, y, clickedTreePath, clickedTreeNode);
 		}
 	}
 	
