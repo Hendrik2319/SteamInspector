@@ -18,6 +18,7 @@ import javax.swing.tree.DefaultTreeModel;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContextMenuHandler;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.DataTreeNode;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.VdfTreeIcons;
 
 class VDFParser {
 
@@ -518,15 +519,11 @@ class VDFParser {
 		@Override
 		Icon getIcon() {
 			switch (type) {
-			case Array:
-				break;
-			case Root:
-				break;
-			case String:
-				break;
+			case Root  : return null;
+			case Array : return VdfTreeIcons.Array .getIcon();
+			case String: return VdfTreeIcons.String.getIcon();
 			}
-			// TODO: icons for VDFTreeNodes
-			return super.getIcon();
+			return null;
 		}
 		@Override Color getTextColor() {
 			return JSONHelper.getTextColor(wasProcessed(),hasUnprocessedChildren());

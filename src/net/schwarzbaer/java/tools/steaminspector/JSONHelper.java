@@ -203,9 +203,9 @@ class JSONHelper {
 			case Array : return JsonTreeIcons.Array;
 			case String: return JsonTreeIcons.String;
 			case Bool  : return JsonTreeIcons.Boolean;
-			case Null  : return null;
-			case Float : case Integer:
-				return JsonTreeIcons.Number;
+			case Null  : return JsonTreeIcons.Null;
+			case Float :
+			case Integer: return JsonTreeIcons.Number;
 			}
 			return null;
 		}

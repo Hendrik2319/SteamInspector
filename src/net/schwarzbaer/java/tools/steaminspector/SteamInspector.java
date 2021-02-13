@@ -80,6 +80,7 @@ import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FilePromise;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.LabeledFile;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.system.ClipboardTools;
 import net.schwarzbaer.system.Settings;
 
@@ -1923,6 +1924,7 @@ class SteamInspector {
 //		private Icon icon;
 		
 		BaseTreeNodeRenderer() {
+			setLeafIcon(TreeIcons.DefaultLeafIcon.getIcon());
 //			icon = new JFileChooser().getIcon(new File("dummy.txt"));
 //			icon = FileSystemView.getFileSystemView().get // SystemIcon(new File("dummy.txt"));
 //			System.out.println("Icon for \"dummy.txt\" is: "+icon);

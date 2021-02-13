@@ -89,19 +89,26 @@ class TreeNodes {
 	
 	private static IconSource.CachedIcons<TreeIcons> TreeIconsIS;
 	enum TreeIcons {
-		GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Badge, Achievement, Facebook, Twitch, Twitter, YouTube, Folder, RootFolder_Simple, RootFolder;
+		DefaultLeafIcon, GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Badge, Achievement, Facebook, Twitch, Twitter, YouTube, Folder, RootFolder_Simple, RootFolder;
 		Icon getIcon() { return TreeIconsIS.getCachedIcon(this); }
 	}
 	
 	private static IconSource.CachedIcons<JsonTreeIcons> JsonTreeIconsIS;
 	enum JsonTreeIcons {
-		Object, Array, String, Number, Boolean;
+		Object, Array, String, Number, Boolean, Null;
 		Icon getIcon() { return JsonTreeIconsIS.getCachedIcon(this); }
+	}
+	
+	private static IconSource.CachedIcons<VdfTreeIcons> VdfTreeIconsIS;
+	enum VdfTreeIcons {
+		Array, String;
+		Icon getIcon() { return VdfTreeIconsIS.getCachedIcon(this); }
 	}
 	
 	static void loadIcons() {
 		TreeIconsIS     = IconSource.createCachedIcons(16, 16, "/images/TreeIcons.png"    , TreeIcons.values());
 		JsonTreeIconsIS = IconSource.createCachedIcons(16, 16, "/images/JsonTreeIcons.png", JsonTreeIcons.values());
+		VdfTreeIconsIS  = IconSource.createCachedIcons(16, 16, "/images/VdfTreeIcons.png" , VdfTreeIcons.values());
 	}
 	
 	private static boolean fileNameEndsWith(File file, String... suffixes) {
