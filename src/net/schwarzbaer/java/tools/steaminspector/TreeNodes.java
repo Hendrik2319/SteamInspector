@@ -25,6 +25,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
 import java.util.Vector;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
@@ -88,7 +89,7 @@ class TreeNodes {
 	
 	private static IconSource.CachedIcons<TreeIcons> TreeIconsIS;
 	enum TreeIcons {
-		GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Badge, Achievement, Folder, RootFolder_Simple, RootFolder;
+		GeneralFile, TextFile, ImageFile, AudioFile, VDFFile, AppManifest, JSONFile, Badge, Achievement, Facebook, Twitch, Twitter, YouTube, Folder, RootFolder_Simple, RootFolder;
 		Icon getIcon() { return TreeIconsIS.getCachedIcon(this); }
 	}
 	
@@ -199,6 +200,52 @@ class TreeNodes {
 	@SuppressWarnings("unused")
 	private static void log_ln(Object source, String format, Object... args) {
 		System.out.printf("[%s] \"%s\": %s%n", source.getClass().getSimpleName(), source.toString(), String.format(Locale.ENGLISH, format, args));
+	}
+	
+	static class ValueListOutput extends Vector<ValueListOutput.Entry> {
+		private static final long serialVersionUID = -5898390765518030500L;
+
+		void add(int indentLevel, String label, String format, Object... args) {
+			add(new Entry(indentLevel, label, format, args));
+		}
+		void add(int indentLevel, String label) {
+			add(new Entry(indentLevel, label, ""));
+		}
+
+		String generateOutput() {
+			HashMap<Integer,Integer> labelLengths = new HashMap<>();
+			for (Entry entry:this) {
+				Integer maxLength = labelLengths.get(entry.indentLevel);
+				if (maxLength==null) maxLength=0;
+				maxLength = Math.max(entry.label.length(), maxLength);
+				labelLengths.put(entry.indentLevel,maxLength);
+			}
+			
+			HashMap<Integer,String> indents = new HashMap<>();
+			for (Integer indentLevel:labelLengths.keySet()) {
+				String str = ""; int i=0;
+				while (i<indentLevel) { str += "    "; i++; }
+				indents.put(indentLevel, str);
+			}
+			
+			StringBuilder sb = new StringBuilder();
+			for (Entry entry:this)
+				sb.append(String.format("%s%-"+labelLengths.get(entry.indentLevel)+"s%s%s%n", indents.get(entry.indentLevel), entry.label, entry.valueStr.isEmpty() ? "" : ": ", entry.valueStr));
+			
+			return sb.toString();
+		}
+
+		static class Entry {
+			final int indentLevel;
+			final private String label;
+			final private String valueStr;
+			public Entry(int indentLevel, String label, String format, Object... args) {
+				this.indentLevel = indentLevel;
+				this.label = label.trim();
+				this.valueStr = String.format(Locale.ENGLISH, format, args);
+			}
+		}
+		
 	}
 
 	static class FilePromise {
@@ -400,6 +447,7 @@ class TreeNodes {
 		private FilePromise getFile;
 		private GroupingNodeFilter<ValueType,?> filter;
 		private TreeRoot dataTree;
+		private BiConsumer<TreeNode, Vector<TreeNode>> createAllChildNodes;
 		
 		private static <IT,VT> Comparator<Map.Entry<IT,VT>> createMapKeyOrder(Comparator<IT> keyOrder) {
 			return Comparator.comparing(Map.Entry<IT,VT>::getKey,keyOrder);
@@ -412,25 +460,33 @@ class TreeNodes {
 			return create(parent, title, values, sortOrder, null, createChildNode);
 		}
 		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<VT> sortOrder, Icon icon, NodeCreator1<VT> createChildNode) {
-			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), createMapValueOrder(sortOrder), icon, (p,e)->createChildNode.create(p,e.getValue()));
+			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), createMapValueOrder(sortOrder), icon, (p,e)->createChildNode.create(p,e.getValue()), null);
 		}
 		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<Map.Entry<IT,VT>> sortOrder, NodeCreator2<IT,VT> createChildNode) {
 			return create(parent, title, values, sortOrder, null, createChildNode);
 		}
 		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<Map.Entry<IT,VT>> sortOrder, Icon icon, NodeCreator2<IT,VT> createChildNode) {
-			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), sortOrder, icon, (p,e)->createChildNode.create(p,e.getKey(),e.getValue()));
+			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), sortOrder, icon, (p,e)->createChildNode.create(p,e.getKey(),e.getValue()), null);
 		}
 		private static <VT> GroupingNode<VT> create(TreeNode parent, String title, Collection<VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode) {
-			return new GroupingNode<>(parent, title, values, sortOrder, null, createChildNode);
+			return new GroupingNode<>(parent, title, values, sortOrder, null, createChildNode, null);
 		}
 		private static <VT> GroupingNode<VT> create(TreeNode parent, String title, Collection<VT> values, Comparator<VT> sortOrder, Icon icon, NodeCreator1<VT> createChildNode) {
-			return new GroupingNode<>(parent, title, values, sortOrder, icon, createChildNode);
+			return new GroupingNode<>(parent, title, values, sortOrder, icon, createChildNode, null);
 		}
-		private GroupingNode(TreeNode parent, String title, Collection<ValueType> values, Comparator<ValueType> sortOrder, Icon icon, NodeCreator1<ValueType> createChildNode) {
+		private static GroupingNode<Object> create(TreeNode parent, String title, BiConsumer<TreeNode,Vector<TreeNode>> createAllChildNodes) {
+			return new GroupingNode<>(parent, title, null, null, null, null, createAllChildNodes);
+		}
+		@SuppressWarnings("unused")
+		private static GroupingNode<Object> create(TreeNode parent, String title, Icon icon, BiConsumer<TreeNode,Vector<TreeNode>> createAllChildNodes) {
+			return new GroupingNode<>(parent, title, null, null, icon, null, createAllChildNodes);
+		}
+		private GroupingNode(TreeNode parent, String title, Collection<ValueType> values, Comparator<ValueType> sortOrder, Icon icon, NodeCreator1<ValueType> createChildNode, BiConsumer<TreeNode,Vector<TreeNode>> createAllChildNodes) {
 			super(parent, title, true, false, icon);
 			this.values = values;
 			this.sortOrder = sortOrder;
 			this.createChildNode = createChildNode;
+			this.createAllChildNodes = createAllChildNodes;
 			file = null;
 			getFile = null;
 			externalViewerInfo = null;
@@ -438,6 +494,66 @@ class TreeNodes {
 			dataTree = null;
 		}
 		
+		interface NodeCreator1<ValueType> {
+			TreeNode create(TreeNode parent, ValueType value);
+		}
+
+		interface NodeCreator2<IDType, ValueType> {
+			TreeNode create(TreeNode parent, IDType id, ValueType value);
+		}
+
+		void setFileSource(File file, ExternalViewerInfo externalViewerInfo) {
+			setFileSource(new LabeledFile(file), externalViewerInfo);
+		}
+		void setFileSource(LabeledFile file, ExternalViewerInfo externalViewerInfo) {
+			this.file = file;
+			this.externalViewerInfo = externalViewerInfo;
+			if (getFile!=null) throw new IllegalStateException();
+			if (file==null) throw new IllegalArgumentException();
+		}
+		void setFileSource(FilePromise getFile, ExternalViewerInfo externalViewerInfo) {
+			this.getFile = getFile;
+			this.externalViewerInfo = externalViewerInfo;
+			if (getFile==null) throw new IllegalArgumentException();
+			if (file!=null) throw new IllegalStateException();
+		}
+		
+		@Override public LabeledFile getFile() { return file; }
+		@Override public FilePromise getFilePromise() { return getFile; }
+		@Override public ExternalViewerInfo getExternalViewerInfo() {
+			return externalViewerInfo;
+		}
+		
+		void setDataTree(TreeRoot dataTree) { this.dataTree = dataTree; }
+		@Override public TreeRoot getContentAsTree() { return dataTree; }
+		@Override ContentType getContentType() { return dataTree==null ? null : ContentType.DataTree; }
+		
+		@Override
+		protected Vector<? extends TreeNode> createChildren() {
+			Vector<TreeNode> children = new Vector<>();
+			if (createAllChildNodes!=null) {
+				createAllChildNodes.accept(this,children);
+				
+			} else {
+				Vector<ValueType> vector = new Vector<>(values);
+				if (sortOrder!=null) vector.sort(sortOrder);
+				vector.forEach(value->{
+					if (filter==null || filter.allows(value)) {
+						TreeNode treeNode = createChildNode.create(this,value);
+						if (treeNode!=null) children.add(treeNode);
+					}
+				});
+			}
+			return children;
+		}
+
+		@Override public Filter getFilter() { return filter; }
+		void setFilter(GroupingNodeFilter<ValueType,?> filter) {
+			if (createAllChildNodes!=null) throw new IllegalStateException("You can't set a filter, if you have created child nodes directly.");
+			this.filter = filter;
+			if (filter!=null)
+				filter.setHost(this);
+		}
 		private static <IT, VT, FilterOptType extends Enum<FilterOptType> & FilterOption> GroupingNodeFilter<Map.Entry<IT,VT>,FilterOptType> createMapFilter(
 				Class<FilterOptType> filterOptionClass,
 				FilterOptType[] options,
@@ -532,78 +648,22 @@ class TreeNodes {
 
 			protected abstract FilterOptType cast(FilterOption option);
 		}
-		
-		@Override public Filter getFilter() { return filter; }
-		void setFilter(GroupingNodeFilter<ValueType,?> filter) {
-			this.filter = filter;
-			if (filter!=null)
-				filter.setHost(this);
-		}
-		
-		void setFileSource(File file, ExternalViewerInfo externalViewerInfo) {
-			setFileSource(new LabeledFile(file), externalViewerInfo);
-		}
-		void setFileSource(LabeledFile file, ExternalViewerInfo externalViewerInfo) {
-			this.file = file;
-			this.externalViewerInfo = externalViewerInfo;
-			if (getFile!=null) throw new IllegalStateException();
-			if (file==null) throw new IllegalArgumentException();
-		}
-		void setFileSource(FilePromise getFile, ExternalViewerInfo externalViewerInfo) {
-			this.getFile = getFile;
-			this.externalViewerInfo = externalViewerInfo;
-			if (getFile==null) throw new IllegalArgumentException();
-			if (file!=null) throw new IllegalStateException();
-		}
-		
-		@Override public LabeledFile getFile() { return file; }
-		@Override public FilePromise getFilePromise() { return getFile; }
-		@Override public ExternalViewerInfo getExternalViewerInfo() {
-			return externalViewerInfo;
-		}
-		
-		void setDataTree(TreeRoot dataTree) { this.dataTree = dataTree; }
-		@Override public TreeRoot getContentAsTree() { return dataTree; }
-		@Override ContentType getContentType() { return dataTree==null ? null : ContentType.DataTree; }
-		
-		@Override
-		protected Vector<? extends TreeNode> createChildren() {
-			Vector<ValueType> vector = new Vector<>(values);
-			if (sortOrder!=null) vector.sort(sortOrder);
-			Vector<TreeNode> children = new Vector<>();
-			vector.forEach(value->{
-				if (filter==null || filter.allows(value)) {
-					TreeNode treeNode = createChildNode.create(this,value);
-					if (treeNode!=null) children.add(treeNode);
-				}
-			});
-			return children;
-		}
-
-		interface NodeCreator1<ValueType> {
-			TreeNode create(TreeNode parent, ValueType value);
-		}
-		
-		interface NodeCreator2<IDType, ValueType> {
-			TreeNode create(TreeNode parent, IDType id, ValueType value);
-		}
 	}
 	
 	private static class UrlNode extends SimpleTextNode implements ExternViewableNode, URLBasedNode {
 		
 		protected final String url;
 		
-		@SuppressWarnings("unused")
 		UrlNode(TreeNode parent,            String label,                    String url) { this(parent, null, label, url, url); }
 		UrlNode(TreeNode parent, Icon icon, String label,                    String url) { this(parent, icon, label, url, url); }
 		UrlNode(TreeNode parent,            String label, String urlInTitle, String url) { this(parent, null, label, urlInTitle, url); }
 		UrlNode(TreeNode parent, Icon icon, String label, String urlInTitle, String url) {
-			super(parent, icon, "%s: "+"\"%s\"", label, urlInTitle);
+			super(parent, icon, urlInTitle==null ? "%s" : "%s: \"%s\"", label, urlInTitle);
 			this.url = url;
 		}
 
 		@Override public String getURL() { return url; }
-		@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
+		@Override public ExternalViewerInfo getExternalViewerInfo() { return url==null ? null : ExternalViewerInfo.Browser; }
 	}
 	
 	private static class ImageUrlNode extends UrlNode implements ImageContentSource {
@@ -615,6 +675,7 @@ class TreeNodes {
 		@Override public BufferedImage getContentAsImage() { return readImageFromURL(url,"image"); }
 	}
 	
+	@SuppressWarnings("unused")
 	private static class Base64ImageNode extends SimpleTextNode implements ImageContentSource {
 		
 		private final String base64Data;
@@ -628,6 +689,35 @@ class TreeNodes {
 		@Override public BufferedImage getContentAsImage() { return createImageFromBase64(base64Data); }
 	}
 	
+	private static class Base64ValueNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource {
+	
+		private final Base64String value;
+	
+		public Base64ValueNode(TreeNode parent, String title, Base64String value) {
+			super(parent, title, false, true);
+			this.value = value;
+		}
+		@Override public String getContentAsText() {
+			if (value==null) return "<null>";
+			
+			String str = "";
+			str += "Original Text:\r\n";
+			str += String.format("\"%s\"%n", value.string);
+			str += "\r\n";
+			str += "Decoded Bytes:\r\n";
+			if (value.bytes==null)
+				str += "   <Decode Error>\r\n";
+			else
+				str += SteamInspector.toHexTable(value.bytes,-1);
+			
+			
+			return str;
+		}
+		@Override ContentType getContentType() { return ContentType.PlainText; }
+		@Override protected Vector<? extends TreeNode> createChildren() { return null; }
+		
+	}
+
 	private static class PrimitiveValueNode extends SimpleTextNode {
 		PrimitiveValueNode(TreeNode parent, String label, boolean value) { super(parent, "%s: "+  "%s"  , label, value); }
 		PrimitiveValueNode(TreeNode parent, String label, int     value) { super(parent, "%s: "+  "%d"  , label, value); }
@@ -1264,6 +1354,42 @@ class TreeNodes {
 				if (!CombinedBase64ValuesNode.isEmpty(data.appActivity,data.gameActivity,data.userNews)) {
 					children.add(new CombinedBase64ValuesNode(this, "Some Base64 Values", data.appActivity,data.gameActivity,data.userNews));
 				}
+				if (data.socialMedia!=null) {
+					if (data.socialMedia.hasParsedData) {
+						if (!data.socialMedia.entries.isEmpty())
+							children.add(GroupingNode.create(this, "Social Media", data.socialMedia.entries, null, (p,v)->{
+								if (v.hasParsedData) {
+									Icon icon = null;
+									if (v.type!=null) {
+										switch (v.type) {
+										case Facebook: icon = TreeIcons.Facebook.getIcon(); break;
+										case Twitch  : icon = TreeIcons.Twitch  .getIcon(); break;
+										case Twitter : icon = TreeIcons.Twitter .getIcon(); break;
+										case YouTube : icon = TreeIcons.YouTube .getIcon(); break;
+										}
+									}
+									return new UrlNode(this, icon, String.format("%s \"%s\"", v.type==null ? "<Type "+v.typeN+">" : v.type.toString(), v.name), v.url);
+								}
+								if (v.rawData!=null)
+									return new RawJsonDataNode(this, "Entry", v.rawData);
+								return null;
+							}));
+					} else
+						if (data.socialMedia.rawData!=null)
+							children.add(new RawJsonDataNode(this, "Social Media", data.socialMedia.rawData));
+				}
+				if (data.associations!=null) {
+					if (data.associations.hasParsedData) {
+						if (!data.associations.isEmpty())
+							children.add(GroupingNode.create(this, "Associations", (p,ch)->{
+								addNodesTo(ch,"Developer",data.associations.developers);
+								addNodesTo(ch,"Franchise",data.associations.franchises);
+								addNodesTo(ch,"Publisher",data.associations.publishers);
+							}));
+					} else
+						if (data.associations.rawData!=null)
+							children.add(new RawJsonDataNode(this, "Associations", data.associations.rawData));
+				}
 				if (data.blocks!=null) {
 					children.add(groupingNode = GroupingNode.create(this, "Raw Blocks", data.blocks, null, BlockNode::new));
 					groupingNode.setFileSource(data.file,ExternalViewerInfo.TextEditor);
@@ -1271,6 +1397,7 @@ class TreeNodes {
 						groupingNode.setDataTree(JSONHelper.createTreeRoot(data.rawData, false));
 				}
 				
+				// TODO: show all data in GameInfosNode
 				// data.fullDesc      ; // Ok
 				// data.shortDesc     ; // Ok
 				// data.badge         ; // Ok
@@ -1278,14 +1405,22 @@ class TreeNodes {
 				// data.userNews      ; // Ok
 				// data.gameActivity  ; // Ok
 				// data.achievementMap;
-				// data.socialMedia   ;
-				// data.associations  ;
+				// data.socialMedia   ; // Ok
+				// data.associations  ; // Ok
 				// data.appActivity   ; // Ok
 				// data.releaseData   ;
 				// data.friends       ;
 				// data.communityItems; // Ok
 				
 				return children;
+			}
+
+			private void addNodesTo(Vector<TreeNode> ch, String nodeLabel, Vector<GameInfos.Associations.Association> array) {
+				if (array==null) return;
+				array.forEach(v->{
+					if      (v.hasParsedData) ch.add(new UrlNode(this, nodeLabel + (v.name!=null ? " \""+v.name+"\"" : ""), v.url));
+					else if (v.rawData!=null) ch.add(new RawJsonDataNode(this, "["+nodeLabel+"]", v.rawData));
+				});
 			}
 
 			static class CombinedBase64ValuesNode extends BaseTreeNode<TreeNode,TreeNode> {
@@ -1332,38 +1467,6 @@ class TreeNodes {
 					}
 					return children;
 				}
-				
-				static class Base64ValueNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource {
-
-					private final Base64String value;
-
-					public Base64ValueNode(TreeNode parent, String title, Base64String value) {
-						super(parent, title, false, true);
-						this.value = value;
-					}
-					@Override protected Vector<? extends TreeNode> createChildren() { return null; }
-					
-					@Override public String getContentAsText() {
-						if (value==null) return "<null>";
-						
-						String str = "";
-						str += "Original Text:\r\n";
-						str += String.format("\"%s\"%n", value.string);
-						str += "\r\n";
-						str += "Decoded Bytes:\r\n";
-						if (value.bytes==null)
-							str += "   <Decode Error>\r\n";
-						else
-							str += SteamInspector.toHexTable(value.bytes,-1);
-						
-						
-						return str;
-					}
-					@Override ContentType getContentType() {
-						return ContentType.PlainText;
-					}
-					
-				}
 			}
 
 			static class CommunityItemNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, TextContentSource{
@@ -1376,8 +1479,8 @@ class TreeNodes {
 				}
 
 				private static Icon getIcon(CommunityItem data) {
-					if (data.hasParsedData)
-						return Data.getGameIcon((int) data.appID, null);
+					//if (data.hasParsedData)
+					//	return Data.getGameIcon((int) data.appID, null);
 					return null;
 				}
 
@@ -1407,41 +1510,41 @@ class TreeNodes {
 
 				@Override public String getContentAsText() {
 					if (!data.hasParsedData) return null;
-					String str = "";
-					str +=                                       String.format("%s: %s%n"    , "Is Active", data.isActive       );
-					str +=                                       String.format("%s: %d%n"    , "App ID   ", data.appID          );
-					str +=                                       String.format("%s: \"%s\"%n", "Name     ", data.itemName       );
-					str +=                                       String.format("%s: \"%s\"%n", "Title    ", data.itemTitle      );
-					str +=                                       String.format("%s: \"%s\"%n", "Descr.   ", data.itemDescription);
-					str +=                                       String.format("%s: %d%n"    , "Class    ", data.itemClass      );
-					str +=                                       String.format("%s: %d%n"    , "Series   ", data.itemSeries     );
-					str +=                                       String.format("%s: %d%n"    , "Type     ", data.itemType       );
-					str +=                                       String.format("%s: %d%n"    , "Last Changed         ", data.itemLastChanged      );
-					if (data.itemImageLarge       !=null) str += String.format("%s: \"%s\"%n", "Image Large          ", data.itemImageLarge       );
-					if (data.itemImageSmall       !=null) str += String.format("%s: \"%s\"%n", "Image Small          ", data.itemImageSmall       );
-					if (data.itemImageComposed    !=null) str += String.format("%s: \"%s\"%n", "Image Composed       ", data.itemImageComposed    );
-					if (data.itemImageComposedFoil!=null) str += String.format("%s: \"%s\"%n", "Image Composed (Foil)", data.itemImageComposedFoil);
-					if (data.itemMovieMp4         !=null) str += String.format("%s: \"%s\"%n", "Movie MP4            ", data.itemMovieMp4         );
-					if (data.itemMovieMp4Small    !=null) str += String.format("%s: \"%s\"%n", "Movie MP4 (Small)    ", data.itemMovieMp4Small    );
-					if (data.itemMovieWebm        !=null) str += String.format("%s: \"%s\"%n", "Movie WEBM           ", data.itemMovieWebm        );
-					if (data.itemMovieWebmSmall   !=null) str += String.format("%s: \"%s\"%n", "Movie WEBM (Small)   ", data.itemMovieWebmSmall   );
+					ValueListOutput valueListOutput = new ValueListOutput();
+					valueListOutput.add(0, "Is Active   ", "%s"     , data.isActive       );
+					valueListOutput.add(0, "App ID      ", "%d"     , data.appID          );
+					valueListOutput.add(0, "Name        ", "\"%s\"" , data.itemName       );
+					valueListOutput.add(0, "Title       ", "\"%s\"" , data.itemTitle      );
+					valueListOutput.add(0, "Description ", "\"%s\"" , data.itemDescription);
+					valueListOutput.add(0, "Class       ", "%d"     , data.itemClass      );
+					valueListOutput.add(0, "Series      ", "%d"     , data.itemSeries     );
+					valueListOutput.add(0, "Type        ", "%d"     , data.itemType       );
+					valueListOutput.add(0, "Last Changed", "%d (%s)", data.itemLastChanged, getTimeStr(data.itemLastChanged*1000));
+					if (data.itemImageLarge       !=null) valueListOutput.add(0, "Image Large          ", "\"%s\"", data.itemImageLarge       );
+					if (data.itemImageSmall       !=null) valueListOutput.add(0, "Image Small          ", "\"%s\"", data.itemImageSmall       );
+					if (data.itemImageComposed    !=null) valueListOutput.add(0, "Image Composed       ", "\"%s\"", data.itemImageComposed    );
+					if (data.itemImageComposedFoil!=null) valueListOutput.add(0, "Image Composed (Foil)", "\"%s\"", data.itemImageComposedFoil);
+					if (data.itemMovieMp4         !=null) valueListOutput.add(0, "Movie MP4            ", "\"%s\"", data.itemMovieMp4         );
+					if (data.itemMovieMp4Small    !=null) valueListOutput.add(0, "Movie MP4 (Small)    ", "\"%s\"", data.itemMovieMp4Small    );
+					if (data.itemMovieWebm        !=null) valueListOutput.add(0, "Movie WEBM           ", "\"%s\"", data.itemMovieWebm        );
+					if (data.itemMovieWebmSmall   !=null) valueListOutput.add(0, "Movie WEBM (Small)   ", "\"%s\"", data.itemMovieWebmSmall   );
 					if (data.itemKeyValues        !=null) {
-						str += String.format("%s:%n"    , "Key Values           ");
+						valueListOutput.add(0, "Key Values", " ");
 						if (data.itemKeyValues.hasParsedData) {
-							str +=                                                      String.format("    %s%n", "<parsed data>");
-							if (data.itemKeyValues.card_border_color     !=null) str += String.format("    %s: \"%s\"%n", "Trading Card Border Color       ", data.itemKeyValues.card_border_color     );
-							if (data.itemKeyValues.card_drop_method      !=null) str += String.format("    %s: %s%n"    , "Trading Card Drop Method        ", data.itemKeyValues.card_drop_method      );
-							if (data.itemKeyValues.card_drop_rate_minutes!=null) str += String.format("    %s: %s%n"    , "Trading Card Drop Rate (Minutes)", data.itemKeyValues.card_drop_rate_minutes);
-							if (data.itemKeyValues.card_drops_enabled    !=null) str += String.format("    %s: %s%n"    , "Trading Card Drops Enabled      ", data.itemKeyValues.card_drops_enabled    );
-							if (data.itemKeyValues.droprate              !=null) str += String.format("    %s: %s%n"    , "Drop Rate                       ", data.itemKeyValues.droprate              );
-							if (data.itemKeyValues.item_release_state    !=null) str += String.format("    %s: %s%n"    , "Item Release State              ", data.itemKeyValues.item_release_state    );
-							if (data.itemKeyValues.notes                 !=null) str += String.format("    %s: \"%s\"%n", "Notes                           ", data.itemKeyValues.notes                 );
-							if (data.itemKeyValues.projected_release_date!=null) str += String.format("    %s: %s%n"    , "Projected Release Date          ", data.itemKeyValues.projected_release_date);
-							if (data.itemKeyValues.levels                !=null) str += String.format("    %s: %s%n"    , "Badge Levels                    ", data.itemKeyValues.levels.size()         );
-						} else if (data.itemKeyValues.rawData!=null)             str += String.format("    %s%n", "<raw data>");
+							valueListOutput.add(1, "<parsed data>");
+							if (data.itemKeyValues.card_border_color     !=null) valueListOutput.add(1, "Trading Card Border Color       ", "\"%s\"", data.itemKeyValues.card_border_color     );
+							if (data.itemKeyValues.card_drop_method      !=null) valueListOutput.add(1, "Trading Card Drop Method        ", "%s"    , data.itemKeyValues.card_drop_method      );
+							if (data.itemKeyValues.card_drop_rate_minutes!=null) valueListOutput.add(1, "Trading Card Drop Rate (Minutes)", "%s"    , data.itemKeyValues.card_drop_rate_minutes);
+							if (data.itemKeyValues.card_drops_enabled    !=null) valueListOutput.add(1, "Trading Card Drops Enabled      ", "%s"    , data.itemKeyValues.card_drops_enabled    );
+							if (data.itemKeyValues.droprate              !=null) valueListOutput.add(1, "Drop Rate                       ", "%s"    , data.itemKeyValues.droprate              );
+							if (data.itemKeyValues.item_release_state    !=null) valueListOutput.add(1, "Item Release State              ", "%s"    , data.itemKeyValues.item_release_state    );
+							if (data.itemKeyValues.notes                 !=null) valueListOutput.add(1, "Notes                           ", "\"%s\"", data.itemKeyValues.notes                 );
+							if (data.itemKeyValues.projected_release_date!=null) valueListOutput.add(1, "Projected Release Date          ", "%s"    , data.itemKeyValues.projected_release_date);
+							if (data.itemKeyValues.levels                !=null) valueListOutput.add(1, "Badge Levels                    ", "%s"    , data.itemKeyValues.levels.size()         );
+						} else if (data.itemKeyValues.rawData!=null)             valueListOutput.add(1, "<raw data>");
 					}
-					if (data.itemKeyValues_str    !=null) str += String.format("%s: %s%n"    , "Key Values (JSON)    ", data.itemKeyValues_str    );
-					return str;
+					if (data.itemKeyValues_str    !=null) valueListOutput.add(0, "Key Values (JSON)", "%s", data.itemKeyValues_str);
+					return valueListOutput.generateOutput();
 				}
 				
 				@Override public TreeRoot getContentAsTree() {
@@ -1524,7 +1627,7 @@ class TreeNodes {
 
 				private static void addBase64ImageNode(TreeNode parent, Vector<TreeNode> children, String base64Data, String label) {
 					if (base64Data!=null && !base64Data.isEmpty())
-						children.add(new Base64ImageNode(parent, label, base64Data));
+						children.add(new Base64ValueNode(parent, label, Base64String.parse(base64Data.replace('_','/').replace('-','+'), null)));
 				}
 			}
 

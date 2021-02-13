@@ -525,7 +525,7 @@ class VDFParser {
 			case String:
 				break;
 			}
-			// TODO Auto-generated method stub
+			// TODO: icons for VDFTreeNodes
 			return super.getIcon();
 		}
 		@Override Color getTextColor() {

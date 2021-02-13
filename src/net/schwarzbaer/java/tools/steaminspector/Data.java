@@ -319,7 +319,10 @@ class Data {
 	static void showException(Base64Exception             e, File file) { showException("Base64Exception"           , e, file); }
 
 	static void showException(String prefix, Throwable e, File file) {
-		String str = String.format("%s: %s%n", prefix, e.getMessage());
+		showException(prefix, e.getMessage(), file);
+	}
+	static void showException(String prefix, String message, File file) {
+		String str = String.format("%s: %s%n", prefix, message);
 		if (file!=null) str += String.format("   in File \"%s\"%n", file.getAbsolutePath());
 		System.err.print(str);
 	}
@@ -1259,33 +1262,6 @@ class Data {
 				}
 
 				static class CommunityItem {
-					
-					// Block "TreeNodes.Player.GameInfos.CommunityItems.CommunityItem" [18]
-					//    active:Bool
-					//    appid:Integer
-					//    item_class:Integer
-					//    item_description:String
-					//    item_image_composed:String
-					//    item_image_composed == <null>
-					//    item_image_composed_foil:String
-					//    item_image_composed_foil == <null>
-					//    item_image_large:String
-					//    item_image_small:String
-					//    item_key_values:String
-					//    item_key_values == <null>
-					//    item_last_changed:Integer
-					//    item_movie_mp4:String
-					//    item_movie_mp4 == <null>
-					//    item_movie_mp4_small:String
-					//    item_movie_mp4_small == <null>
-					//    item_movie_webm:String
-					//    item_movie_webm == <null>
-					//    item_movie_webm_small:String
-					//    item_movie_webm_small == <null>
-					//    item_name:String
-					//    item_series:Integer
-					//    item_title:String
-					//    item_type:Integer
 
 					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
 							.add("active"                  , JSON_Data.Value.Type.Bool   )
@@ -1388,6 +1364,9 @@ class Data {
 							JSON_Data.Value<NV, V> parsedKeyValues = JSONHelper.parseJsonText(itemKeyValues_str, keyValuesLabel);
 							itemKeyValues = parse(KeyValues::new,KeyValues::new,parsedKeyValues,keyValuesLabel+"<parsed JSON structure>",file);
 						}
+						
+						if (getClassLabel(itemClass)==null && itemClass!=5)
+							DevHelper.unknownValues.add("GameInfos.CommunityItems.CommunityItem.itemClass = "+itemClass+"  <New Emum Value>");
 						
 						//DevHelper.unknownValues.add("CommunityItem.itemMovieMp4       = "+(itemMovieMp4      ==null ? "<null>" : "\""+itemMovieMp4      +"\""));
 						//DevHelper.unknownValues.add("CommunityItem.itemMovieMp4Small  = "+(itemMovieMp4Small ==null ? "<null>" : "\""+itemMovieMp4Small +"\""));
@@ -1759,38 +1738,43 @@ class Data {
 							.add("strName", JSON_Data.Value.Type.String )
 							.add("strURL" , JSON_Data.Value.Type.String );
 					
+					enum Type {
+						Twitter(4), Twitch(5), YouTube(6), Facebook(7);
+						private long n;
+						Type(long n) { this.n = n; }
+
+						public static Type getType(long type) {
+							for (Type t:values())
+								if (t.n==type) return t;
+							return null;
+						}
+					}
+
 					final JSON_Data.Value<NV, V> rawData;
 					final boolean hasParsedData;
-					final long type;
+					final Type type;
+					final long typeN;
 					final String name;
 					final String url;
 					
 					SocialMediaEntry(JSON_Data.Value<NV, V> rawData) {
 						this.rawData = rawData;
 						hasParsedData = false;
-						type = -1;
-						name = null;
-						url  = null;
+						type  = null;
+						typeN = -1;
+						name  = null;
+						url   = null;
 					}
 					SocialMediaEntry(JSON_Data.Value<NV, V> value, String dataValueStr) throws TraverseException {
 						this.rawData = null;
 						hasParsedData = true;
 						JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, dataValueStr);
-						type = JSON_Data.getIntegerValue(object, "eType"  , dataValueStr);
-						name = JSON_Data.getStringValue (object, "strName", dataValueStr);
-						url  = JSON_Data.getStringValue (object, "strURL" , dataValueStr);
-						//DevHelper.unknownValues.add("GameInfos.SocialMedia.SocialMediaEntry.type = "+type);
+						typeN = JSON_Data.getIntegerValue(object, "eType"  , dataValueStr);
+						name  = JSON_Data.getStringValue (object, "strName", dataValueStr);
+						url   = JSON_Data.getStringValue (object, "strURL" , dataValueStr);
+						type  = Type.getType(typeN);
+						if (type==null) DevHelper.unknownValues.add("GameInfos.SocialMedia.SocialMediaEntry.type = "+type+"  <New Emum Value>");
 						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Player.GameInfos.SocialMedia.SocialMediaEntry");
-					}
-					
-					static String getTypeStr(long type) {
-						switch ((int)type) {
-						case 4: return "Twitter";
-						case 5: return "Twitch";
-						case 6: return "YouTube";
-						case 7: return "Facebook";
-						default: return "SocialMedia (Type "+type+")";
-						}
 					}
 				}
 			}
