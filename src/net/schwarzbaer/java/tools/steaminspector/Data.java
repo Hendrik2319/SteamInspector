@@ -697,10 +697,10 @@ class Data {
 								catch (JSON_Parser.ParseException e) { showException(e, file); }
 								if (result!=null) {
 									try {
-										preAchievementProgress = new AchievementProgress(file,result);
+										preAchievementProgress = new AchievementProgress(file,result,"AchievementProgress");
 									} catch (TraverseException e) {
 										showException(e, file);
-										preAchievementProgress = AchievementProgress.createRawData(file,result);
+										preAchievementProgress = new AchievementProgress(file,result);
 									}
 								}
 								
@@ -919,58 +919,45 @@ class Data {
 			final HashMap<Integer,AchievementProgress.AchievementProgressInGame> gameStates;
 			final Vector<AchievementProgress.AchievementProgressInGame> gameStates_withoutID;
 
-			static AchievementProgress createRawData(File file, JSON_Data.Value<NV, V> rawData) {
-				try {
-					return new AchievementProgress(file, rawData, true);
-				} catch (TraverseException e) {
-					throw new IllegalStateException();
-				}
+			AchievementProgress(File file, JSON_Data.Value<NV, V> rawData) {
+				this.file = file;
+				this.rawData = rawData;
+				hasParsedData = false;
+				version    = null;
+				gameStates = null;
+				gameStates_withoutID = null;
 			}
-			AchievementProgress(File file, JSON_Data.Value<NV, V> rawData) throws TraverseException {
-				this(file, rawData, false);
-			}
-			AchievementProgress(File file, JSON_Data.Value<NV, V> value, boolean asRawData) throws TraverseException {
+			AchievementProgress(File file, JSON_Data.Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
 				this.file = file;
 				this.rawData = value;
+				hasParsedData = true;
+				//DevHelper.scanJsonStructure(object, "AchievementProgress");
 				
-				if (asRawData) {
-					hasParsedData = false;
-					version    = null;
-					gameStates = null;
-					gameStates_withoutID = null;
-					
-				} else {
-					
-					hasParsedData = true;
-					String prefixStr = "AchievementProgress";
-					//DevHelper.scanJsonStructure(object, "AchievementProgress");
-					
-					JSON_Object<NV,V> object   = JSON_Data.getObjectValue (value, prefixStr);
-					version                    = JSON_Data.getIntegerValue(object, "nVersion", prefixStr);
-					JSON_Object<NV,V> mapCache = JSON_Data.getObjectValue (object, "mapCache", prefixStr);
-					
-					gameStates = new HashMap<>();
-					gameStates_withoutID = new Vector<AchievementProgress.AchievementProgressInGame>();
-					for (JSON_Data.NamedValue<NV,V> nv:mapCache) {
-						AchievementProgress.AchievementProgressInGame progress;
-						try {
-							progress = new AchievementProgressInGame(nv.name,nv.value);
-						} catch (TraverseException e) {
-							showException(e, file);
-							progress = new AchievementProgressInGame(nv);
-						}
-						
-						Integer gameID = parseNumber(nv.name);
-						if (gameID==null && progress.hasParsedData)
-							gameID = (int) progress.appID;
-						
-						if (gameID!=null)
-							gameStates.put(gameID, progress);
-						else
-							gameStates_withoutID.add(progress);
+				JSON_Object<NV,V> object   = JSON_Data.getObjectValue (value, debugOutputPrefixStr);
+				version                    = JSON_Data.getIntegerValue(object, "nVersion", debugOutputPrefixStr);
+				JSON_Object<NV,V> mapCache = JSON_Data.getObjectValue (object, "mapCache", debugOutputPrefixStr);
+				
+				gameStates = new HashMap<>();
+				gameStates_withoutID = new Vector<AchievementProgress.AchievementProgressInGame>();
+				for (JSON_Data.NamedValue<NV,V> nv:mapCache) {
+					AchievementProgress.AchievementProgressInGame progress;
+					try {
+						progress = new AchievementProgressInGame(nv.name,nv.value);
+					} catch (TraverseException e) {
+						showException(e, file);
+						progress = new AchievementProgressInGame(nv);
 					}
-					DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"TreeNodes.Player.AchievementProgress");
+					
+					Integer gameID = parseNumber(nv.name);
+					if (gameID==null && progress.hasParsedData)
+						gameID = (int) progress.appID;
+					
+					if (gameID!=null)
+						gameStates.put(gameID, progress);
+					else
+						gameStates_withoutID.add(progress);
 				}
+				DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"TreeNodes.Player.AchievementProgress");
 			}
 			
 			static class AchievementProgressInGame {
@@ -1417,6 +1404,7 @@ class Data {
 					
 					public static String getClassLabel(long itemClass) {
 						switch ((int)itemClass) {
+						case 1: return "Badge";
 						case 2: return "Trading Card";
 						case 3: return "Profil Background";
 						case 4: return "Emoticon";
@@ -1425,23 +1413,112 @@ class Data {
 					}
 
 					static class KeyValues {
+						private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+								.add("card_border_color"     , JSON_Data.Value.Type.String ) // optional value
+								.add("card_border_logo"      , JSON_Data.Value.Type.String ) // optional value
+								.add("card_drop_method"      , JSON_Data.Value.Type.Integer) // optional value
+								.add("card_drop_rate_minutes", JSON_Data.Value.Type.Integer) // optional value
+								.add("card_drops_enabled"    , JSON_Data.Value.Type.Integer) // optional value
+								.add("droprate"              , JSON_Data.Value.Type.Integer) // optional value
+								.add("item_image_border"     , JSON_Data.Value.Type.String ) // optional value
+								.add("item_image_border_foil", JSON_Data.Value.Type.String ) // optional value
+								.add("item_release_state"    , JSON_Data.Value.Type.Integer) // optional value
+								.add("notes"                 , JSON_Data.Value.Type.String ) // optional value
+								.add("projected_release_date", JSON_Data.Value.Type.Integer) // optional value
+								.add("level_images"          , JSON_Data.Value.Type.Object ) // optional value
+								.add("level_names"           , JSON_Data.Value.Type.Object );// optional value
+						
+						private static final DevHelper.KnownJsonValues KNOWN_LEVEL_VALUES = new DevHelper.KnownJsonValues()
+								.add("1"   , JSON_Data.Value.Type.String)
+								.add("2"   , JSON_Data.Value.Type.String)
+								.add("3"   , JSON_Data.Value.Type.String)
+								.add("4"   , JSON_Data.Value.Type.String)
+								.add("5"   , JSON_Data.Value.Type.String)
+								.add("foil", JSON_Data.Value.Type.String);
 
 						final JSON_Data.Value<NV, V> rawData;
 						final boolean hasParsedData;
 
+						final String card_border_color;
+						final String card_border_logo;
+						final Long   card_drop_method;
+						final Long   card_drop_rate_minutes;
+						final Long   card_drops_enabled;
+						final Long   droprate;
+						final String item_image_border;
+						final String item_image_border_foil;
+						final Long   item_release_state;
+						final String notes;
+						final Long   projected_release_date;
+						final Vector<Level> levels;
+
 						public KeyValues(JSON_Data.Value<NV, V> rawData) {
 							this.rawData = rawData;
 							hasParsedData = false;
+							card_border_color      = null;
+							card_border_logo       = null;
+							card_drop_method       = null;
+							card_drop_rate_minutes = null;
+							card_drops_enabled     = null;
+							droprate               = null;
+							item_image_border      = null;
+							item_image_border_foil = null;
+							item_release_state     = null;
+							notes                  = null;
+							projected_release_date = null;
+							levels                 = null;
 						}
 
-						public KeyValues(JSON_Data.Value<NV, V> value, String dataValueStr) throws TraverseException {
+						public KeyValues(JSON_Data.Value<NV, V> value, String dataValueStr, File file) throws TraverseException {
 							this.rawData = null;
 							hasParsedData = true;
+							JSON_Object<NV, V> level_images, level_names;
 							
 							//DevHelper.scanJsonStructure(value,"CommunityItem.KeyValues",true);
-							// TODO: CommunityItem.KeyValues
+							JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, dataValueStr);
+							card_border_color      = JSON_Data.getValue(object, "card_border_color"     , true , JSON_Data.Value.Type.String , JSON_Data.Value::castToStringValue , false, dataValueStr);
+							card_border_logo       = JSON_Data.getValue(object, "card_border_logo"      , true , JSON_Data.Value.Type.String , JSON_Data.Value::castToStringValue , false, dataValueStr);
+							card_drop_method       = JSON_Data.getValue(object, "card_drop_method"      , true , JSON_Data.Value.Type.Integer, JSON_Data.Value::castToIntegerValue, false, dataValueStr);
+							card_drop_rate_minutes = JSON_Data.getValue(object, "card_drop_rate_minutes", true , JSON_Data.Value.Type.Integer, JSON_Data.Value::castToIntegerValue, false, dataValueStr);
+							card_drops_enabled     = JSON_Data.getValue(object, "card_drops_enabled"    , true , JSON_Data.Value.Type.Integer, JSON_Data.Value::castToIntegerValue, false, dataValueStr);
+							droprate               = JSON_Data.getValue(object, "droprate"              , true , JSON_Data.Value.Type.Integer, JSON_Data.Value::castToIntegerValue, false, dataValueStr);
+							item_image_border      = JSON_Data.getValue(object, "item_image_border"     , true , JSON_Data.Value.Type.String , JSON_Data.Value::castToStringValue , false, dataValueStr);
+							item_image_border_foil = JSON_Data.getValue(object, "item_image_border_foil", true , JSON_Data.Value.Type.String , JSON_Data.Value::castToStringValue , false, dataValueStr);
+							item_release_state     = JSON_Data.getValue(object, "item_release_state"    , true , JSON_Data.Value.Type.Integer, JSON_Data.Value::castToIntegerValue, false, dataValueStr);
+							notes                  = JSON_Data.getValue(object, "notes"                 , true , JSON_Data.Value.Type.String , JSON_Data.Value::castToStringValue , false, dataValueStr);
+							projected_release_date = JSON_Data.getValue(object, "projected_release_date", true , JSON_Data.Value.Type.Integer, JSON_Data.Value::castToIntegerValue, false, dataValueStr);
+							level_images           = JSON_Data.getValue(object, "level_images"          , true , JSON_Data.Value.Type.Object , JSON_Data.Value::castToObjectValue , false, dataValueStr);
+							level_names            = JSON_Data.getValue(object, "level_names"           , true , JSON_Data.Value.Type.Object , JSON_Data.Value::castToObjectValue , false, dataValueStr);
+							
+							if (level_images!=null || level_names!=null) {
+								levels = new Vector<>();
+								for (String id:new String[] {"1","2","3","4","5","foil"}) {
+									try {
+										levels.add(new Level(id,level_images,level_names,dataValueStr));
+									} catch (TraverseException e) {
+										showException(e, file);
+										levels.add(new Level(id,null,null,dataValueStr));
+									}
+								}
+							} else
+								levels = null;
+							
+							String path = "TreeNodes.Player.GameInfos.CommunityItems.CommunityItem";
+							if (level_images!=null) DevHelper.scanUnexpectedValues(level_images, KNOWN_LEVEL_VALUES, path+".KeyValues.level_images");
+							if (level_names !=null) DevHelper.scanUnexpectedValues(level_names , KNOWN_LEVEL_VALUES, path+".KeyValues.level_names" );
+							DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, path);
 						}
-
+						
+						static class Level {
+							final String id;
+							final String image;
+							final String name;
+							public Level(String id, JSON_Object<NV, V> level_images, JSON_Object<NV, V> level_names, String debugOutputPrefixStr) throws TraverseException {
+								this.id = id;
+								if (level_images==null) image = null; else image = JSON_Data.getStringValue(level_images, id, debugOutputPrefixStr+".level_images");
+								if (level_names ==null) name  = null; else name  = JSON_Data.getStringValue(level_names , id, debugOutputPrefixStr+".level_names" );
+							}
+						}
 					}
 				}
 				

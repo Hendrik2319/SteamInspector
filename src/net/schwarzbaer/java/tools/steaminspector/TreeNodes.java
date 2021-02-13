@@ -195,6 +195,11 @@ class TreeNodes {
 			return createImageOfMessage("Can't read image from decoded Base64 data.",150,150,Color.RED);
 		}
 	}
+	
+	@SuppressWarnings("unused")
+	private static void log_ln(Object source, String format, Object... args) {
+		System.out.printf("[%s] \"%s\": %s%n", source.getClass().getSimpleName(), source.toString(), String.format(Locale.ENGLISH, format, args));
+	}
 
 	static class FilePromise {
 		final String label;
@@ -588,11 +593,12 @@ class TreeNodes {
 		
 		protected final String url;
 		
-		UrlNode(TreeNode parent, String label, String  url) {
-			this(parent, null, label, url);
-		}
-		UrlNode(TreeNode parent, Icon icon, String label, String  url) {
-			super(parent, icon, "%s: "+"\"%s\"", label, url);
+		@SuppressWarnings("unused")
+		UrlNode(TreeNode parent,            String label,                    String url) { this(parent, null, label, url, url); }
+		UrlNode(TreeNode parent, Icon icon, String label,                    String url) { this(parent, icon, label, url, url); }
+		UrlNode(TreeNode parent,            String label, String urlInTitle, String url) { this(parent, null, label, urlInTitle, url); }
+		UrlNode(TreeNode parent, Icon icon, String label, String urlInTitle, String url) {
+			super(parent, icon, "%s: "+"\"%s\"", label, urlInTitle);
 			this.url = url;
 		}
 
@@ -602,9 +608,8 @@ class TreeNodes {
 	
 	private static class ImageUrlNode extends UrlNode implements ImageContentSource {
 		
-		ImageUrlNode(TreeNode parent, String label, String  url) {
-			super(parent, TreeIcons.ImageFile.getIcon(), label, url);
-		}
+		ImageUrlNode(TreeNode parent, String label,                    String url) { super(parent, TreeIcons.ImageFile.getIcon(), label,             url); }
+		ImageUrlNode(TreeNode parent, String label, String urlInTitle, String url) { super(parent, TreeIcons.ImageFile.getIcon(), label, urlInTitle, url); }
 
 		@Override ContentType getContentType() { return ContentType.Image; }
 		@Override public BufferedImage getContentAsImage() { return readImageFromURL(url,"image"); }
@@ -1363,99 +1368,163 @@ class TreeNodes {
 
 			static class CommunityItemNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, TextContentSource{
 				
-				private final GameInfos.CommunityItems.CommunityItem communityItem;
+				private final GameInfos.CommunityItems.CommunityItem data;
 
-				public CommunityItemNode(TreeNode parent, GameInfos.CommunityItems.CommunityItem communityItem) {
-					super(parent, generateTitle(communityItem), hasSubNodes(communityItem), !hasSubNodes(communityItem), getIcon(communityItem));
-					this.communityItem = communityItem;
+				public CommunityItemNode(TreeNode parent, GameInfos.CommunityItems.CommunityItem data) {
+					super(parent, generateTitle(data), hasSubNodes(data), !hasSubNodes(data), getIcon(data));
+					this.data = data;
 				}
 
-				private static Icon getIcon(CommunityItem communityItem) {
-					if (communityItem.hasParsedData)
-						return Data.getGameIcon((int) communityItem.appID, null);
+				private static Icon getIcon(CommunityItem data) {
+					if (data.hasParsedData)
+						return Data.getGameIcon((int) data.appID, null);
 					return null;
 				}
 
-				private static String generateTitle(CommunityItem communityItem) {
+				private static String generateTitle(CommunityItem data) {
 					String str = "CommunityItem";
-					if (communityItem.hasParsedData) {
-						String classLabel = CommunityItem.getClassLabel(communityItem.itemClass);
+					if (data.hasParsedData) {
+						String classLabel = CommunityItem.getClassLabel(data.itemClass);
 						if (classLabel!=null) str = classLabel;
-						else str = "CommunityItem <Class "+communityItem.itemClass+">";
+						else str = "CommunityItem <Class "+data.itemClass+">";
 						
-						if (communityItem.itemName!=null && !communityItem.itemName.isEmpty())
-							str += " \""+communityItem.itemName+"\"";
+						if (data.itemName!=null && !data.itemName.isEmpty())
+							str += " \""+data.itemName+"\"";
 						
-					} else if (communityItem.rawData!=null)
+					} else if (data.rawData!=null)
 						str += " [Raw Data]";
 					
 					return str;
 				}
 				
-				private static boolean hasSubNodes(CommunityItem communityItem) {
-					if (!communityItem.hasParsedData) return false;
-					if (communityItem.itemImageLarge       !=null && !communityItem.itemImageLarge       .isEmpty()) return true;
-					if (communityItem.itemImageSmall       !=null && !communityItem.itemImageSmall       .isEmpty()) return true;
-					if (communityItem.itemImageComposed    !=null && !communityItem.itemImageComposed    .isEmpty()) return true;
-					if (communityItem.itemImageComposedFoil!=null && !communityItem.itemImageComposedFoil.isEmpty()) return true;
-					if (communityItem.itemMovieMp4         !=null && !communityItem.itemMovieMp4         .isEmpty()) return true;
-					if (communityItem.itemMovieMp4Small    !=null && !communityItem.itemMovieMp4Small    .isEmpty()) return true;
-					if (communityItem.itemMovieWebm        !=null && !communityItem.itemMovieWebm        .isEmpty()) return true;
-					if (communityItem.itemMovieWebmSmall   !=null && !communityItem.itemMovieWebmSmall   .isEmpty()) return true;
-					return false;
-				}
-
 				@Override ContentType getContentType() {
-					if (communityItem.hasParsedData)
+					if (data.hasParsedData)
 						return ContentType.PlainText;
-					if (communityItem.rawData!=null)
+					if (data.rawData!=null)
 						return ContentType.DataTree;
 					return null;
 				}
 
 				@Override public String getContentAsText() {
-					if (!communityItem.hasParsedData) return null;
+					if (!data.hasParsedData) return null;
 					String str = "";
-					str +=                                                String.format("%s: %s%n"    , "Is Active", communityItem.isActive       );
-					str +=                                                String.format("%s: %d%n"    , "App ID   ", communityItem.appID          );
-					str +=                                                String.format("%s: \"%s\"%n", "Name     ", communityItem.itemName       );
-					str +=                                                String.format("%s: \"%s\"%n", "Title    ", communityItem.itemTitle      );
-					str +=                                                String.format("%s: \"%s\"%n", "Descr.   ", communityItem.itemDescription);
-					str +=                                                String.format("%s: %d%n"    , "Class    ", communityItem.itemClass      );
-					str +=                                                String.format("%s: %d%n"    , "Series   ", communityItem.itemSeries     );
-					str +=                                                String.format("%s: %d%n"    , "Type     ", communityItem.itemType       );
-					str +=                                                String.format("%s: %d%n"    , "Last Changed         ", communityItem.itemLastChanged      );
-					if (communityItem.itemKeyValues_str        !=null) str += String.format("%s: %s%n"    , "Key Values           ", communityItem.itemKeyValues_str        );
-					if (communityItem.itemImageLarge       !=null) str += String.format("%s: \"%s\"%n", "Image Large          ", communityItem.itemImageLarge       );
-					if (communityItem.itemImageSmall       !=null) str += String.format("%s: \"%s\"%n", "Image Small          ", communityItem.itemImageSmall       );
-					if (communityItem.itemImageComposed    !=null) str += String.format("%s: \"%s\"%n", "Image Composed       ", communityItem.itemImageComposed    );
-					if (communityItem.itemImageComposedFoil!=null) str += String.format("%s: \"%s\"%n", "Image Composed (Foil)", communityItem.itemImageComposedFoil);
-					if (communityItem.itemMovieMp4         !=null) str += String.format("%s: \"%s\"%n", "Movie MP4            ", communityItem.itemMovieMp4         );
-					if (communityItem.itemMovieMp4Small    !=null) str += String.format("%s: \"%s\"%n", "Movie MP4 (Small)    ", communityItem.itemMovieMp4Small    );
-					if (communityItem.itemMovieWebm        !=null) str += String.format("%s: \"%s\"%n", "Movie WEBM           ", communityItem.itemMovieWebm        );
-					if (communityItem.itemMovieWebmSmall   !=null) str += String.format("%s: \"%s\"%n", "Movie WEBM (Small)   ", communityItem.itemMovieWebmSmall   );
+					str +=                                       String.format("%s: %s%n"    , "Is Active", data.isActive       );
+					str +=                                       String.format("%s: %d%n"    , "App ID   ", data.appID          );
+					str +=                                       String.format("%s: \"%s\"%n", "Name     ", data.itemName       );
+					str +=                                       String.format("%s: \"%s\"%n", "Title    ", data.itemTitle      );
+					str +=                                       String.format("%s: \"%s\"%n", "Descr.   ", data.itemDescription);
+					str +=                                       String.format("%s: %d%n"    , "Class    ", data.itemClass      );
+					str +=                                       String.format("%s: %d%n"    , "Series   ", data.itemSeries     );
+					str +=                                       String.format("%s: %d%n"    , "Type     ", data.itemType       );
+					str +=                                       String.format("%s: %d%n"    , "Last Changed         ", data.itemLastChanged      );
+					if (data.itemImageLarge       !=null) str += String.format("%s: \"%s\"%n", "Image Large          ", data.itemImageLarge       );
+					if (data.itemImageSmall       !=null) str += String.format("%s: \"%s\"%n", "Image Small          ", data.itemImageSmall       );
+					if (data.itemImageComposed    !=null) str += String.format("%s: \"%s\"%n", "Image Composed       ", data.itemImageComposed    );
+					if (data.itemImageComposedFoil!=null) str += String.format("%s: \"%s\"%n", "Image Composed (Foil)", data.itemImageComposedFoil);
+					if (data.itemMovieMp4         !=null) str += String.format("%s: \"%s\"%n", "Movie MP4            ", data.itemMovieMp4         );
+					if (data.itemMovieMp4Small    !=null) str += String.format("%s: \"%s\"%n", "Movie MP4 (Small)    ", data.itemMovieMp4Small    );
+					if (data.itemMovieWebm        !=null) str += String.format("%s: \"%s\"%n", "Movie WEBM           ", data.itemMovieWebm        );
+					if (data.itemMovieWebmSmall   !=null) str += String.format("%s: \"%s\"%n", "Movie WEBM (Small)   ", data.itemMovieWebmSmall   );
+					if (data.itemKeyValues        !=null) {
+						str += String.format("%s:%n"    , "Key Values           ");
+						if (data.itemKeyValues.hasParsedData) {
+							str +=                                                      String.format("    %s%n", "<parsed data>");
+							if (data.itemKeyValues.card_border_color     !=null) str += String.format("    %s: \"%s\"%n", "Trading Card Border Color       ", data.itemKeyValues.card_border_color     );
+							if (data.itemKeyValues.card_drop_method      !=null) str += String.format("    %s: %s%n"    , "Trading Card Drop Method        ", data.itemKeyValues.card_drop_method      );
+							if (data.itemKeyValues.card_drop_rate_minutes!=null) str += String.format("    %s: %s%n"    , "Trading Card Drop Rate (Minutes)", data.itemKeyValues.card_drop_rate_minutes);
+							if (data.itemKeyValues.card_drops_enabled    !=null) str += String.format("    %s: %s%n"    , "Trading Card Drops Enabled      ", data.itemKeyValues.card_drops_enabled    );
+							if (data.itemKeyValues.droprate              !=null) str += String.format("    %s: %s%n"    , "Drop Rate                       ", data.itemKeyValues.droprate              );
+							if (data.itemKeyValues.item_release_state    !=null) str += String.format("    %s: %s%n"    , "Item Release State              ", data.itemKeyValues.item_release_state    );
+							if (data.itemKeyValues.notes                 !=null) str += String.format("    %s: \"%s\"%n", "Notes                           ", data.itemKeyValues.notes                 );
+							if (data.itemKeyValues.projected_release_date!=null) str += String.format("    %s: %s%n"    , "Projected Release Date          ", data.itemKeyValues.projected_release_date);
+							if (data.itemKeyValues.levels                !=null) str += String.format("    %s: %s%n"    , "Badge Levels                    ", data.itemKeyValues.levels.size()         );
+						} else if (data.itemKeyValues.rawData!=null)             str += String.format("    %s%n", "<raw data>");
+					}
+					if (data.itemKeyValues_str    !=null) str += String.format("%s: %s%n"    , "Key Values (JSON)    ", data.itemKeyValues_str    );
 					return str;
 				}
 				
 				@Override public TreeRoot getContentAsTree() {
-					if (!communityItem.hasParsedData && communityItem.rawData!=null)
-						return JSONHelper.createTreeRoot(communityItem.rawData, false);
+					if (!data.hasParsedData && data.rawData!=null)
+						return JSONHelper.createTreeRoot(data.rawData, false);
 					return null;
 				}
 
 				@Override protected Vector<? extends TreeNode> createChildren() {
 					Vector<TreeNode> children = new Vector<>();
-					if (communityItem.hasParsedData) {
-						if (communityItem.itemImageLarge       !=null && !communityItem.itemImageLarge       .isEmpty()) children.add(new    ImageUrlNode(parent, "Image Large"          , communityItem.getURL(communityItem.itemImageLarge       )));
-						if (communityItem.itemImageSmall       !=null && !communityItem.itemImageSmall       .isEmpty()) children.add(new    ImageUrlNode(parent, "Image Small"          , communityItem.getURL(communityItem.itemImageSmall       )));
-						if (communityItem.itemImageComposed    !=null && !communityItem.itemImageComposed    .isEmpty()) children.add(new Base64ImageNode(parent, "Image Composed"       ,                      communityItem.itemImageComposed     ));
-						if (communityItem.itemImageComposedFoil!=null && !communityItem.itemImageComposedFoil.isEmpty()) children.add(new Base64ImageNode(parent, "Image Composed (Foil)",                      communityItem.itemImageComposedFoil ));
-						if (communityItem.itemMovieMp4         !=null && !communityItem.itemMovieMp4         .isEmpty()) children.add(new         UrlNode(parent, "Movie MP4"            , communityItem.getURL(communityItem.itemMovieMp4         )));
-						if (communityItem.itemMovieMp4Small    !=null && !communityItem.itemMovieMp4Small    .isEmpty()) children.add(new         UrlNode(parent, "Movie MP4 (Small)"    , communityItem.getURL(communityItem.itemMovieMp4Small    )));
-						if (communityItem.itemMovieWebm        !=null && !communityItem.itemMovieWebm        .isEmpty()) children.add(new         UrlNode(parent, "Movie WEBM"           , communityItem.getURL(communityItem.itemMovieWebm        )));
-						if (communityItem.itemMovieWebmSmall   !=null && !communityItem.itemMovieWebmSmall   .isEmpty()) children.add(new         UrlNode(parent, "Movie WEBM (Small)"   , communityItem.getURL(communityItem.itemMovieWebmSmall   )));
+					//log_ln(this, "createChildren()");
+					if (data.hasParsedData) {
+						//log_ln(this, "data.hasParsedData");
+						addImageUrlNode   (this, children, data, data.itemImageLarge       , "Image Large"          );
+						addImageUrlNode   (this, children, data, data.itemImageSmall       , "Image Small"          );
+						addBase64ImageNode(this, children,       data.itemImageComposed    , "Image Composed"       );
+						addBase64ImageNode(this, children,       data.itemImageComposedFoil, "Image Composed (Foil)");
+						addUrlNode        (this, children, data, data.itemMovieMp4         , "Movie MP4"            );
+						addUrlNode        (this, children, data, data.itemMovieMp4Small    , "Movie MP4 (Small)"    );
+						addUrlNode        (this, children, data, data.itemMovieWebm        , "Movie WEBM"           );
+						addUrlNode        (this, children, data, data.itemMovieWebmSmall   , "Movie WEBM (Small)"   );
+						//log_ln(this, "data.itemKeyValues%s", data.itemKeyValues==null ? " == <null>" : data.itemKeyValues.hasParsedData ? " has parsed data" : " has NO parsed data");
+						if (data.itemKeyValues!=null)
+							addKeyValues(this, children, data, data.itemKeyValues);
 					}
 					return children;
+				}
+
+				private static void addKeyValues(TreeNode parent, Vector<TreeNode> children, CommunityItem data, CommunityItem.KeyValues values) {
+					if (values.hasParsedData) {
+						addImageUrlNode(parent, children, data, values.card_border_logo      , "Trading Card Border Logo"  );
+						addImageUrlNode(parent, children, data, values.item_image_border     , "Trading Card Border"       );
+						addImageUrlNode(parent, children, data, values.item_image_border_foil, "Trading Card Border (foil)");
+						
+						//log_ln(parent, "data.itemKeyValues.levels%s", values.levels==null ? " == <null>" : ".size() == "+values.levels.size());
+						if (values.levels!=null)
+							for (CommunityItem.KeyValues.Level level:values.levels) {
+								String label = "Badge <Level "+level.id.toUpperCase()+">";
+								if (level.name!=null) label += " \""+level.name+"\"";
+								if (level.image!=null && !level.image.isEmpty())
+									addImageUrlNode(parent, children, data, level.image, label);
+								else
+									children.add(new SimpleTextNode(parent, "%s", label));
+							}
+						
+					} else if (values.rawData!=null) {
+						children.add(new RawJsonDataNode(parent, "KeyValues (Raw Data)", values.rawData));
+					}
+				}
+
+				private static boolean hasSubNodes(CommunityItem data) {
+					if (!data.hasParsedData) return false;
+					if (data.itemImageLarge       !=null && !data.itemImageLarge       .isEmpty()) return true;
+					if (data.itemImageSmall       !=null && !data.itemImageSmall       .isEmpty()) return true;
+					if (data.itemImageComposed    !=null && !data.itemImageComposed    .isEmpty()) return true;
+					if (data.itemImageComposedFoil!=null && !data.itemImageComposedFoil.isEmpty()) return true;
+					if (data.itemMovieMp4         !=null && !data.itemMovieMp4         .isEmpty()) return true;
+					if (data.itemMovieMp4Small    !=null && !data.itemMovieMp4Small    .isEmpty()) return true;
+					if (data.itemMovieWebm        !=null && !data.itemMovieWebm        .isEmpty()) return true;
+					if (data.itemMovieWebmSmall   !=null && !data.itemMovieWebmSmall   .isEmpty()) return true;
+					if (data.itemKeyValues!=null && data.itemKeyValues.hasParsedData) {
+						if (data.itemKeyValues.card_border_logo      !=null && !data.itemKeyValues.card_border_logo      .isEmpty()) return true;
+						if (data.itemKeyValues.item_image_border     !=null && !data.itemKeyValues.item_image_border     .isEmpty()) return true;
+						if (data.itemKeyValues.item_image_border_foil!=null && !data.itemKeyValues.item_image_border_foil.isEmpty()) return true;
+						if (data.itemKeyValues.levels!=null) return true;
+					}
+						
+					return false;
+				}
+
+				private static void addImageUrlNode(TreeNode parent, Vector<TreeNode> children, CommunityItem data, String shortUrl, String label) {
+					if (shortUrl!=null && !shortUrl.isEmpty())
+						children.add(new ImageUrlNode(parent, label, shortUrl, data.getURL(shortUrl)));
+				}
+
+				private static void addUrlNode(TreeNode parent, Vector<TreeNode> children, CommunityItem data, String shortUrl, String label) {
+					if (shortUrl!=null && !shortUrl.isEmpty())
+						children.add(new UrlNode(parent, label, shortUrl, data.getURL(shortUrl)));
+				}
+
+				private static void addBase64ImageNode(TreeNode parent, Vector<TreeNode> children, String base64Data, String label) {
+					if (base64Data!=null && !base64Data.isEmpty())
+						children.add(new Base64ImageNode(parent, label, base64Data));
 				}
 			}
 
