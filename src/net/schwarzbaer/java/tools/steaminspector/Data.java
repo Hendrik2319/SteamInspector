@@ -714,10 +714,10 @@ class Data {
 								catch (JSON_Parser.ParseException e) { showException(e, file); }
 								if (result!=null) {
 									try {
-										gameInfos.put(gameID, new GameInfos(file,result));
+										gameInfos.put(gameID, new GameInfos(playerID,gameID,file,result, "GameInfos"));
 									} catch (TraverseException e) {
 										showException(e, file);
-										gameInfos.put(gameID, GameInfos.createRawData(file,result));
+										gameInfos.put(gameID, new GameInfos(playerID,gameID,file,result));
 									}
 								}
 							}
@@ -1082,6 +1082,9 @@ class Data {
 			final boolean hasParsedData;
 			final Vector<Block> blocks;
 			
+			final long playerID;
+			final int gameID;
+			
 			final String         fullDesc;
 			final String         shortDesc;
 			final Badge          badge;
@@ -1096,69 +1099,70 @@ class Data {
 			final Friends        friends;
 			final CommunityItems communityItems;
 
-			static GameInfos createRawData(File file, JSON_Data.Value<NV, V> rawData) {
-				try { return new GameInfos(file, rawData, true); }
-				catch (TraverseException e) { return null; }
+			GameInfos(long playerID, int gameID, File file, JSON_Data.Value<NV, V> rawData) {
+				this.playerID = playerID;
+				this.gameID = gameID;
+				this.file = file;
+				this.rawData = rawData;
+				
+				hasParsedData = false;
+				blocks        = null;
+				
+				fullDesc       = null;
+				shortDesc      = null;
+				badge          = null;
+				achievements   = null;
+				userNews       = null;
+				gameActivity   = null;
+				achievementMap = null;
+				socialMedia    = null;
+				associations   = null;
+				appActivity    = null;
+				releaseData    = null;
+				friends        = null;
+				communityItems = null;
 			}
 			
-			GameInfos(File file, JSON_Data.Value<NV, V> fileContent) throws TraverseException {
-				this(file, fileContent, false);
-			}
-			GameInfos(File file, JSON_Data.Value<NV, V> fileContent, boolean asRawData) throws TraverseException {
+			GameInfos(long playerID, int gameID, File file, JSON_Data.Value<NV, V> fileContent, String debugOutputPrefixStr) throws TraverseException {
+				this.playerID = playerID;
+				this.gameID = gameID;
 				this.file = file;
 				this.rawData = fileContent;
 				
-				if (asRawData) {
-					hasParsedData = false;
-					blocks        = null;
-					
-					fullDesc       = null;
-					shortDesc      = null;
-					badge          = null;
-					achievements   = null;
-					userNews       = null;
-					gameActivity   = null;
-					achievementMap = null;
-					socialMedia    = null;
-					associations   = null;
-					appActivity    = null;
-					releaseData    = null;
-					friends        = null;
-					communityItems = null;
-					
-				} else {
-					hasParsedData = true;
-					
-					JSON_Array<NV, V> array = JSON_Data.getArrayValue(fileContent, "GameInfos");
-					
-					blocks = new Vector<>();
-					for (int i=0; i<array.size(); i++) {
-						JSON_Data.Value<NV,V> value = array.get(i);
-						try {
-							blocks.add(new Block(i,value));
-						} catch (TraverseException e) {
-							showException(e, file);
-							blocks.add(Block.createRawData(i,value));
-						}
+				hasParsedData = true;
+				
+				JSON_Array<NV, V> array = JSON_Data.getArrayValue(fileContent, debugOutputPrefixStr);
+				
+				blocks = new Vector<>();
+				for (int i=0; i<array.size(); i++) {
+					JSON_Data.Value<NV,V> value = array.get(i);
+					try {
+						blocks.add(new Block(i,value));
+					} catch (TraverseException e) {
+						showException(e, file);
+						blocks.add(Block.createRawData(i,value));
 					}
-					
-					String         preFullDesc       = null;
-					String         preShortDesc      = null;
-					Badge          preBadge          = null;
-					Achievements   preAchievements   = null;
-					UserNews       preUserNews       = null;
-					GameActivity   preGameActivity   = null;
-					AchievementMap preAchievementMap = null;
-					SocialMedia    preSocialMedia    = null;
-					Associations   preAssociations   = null;
-					AppActivity    preAppActivity    = null;
-					ReleaseData    preReleaseData    = null;
-					Friends        preFriends        = null;
-					CommunityItems preCommunityItems = null;
-					
-					for (Block block:blocks) {
-						String dataValueStr = String.format("GameInfos.Block[%d].dataValue", block.blockIndex);
+				}
+				
+				String         preFullDesc       = null;
+				String         preShortDesc      = null;
+				Badge          preBadge          = null;
+				Achievements   preAchievements   = null;
+				UserNews       preUserNews       = null;
+				GameActivity   preGameActivity   = null;
+				AchievementMap preAchievementMap = null;
+				SocialMedia    preSocialMedia    = null;
+				Associations   preAssociations   = null;
+				AppActivity    preAppActivity    = null;
+				ReleaseData    preReleaseData    = null;
+				Friends        preFriends        = null;
+				CommunityItems preCommunityItems = null;
+				
+				for (Block block:blocks)
+					if (block.hasParsedData) {
+						String dataValueStr = String.format("%s.Block[%d].dataValue", debugOutputPrefixStr, block.blockIndex);
 						//DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
+						
 						switch (block.label) {
 							
 						case "badge"          : preBadge          = parseBlock( Badge         ::new, Badge         ::new, block.dataValue, block.version, dataValueStr, file ); break;
@@ -1194,20 +1198,19 @@ class Data {
 							DevHelper.unknownValues.add("GameInfos.Block["+block.label+"] - Unknown Block");
 						}
 					}
-					fullDesc       = preFullDesc      ;
-					shortDesc      = preShortDesc     ;
-					badge          = preBadge         ;
-					achievements   = preAchievements  ;
-					userNews       = preUserNews      ;
-					gameActivity   = preGameActivity  ;
-					achievementMap = preAchievementMap;
-					socialMedia    = preSocialMedia   ;
-					associations   = preAssociations  ;
-					appActivity    = preAppActivity   ;
-					releaseData    = preReleaseData   ;
-					friends        = preFriends       ;
-					communityItems = preCommunityItems;
-				}
+				fullDesc       = preFullDesc      ;
+				shortDesc      = preShortDesc     ;
+				badge          = preBadge         ;
+				achievements   = preAchievements  ;
+				userNews       = preUserNews      ;
+				gameActivity   = preGameActivity  ;
+				achievementMap = preAchievementMap;
+				socialMedia    = preSocialMedia   ;
+				associations   = preAssociations  ;
+				appActivity    = preAppActivity   ;
+				releaseData    = preReleaseData   ;
+				friends        = preFriends       ;
+				communityItems = preCommunityItems;
 			}
 			private static <ClassType> ClassType parseBlock(
 					BlockParseConstructor<ClassType> parseConstructor,
@@ -1504,34 +1507,33 @@ class Data {
 			}
 			static class Friends extends ParsedBlock {
 				
-				// "GameInfo.Block["friends",V1].dataValue.in_game:Array"
-				// "GameInfo.Block["friends",V1].dataValue.in_wishlist:Array"
-				// "GameInfo.Block["friends",V1].dataValue.in_wishlist[].steamid:String"
-				// "GameInfo.Block["friends",V1].dataValue.in_wishlist[]:Object"
-				// "GameInfo.Block["friends",V1].dataValue.owns:Array"
-				// "GameInfo.Block["friends",V1].dataValue.owns[].steamid:String"
-				// "GameInfo.Block["friends",V1].dataValue.owns[]:Object"
-				// "GameInfo.Block["friends",V1].dataValue.played_ever:Array"
-				// "GameInfo.Block["friends",V1].dataValue.played_ever[].minutes_played_forever:Integer"
-				// "GameInfo.Block["friends",V1].dataValue.played_ever[].steamid:String"
-				// "GameInfo.Block["friends",V1].dataValue.played_ever[]:Object"
-				// "GameInfo.Block["friends",V1].dataValue.played_recently:Array"
-				// "GameInfo.Block["friends",V1].dataValue.played_recently[].minutes_played:Integer"
-				// "GameInfo.Block["friends",V1].dataValue.played_recently[].minutes_played_forever:Integer"
-				// "GameInfo.Block["friends",V1].dataValue.played_recently[].steamid:String"
-				// "GameInfo.Block["friends",V1].dataValue.played_recently[]:Object"
-				// "GameInfo.Block["friends",V1].dataValue.your_info.minutes_played:Integer"
-				// "GameInfo.Block["friends",V1].dataValue.your_info.minutes_played_forever:Integer"
-				// "GameInfo.Block["friends",V1].dataValue.your_info.owned:Bool"
-				// "GameInfo.Block["friends",V1].dataValue.your_info:Object"
-				// "GameInfo.Block["friends",V1].dataValue:Object"
-				
-				// "[JSON]TreeNodes.Player.GameInfos.Associations.in_game:Array"
-				// "[JSON]TreeNodes.Player.GameInfos.Associations.in_wishlist:Array"
-				// "[JSON]TreeNodes.Player.GameInfos.Associations.owns:Array"
-				// "[JSON]TreeNodes.Player.GameInfos.Associations.played_ever:Array"
-				// "[JSON]TreeNodes.Player.GameInfos.Associations.played_recently:Array"
-				// "[JSON]TreeNodes.Player.GameInfos.Associations.your_info:Object"
+				//    "TreeNodes.Player.GameInfos.Friends:Object"
+				// Optional Values: [6 blocks]
+				//    Block "TreeNodes.Player.GameInfos.Friends" [6]
+				//       in_game:Array
+				//       in_wishlist:Array
+				//       owns:Array
+				//       played_ever:Array
+				//       played_recently:Array
+				//       your_info:Object
+				//       your_info == <null>
+				//    Block "TreeNodes.Player.GameInfos.Friends.in_wishlist[]" [1]
+				//       steamid:String
+				//    Block "TreeNodes.Player.GameInfos.Friends.owns[]" [1]
+				//       steamid:String
+				//    Block "TreeNodes.Player.GameInfos.Friends.played_ever[]" [2]
+				//       minutes_played_forever:Integer
+				//       steamid:String
+				//    Block "TreeNodes.Player.GameInfos.Friends.played_recently[]" [3]
+				//       minutes_played:Integer
+				//       minutes_played_forever:Integer
+				//       steamid:String
+				//    Block "TreeNodes.Player.GameInfos.Friends.your_info" [3]
+				//       minutes_played:Integer
+				//       minutes_played == <null>
+				//       minutes_played_forever:Integer
+				//       minutes_played_forever == <null>
+				//       owned:Bool
 				
 				private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
 						.add("in_game"        , JSON_Data.Value.Type.Array)
@@ -1539,58 +1541,129 @@ class Data {
 						.add("owns"           , JSON_Data.Value.Type.Array)
 						.add("played_ever"    , JSON_Data.Value.Type.Array)
 						.add("played_recently", JSON_Data.Value.Type.Array)
-						.add("your_info"      , JSON_Data.Value.Type.Object);
+						.add("your_info"      , JSON_Data.Value.Type.Object); // optional
 				
-				final Vector<Entry> in_game;
-				final Vector<Entry> in_wishlist;
-				final Vector<Entry> owns;
+				private static final DevHelper.KnownJsonValues KNOWN_VALUES_STEAMID_ONLY = new DevHelper.KnownJsonValues()
+						.add("steamid", JSON_Data.Value.Type.String);
+
+				final SteamId[] in_wishlist;
+				final SteamId[] owns;
 				final Vector<Entry> played_ever;
 				final Vector<Entry> played_recently;
 				final Entry your_info;
 				
+				
 				Friends(JSON_Data.Value<NV, V> rawData, long version) {
 					super(rawData, version, false);
-					in_game         = null;
 					in_wishlist     = null;
 					owns            = null;
 					played_ever     = null;
 					played_recently = null;
 					your_info       = null;
 				}
-				Friends(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
+				Friends(JSON_Data.Value<NV, V> blockDataValue, long version, String debugOutputPrefixStr, File file) throws TraverseException {
 					super(null, version, true);
+					String baseValueLabel = "TreeNodes.Player.GameInfos.Friends";
+					//DevHelper.scanJsonStructure(blockDataValue, baseValueLabel, true);
 					
-					JSON_Object<NV, V> object = JSON_Data.getObjectValue(blockDataValue, dataValueStr);
+					JSON_Object<NV, V> object = JSON_Data.getObjectValue(blockDataValue, debugOutputPrefixStr);
 					
-					in_game         = parseArray(Entry::new, Entry::new, object, "in_game"        , dataValueStr, file);
-					in_wishlist     = parseArray(Entry::new, Entry::new, object, "in_wishlist"    , dataValueStr, file);
-					owns            = parseArray(Entry::new, Entry::new, object, "owns"           , dataValueStr, file);
-					played_ever     = parseArray(Entry::new, Entry::new, object, "played_ever"    , dataValueStr, file);
-					played_recently = parseArray(Entry::new, Entry::new, object, "played_recently", dataValueStr, file);
+					JSON_Data.Value<NV, V> raw_your_info;
+					JSON_Array<NV, V> raw_in_game, raw_in_wishlist, raw_owns, raw_played_ever, raw_played_recently;
+					raw_in_game         = JSON_Data.getArrayValue(object, "in_game"        , debugOutputPrefixStr);
+					raw_in_wishlist     = JSON_Data.getArrayValue(object, "in_wishlist"    , debugOutputPrefixStr);
+					raw_owns            = JSON_Data.getArrayValue(object, "owns"           , debugOutputPrefixStr);
+					raw_played_ever     = JSON_Data.getArrayValue(object, "played_ever"    , debugOutputPrefixStr);
+					raw_played_recently = JSON_Data.getArrayValue(object, "played_recently", debugOutputPrefixStr);
+					raw_your_info       = object.getValue("your_info");
 					
-					JSON_Data.Value<NV, V> your_info_value = object.getValue("your_info");
-					if (your_info_value==null) your_info = null;
-					else your_info = parse(Entry::new,Entry::new,your_info_value,dataValueStr+".your_info",file);
+					if (!raw_in_game.isEmpty()) {
+						DevHelper.unknownValues.add(baseValueLabel+".in_game:Array is not empty");
+						DevHelper.scanJsonStructure(raw_in_game, baseValueLabel+".in_game", true);
+					}
 					
-					DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Player.GameInfos.Associations");
+					in_wishlist = new SteamId[raw_in_wishlist.size()];
+					traverseArray(raw_in_wishlist, "in_wishlist", baseValueLabel, debugOutputPrefixStr, (i,obj,objectLabel,debugPrefixStr)->{
+						in_wishlist[i] = parseSteamId(obj, objectLabel, debugPrefixStr);
+						DevHelper.scanUnexpectedValues(obj, KNOWN_VALUES_STEAMID_ONLY, objectLabel);
+					});
+					
+					owns = new SteamId[raw_owns.size()];
+					traverseArray(raw_owns, "owns", baseValueLabel, debugOutputPrefixStr, (i,obj,objectLabel,debugPrefixStr)->{
+						owns[i] = parseSteamId(obj, objectLabel, debugPrefixStr);
+						DevHelper.scanUnexpectedValues(obj, KNOWN_VALUES_STEAMID_ONLY, objectLabel);
+					});
+					
+					played_ever     = parseArray(Entry::new, Entry::new, raw_played_ever    , debugOutputPrefixStr+".played_ever"    , file);
+					played_recently = parseArray(Entry::new, Entry::new, raw_played_recently, debugOutputPrefixStr+".played_recently", file);
+					
+					if (raw_your_info==null) your_info = null;
+					else your_info = parse(Entry::new, Entry::new, raw_your_info, debugOutputPrefixStr+".your_info", file);
+					
+					DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, baseValueLabel);
+				}
+				
+				private interface ArrayElementTask {
+					void doSomeThing(int index, JSON_Object<NV, V> obj, String objectLabel, String debugOutputPrefixStr) throws TraverseException;
+				}
+
+				private static void traverseArray(JSON_Array<NV, V> raw_array, String arrayName, String baseValueLabel, String debugOutputPrefixStr, ArrayElementTask task) throws TraverseException {
+					for (int i=0; i<raw_array.size(); i++) {
+						String objectDebugPrefixStr = debugOutputPrefixStr+"."+arrayName+"["+i+"]";
+						JSON_Object<NV, V> obj = JSON_Data.getObjectValue(raw_array.get(i), objectDebugPrefixStr);
+						task.doSomeThing(i,obj,baseValueLabel+"."+arrayName+"[]",objectDebugPrefixStr);
+					}
+				}
+				
+				private static SteamId parseSteamId(JSON_Object<NV, V> object, String objectLabel, String debugOutputPrefixStr) throws TraverseException {
+					String steamidStr = JSON_Data.getStringValue(object, "steamid", debugOutputPrefixStr);
+					Long steamid = parseLongNumber(steamidStr);
+					if (steamid==null) DevHelper.unknownValues.add(objectLabel+".steamid:String can't be parsed as a number");
+					return new SteamId(steamidStr, steamid);
 				}
 				
 				@Override boolean isEmpty() {
-					return super.isEmpty() && (!hasParsedData || (in_game.isEmpty() && in_wishlist.isEmpty() && owns.isEmpty() && played_ever.isEmpty() && played_recently.isEmpty() && your_info==null));
+					return super.isEmpty() && (!hasParsedData || (in_wishlist.length==0 && owns.length==0 && played_ever.isEmpty() && played_recently.isEmpty() && your_info==null));
+				}
+				
+				static class SteamId {
+					
+					final String str;
+					final Long steamid;
+					
+					private SteamId(String str, Long steamid) {
+						this.str = str;
+						this.steamid = steamid;
+					}
+					
+					String getPlayerName() {
+						if (steamid==null)
+							return String.format("Player [%s]", str);
+						
+						String playerName = Data.getPlayerName(steamid.longValue()&0xFFFFFFFFL);
+						return String.format("%s [%s]", playerName, str);
+					}
 				}
 				
 				static class Entry {
 					
-					// "[JSON]TreeNodes.Player.GameInfos.Friends.Entry.minutes_played:Integer"
-					// "[JSON]TreeNodes.Player.GameInfos.Friends.Entry.minutes_played_forever:Integer"
-					// "[JSON]TreeNodes.Player.GameInfos.Friends.Entry.owned:Bool"
-					// "[JSON]TreeNodes.Player.GameInfos.Friends.Entry.steamid:String"
+					//    "TreeNodes.Player.GameInfos.Friends.Entry:Object"
+					// Optional Values: [1 blocks]
+					//    Block "TreeNodes.Player.GameInfos.Friends.Entry" [4]
+					//       minutes_played:Integer
+					//       minutes_played == <null>
+					//       minutes_played_forever:Integer
+					//       minutes_played_forever == <null>
+					//       owned:Bool
+					//       owned == <null>
+					//       steamid:String
+					//       steamid == <null>
 					
 					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
-							.add("minutes_played"        , JSON_Data.Value.Type.Integer)
-							.add("minutes_played_forever", JSON_Data.Value.Type.Integer)
-							.add("owned"                 , JSON_Data.Value.Type.Bool   )
-							.add("steamid"               , JSON_Data.Value.Type.String );
+							.add("minutes_played"        , JSON_Data.Value.Type.Integer)  // optional
+							.add("minutes_played_forever", JSON_Data.Value.Type.Integer)  // optional
+							.add("owned"                 , JSON_Data.Value.Type.Bool   )  // optional
+							.add("steamid"               , JSON_Data.Value.Type.String ); // optional
 
 					final JSON_Data.Value<NV, V> rawData;
 					final boolean hasParsedData;
@@ -1598,7 +1671,7 @@ class Data {
 					final Long minutes_played;
 					final Long minutes_played_forever;
 					final Boolean owned;
-					final String steamid;
+					final SteamId steamid;
 					
 					Entry(JSON_Data.Value<NV, V> rawData) {
 						this.rawData = rawData;
@@ -1611,13 +1684,22 @@ class Data {
 					Entry(JSON_Data.Value<NV, V> value, String dataValueStr) throws TraverseException {
 						this.rawData = null;
 						this.hasParsedData = true;
+						String baseValueLabel = "TreeNodes.Player.GameInfos.Friends.Entry";
+						//DevHelper.scanJsonStructure(value, baseValueLabel, true);
+						
+						String steamidStr;
 						JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, dataValueStr);
-						//DevHelper.optionalValues.scan(object, "TreeNodes.Player.GameInfos.Friends.Entry");
 						minutes_played         = JSON_Data.getValue(object, "minutes_played"        , true, JSON_Data.Value.Type.Integer, JSON_Data.Value::castToIntegerValue, false, dataValueStr);
 						minutes_played_forever = JSON_Data.getValue(object, "minutes_played_forever", true, JSON_Data.Value.Type.Integer, JSON_Data.Value::castToIntegerValue, false, dataValueStr);
 						owned                  = JSON_Data.getValue(object, "owned"                 , true, JSON_Data.Value.Type.Bool   , JSON_Data.Value::castToBoolValue   , false, dataValueStr);
-						steamid                = JSON_Data.getValue(object, "steamid"               , true, JSON_Data.Value.Type.String , JSON_Data.Value::castToStringValue , false, dataValueStr);
-						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Player.GameInfos.Friends.Entry");
+						steamidStr             = JSON_Data.getValue(object, "steamid"               , true, JSON_Data.Value.Type.String , JSON_Data.Value::castToStringValue , false, dataValueStr);
+						if (steamidStr==null) steamid = null;
+						else {
+							steamid = new SteamId(steamidStr, parseLongNumber(steamidStr));
+							if (steamid.steamid==null)  DevHelper.unknownValues.add(baseValueLabel+".steamid:String can't be parsed as a number");
+						}
+						
+						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, baseValueLabel);
 					}
 					
 				}
@@ -2208,10 +2290,11 @@ class Data {
 					this(blockIndex, value, false);
 				}
 				Block(int blockIndex, JSON_Data.Value<NV, V> value, boolean asRawData) throws TraverseException {
+					this.blockIndex = blockIndex;
+					
 					if (asRawData) {
 						this.rawData = value;
 						this.hasParsedData = false;
-						this.blockIndex = blockIndex;
 						this.label = null;
 						this.version = -1;
 						this.dataValue = null;
@@ -2219,7 +2302,6 @@ class Data {
 					} else {
 						this.rawData = null;
 						this.hasParsedData = true;
-						this.blockIndex = blockIndex;
 						
 						String blockStr     = "GameInfos.Block["+blockIndex+"]";
 						String labelStr     = blockStr+".value[0:label]";

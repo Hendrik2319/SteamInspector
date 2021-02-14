@@ -220,6 +220,9 @@ class TreeNodes {
 		}
 
 		String generateOutput() {
+			return generateOutput("");
+		}
+		String generateOutput(String baseIndent) {
 			HashMap<Integer,Integer> labelLengths = new HashMap<>();
 			for (Entry entry:this) {
 				Integer maxLength = labelLengths.get(entry.indentLevel);
@@ -237,7 +240,7 @@ class TreeNodes {
 			
 			StringBuilder sb = new StringBuilder();
 			for (Entry entry:this)
-				sb.append(String.format("%s%-"+labelLengths.get(entry.indentLevel)+"s%s%s%n", indents.get(entry.indentLevel), entry.label, entry.valueStr.isEmpty() ? "" : ": ", entry.valueStr));
+				sb.append(String.format("%s%s%-"+labelLengths.get(entry.indentLevel)+"s%s%s%n", baseIndent, indents.get(entry.indentLevel), entry.label, entry.valueStr.isEmpty() ? "" : ": ", entry.valueStr));
 			
 			return sb.toString();
 		}
@@ -444,7 +447,7 @@ class TreeNodes {
 		}
 	}
 
-	private static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, FileCreatingNode, ExternViewableNode, FilterableNode, TreeContentSource {
+	private static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, FileCreatingNode, ExternViewableNode, FilterableNode, TreeContentSource, TextContentSource {
 		
 		private final Collection<ValueType> values;
 		private final Comparator<ValueType> sortOrder;
@@ -455,6 +458,7 @@ class TreeNodes {
 		private GroupingNodeFilter<ValueType,?> filter;
 		private TreeRoot dataTree;
 		private BiConsumer<TreeNode, Vector<TreeNode>> createAllChildNodes;
+		private Supplier<String> textSource;
 		
 		private static <IT,VT> Comparator<Map.Entry<IT,VT>> createMapKeyOrder(Comparator<IT> keyOrder) {
 			return Comparator.comparing(Map.Entry<IT,VT>::getKey,keyOrder);
@@ -499,6 +503,7 @@ class TreeNodes {
 			externalViewerInfo = null;
 			filter = null;
 			dataTree = null;
+			textSource = null;
 		}
 		
 		interface NodeCreator1<ValueType> {
@@ -531,9 +536,11 @@ class TreeNodes {
 			return externalViewerInfo;
 		}
 		
-		void setDataTree(TreeRoot dataTree) { this.dataTree = dataTree; }
+		void setTextSource(Supplier<String> textSource) { this.textSource = textSource; }
+		void setDataTree  (TreeRoot dataTree)           { this.dataTree   = dataTree; }
 		@Override public TreeRoot getContentAsTree() { return dataTree; }
-		@Override ContentType getContentType() { return dataTree==null ? null : ContentType.DataTree; }
+		@Override public String   getContentAsText() { return textSource!=null ? textSource.get() : null; }
+		@Override ContentType getContentType() { return dataTree!=null ? ContentType.DataTree : textSource!=null ? ContentType.PlainText : null; }
 		
 		@Override
 		protected Vector<? extends TreeNode> createChildren() {
@@ -748,22 +755,22 @@ class TreeNodes {
 
 	private static class TextContentNode extends BaseTreeNode<TreeNode,TreeNode> implements TextContentSource {
 		
-		final String content;
+		final Supplier<String> source;
 
+		TextContentNode(TreeNode parent, String title, Supplier<String> source) {
+			this(parent, title, source, (Icon)null);
+		}
 		@SuppressWarnings("unused")
-		TextContentNode(TreeNode parent, String title, String content) {
-			this(parent, title, content, (Icon)null);
+		TextContentNode(TreeNode parent, String title, Supplier<String> source, TreeIcons icon) {
+			this(parent, title, source, icon!=null ? icon.getIcon() : null);
 		}
-		TextContentNode(TreeNode parent, String title, String content, TreeIcons icon) {
-			super(parent, title, false, true, icon);
-			this.content = content;
+		TextContentNode(TreeNode parent, String title, Supplier<String> source, Icon icon) {
+			super(parent, title, false, true, icon!=null ? icon : TreeIcons.TextFile.getIcon());
+			this.source = source;
+			if (source==null) throw new IllegalArgumentException();
 		}
-		TextContentNode(TreeNode parent, String title, String content, Icon icon) {
-			super(parent, title, false, true, icon);
-			this.content = content;
-		}
-		@Override ContentType getContentType() { return ContentType.PlainText; }
-		@Override public String getContentAsText() { return content; }
+		@Override ContentType getContentType() { return source==null ? null : ContentType.PlainText; }
+		@Override public String getContentAsText() { return source.get(); }
 		@Override protected Vector<? extends TreeNode> createChildren() { return new Vector<>(); }
 	}
 
@@ -1339,10 +1346,10 @@ class TreeNodes {
 				Vector<TreeNode> children = new Vector<>();
 				GroupingNode<?> groupingNode;
 				if (data.fullDesc!=null) {
-					children.add(new TextContentNode(this, "Full Game Description", data.fullDesc, TreeIcons.TextFile));
+					children.add(new TextContentNode(this, "Full Game Description", ()->data.fullDesc));
 				}
 				if (data.shortDesc!=null) {
-					children.add(new TextContentNode(this, "Short Game Description", data.shortDesc, TreeIcons.TextFile));
+					children.add(new TextContentNode(this, "Short Game Description", ()->data.shortDesc));
 				}
 				if (data.badge!=null) {
 					children.add(new BadgeNode(this, data.badge));
@@ -1364,23 +1371,7 @@ class TreeNodes {
 				if (data.socialMedia!=null) {
 					if (data.socialMedia.hasParsedData) {
 						if (!data.socialMedia.entries.isEmpty())
-							children.add(GroupingNode.create(this, "Social Media", data.socialMedia.entries, null, (p,v)->{
-								if (v.hasParsedData) {
-									Icon icon = null;
-									if (v.type!=null) {
-										switch (v.type) {
-										case Facebook: icon = TreeIcons.Facebook.getIcon(); break;
-										case Twitch  : icon = TreeIcons.Twitch  .getIcon(); break;
-										case Twitter : icon = TreeIcons.Twitter .getIcon(); break;
-										case YouTube : icon = TreeIcons.YouTube .getIcon(); break;
-										}
-									}
-									return new UrlNode(this, icon, String.format("%s \"%s\"", v.type==null ? "<Type "+v.typeN+">" : v.type.toString(), v.name), v.url);
-								}
-								if (v.rawData!=null)
-									return new RawJsonDataNode(this, "Entry", v.rawData);
-								return null;
-							}));
+							children.add(GroupingNode.create(this, "Social Media", data.socialMedia.entries, null, GameInfosNode::createSocialMediaEntryNode));
 					} else
 						if (data.socialMedia.rawData!=null)
 							children.add(new RawJsonDataNode(this, "Social Media", data.socialMedia.rawData));
@@ -1389,13 +1380,23 @@ class TreeNodes {
 					if (data.associations.hasParsedData) {
 						if (!data.associations.isEmpty())
 							children.add(GroupingNode.create(this, "Associations", (p,ch)->{
-								addNodesTo(ch,"Developer",data.associations.developers);
-								addNodesTo(ch,"Franchise",data.associations.franchises);
-								addNodesTo(ch,"Publisher",data.associations.publishers);
+								addNodesTo(p,ch,"Developer",data.associations.developers);
+								addNodesTo(p,ch,"Franchise",data.associations.franchises);
+								addNodesTo(p,ch,"Publisher",data.associations.publishers);
 							}));
 					} else
 						if (data.associations.rawData!=null)
 							children.add(new RawJsonDataNode(this, "Associations", data.associations.rawData));
+				}
+				if (data.friends!=null) {
+					if (data.friends.hasParsedData) {
+						if (!data.friends.isEmpty()) {
+							children.add(groupingNode = GroupingNode.create(this, "Played or Owned by Players", (p,ch)->addRawDataNodesTo(p,ch,data.friends, data.playerID)));
+							groupingNode.setTextSource(()->toString(data.friends, data.playerID, data.gameID));
+						}
+					} else
+						if (data.friends.rawData!=null)
+							children.add(new RawJsonDataNode(this, "Played or Owned by Players (Raw Data)", data.friends.rawData));
 				}
 				if (data.blocks!=null) {
 					children.add(groupingNode = GroupingNode.create(this, "Raw Blocks", data.blocks, null, BlockNode::new));
@@ -1416,17 +1417,96 @@ class TreeNodes {
 				// data.associations  ; // Ok
 				// data.appActivity   ; // Ok
 				// data.releaseData   ;
-				// data.friends       ;
+				// data.friends       ; // Ok
 				// data.communityItems; // Ok
 				
 				return children;
 			}
+			
+			private static void addRawDataNodesTo(TreeNode p, Vector<TreeNode> ch, GameInfos.Friends friends, long playerID) {
+				if (friends==null) throw new IllegalArgumentException();
+				if (!friends.hasParsedData) throw new IllegalArgumentException();
+				
+				friends.played_ever    .forEach(entry->addRawDataNodeTo(p, ch, entry, "Played ever"    ));
+				friends.played_recently.forEach(entry->addRawDataNodeTo(p, ch, entry, "Played recently"));
+				if (friends.your_info!=null)           addRawDataNodeTo(p, ch, friends.your_info, String.format("Infos for %s:%n", Data.getPlayerName(playerID)));
+			}
+			private static void addRawDataNodeTo(TreeNode p, Vector<TreeNode> ch, GameInfos.Friends.Entry entry, String label) {
+				if (entry.rawData!=null)
+					ch.add(new RawJsonDataNode(p, String.format("Raw Data \"%s\"", label), entry.rawData));
+			}
+			private static String toString(GameInfos.Friends friends, long playerID, int gameID) {
+				if (friends==null) throw new IllegalArgumentException();
+				if (!friends.hasParsedData) throw new IllegalArgumentException();
+				
+				StringBuilder sb = new StringBuilder();
+				String indent = "    ";
+				if ( friends.in_wishlist    .length>0 ) sb.append(String.format("In Wishlist" +" by%n%s", toString(indent,friends.in_wishlist)));
+				if ( friends.owns           .length>0 ) sb.append(String.format("Owned"       +" by%n%s", toString(indent,friends.owns       )));
+				if (!friends.played_ever    .isEmpty()) sb.append(String.format("Played ever" +" by%n%s", toString(indent,friends.played_ever, gameID)));
+				if (!friends.played_recently.isEmpty()) sb.append(String.format("Played recently by%n%s", toString(indent,friends.played_ever, gameID)));
+				if (friends.your_info!=null) {
+					sb.append(String.format("Infos for %s:%n", Data.getPlayerName(playerID)));
+					sb.append(toString(indent, friends.your_info, gameID));
+				}
+				return sb.toString();
+			}
+			private static String toString(String indent, GameInfos.Friends.Entry entry, int gameID) {
+				if (entry==null) throw new IllegalArgumentException();
+				if (!entry.hasParsedData) throw new IllegalArgumentException();
+				
+				ValueListOutput out = new ValueListOutput();
+				if (entry.steamid               !=null) out.add(0, "SteamID"          , "%s", entry.steamid.str);
+				if (entry.owned                 !=null) out.add(0, "Owns"             , "%s -> %s", Data.getGameTitle(gameID), entry.owned);
+				if (entry.minutes_played        !=null) out.add(0, "Played"           , "%s min", entry.minutes_played        );
+				if (entry.minutes_played_forever!=null) out.add(0, "Played (over all)", "%s min", entry.minutes_played_forever);
+				return out.generateOutput(indent);
+			}
+			private static String toString(String indent, Vector<GameInfos.Friends.Entry> arr, int gameID) {
+				StringBuilder sb = new StringBuilder();
+				arr.forEach(entry->{
+					String playerName = "Player ???";
+					if (entry!=null && entry.steamid!=null) playerName = entry.steamid.getPlayerName();
+					sb.append(String.format("%s%s%n", indent, playerName));
+					if (entry!=null) {
+						if (entry.hasParsedData)
+							sb.append(String.format("%s%n", toString(indent+"    ", entry, gameID)));
+						else if (entry.rawData!=null)
+							sb.append(String.format("<Raw Data>%n"));
+					}
+				});
+				return sb.toString();
+			}
+			private static String toString(String indent, GameInfos.Friends.SteamId[] arr) {
+				StringBuilder sb = new StringBuilder();
+				for (GameInfos.Friends.SteamId steamId : arr)
+					sb.append(String.format("%s%s%n", indent, steamId==null ? "???" : steamId.getPlayerName()));
+				return sb.toString();
+			}
+			
+			private static TreeNode createSocialMediaEntryNode(TreeNode parent, GameInfos.SocialMedia.SocialMediaEntry entry) {
+				if (entry.hasParsedData) {
+					Icon icon = null;
+					if (entry.type!=null) {
+						switch (entry.type) {
+						case Facebook: icon = TreeIcons.Facebook.getIcon(); break;
+						case Twitch  : icon = TreeIcons.Twitch  .getIcon(); break;
+						case Twitter : icon = TreeIcons.Twitter .getIcon(); break;
+						case YouTube : icon = TreeIcons.YouTube .getIcon(); break;
+						}
+					}
+					return new UrlNode(parent, icon, String.format("%s \"%s\"", entry.type==null ? "<Type "+entry.typeN+">" : entry.type.toString(), entry.name), entry.url);
+				}
+				if (entry.rawData!=null)
+					return new RawJsonDataNode(parent, "Entry", entry.rawData);
+				return null;
+			}
 
-			private void addNodesTo(Vector<TreeNode> ch, String nodeLabel, Vector<GameInfos.Associations.Association> array) {
+			private static void addNodesTo(TreeNode parent, Vector<TreeNode> ch, String nodeLabel, Vector<GameInfos.Associations.Association> array) {
 				if (array==null) return;
 				array.forEach(v->{
-					if      (v.hasParsedData) ch.add(new UrlNode(this, nodeLabel + (v.name!=null ? " \""+v.name+"\"" : ""), v.url));
-					else if (v.rawData!=null) ch.add(new RawJsonDataNode(this, "["+nodeLabel+"]", v.rawData));
+					if      (v.hasParsedData) ch.add(new UrlNode(parent, nodeLabel + (v.name!=null ? " \""+v.name+"\"" : ""), v.url));
+					else if (v.rawData!=null) ch.add(new RawJsonDataNode(parent, "["+nodeLabel+"]", v.rawData));
 				});
 			}
 

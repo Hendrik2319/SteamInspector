@@ -1606,12 +1606,16 @@ class SteamInspector {
 			showMessageFromThread("ParsedTreeOutput.setRoot started");
 			this.treeRoot = treeRoot;
 			showMessageFromThread("ParsedTreeOutput.setRoot set root node");
-			view.setModel(currentTreeModel = new DefaultTreeModel(treeRoot.node));
-			view.setRootVisible(treeRoot.isRootVisible);
-			if (treeRoot.expandAllRows) {
-				showMessageFromThread("ParsedTreeOutput.setRoot expand full tree");
-				for (int i=0; i<view.getRowCount(); i++)
-					view.expandRow(i);
+			if (this.treeRoot==null) {
+				view.setModel(currentTreeModel = null);
+			} else {
+				view.setModel(currentTreeModel = new DefaultTreeModel(this.treeRoot.node));
+				view.setRootVisible(this.treeRoot.isRootVisible);
+				if (this.treeRoot.expandAllRows) {
+					showMessageFromThread("ParsedTreeOutput.setRoot expand full tree");
+					for (int i=0; i<view.getRowCount(); i++)
+						view.expandRow(i);
+				}
 			}
 			showMessageFromThread("ParsedTreeOutput.setRoot finished");
 		}
@@ -1751,8 +1755,8 @@ class SteamInspector {
 		private class ContentLoadWorker extends SwingWorker<List<PostponedTask>,PostponedTask> {
 			
 			private final ByteContentSource bytesSource;
-			private final TextContentSource   textSource;
-			private final TreeContentSource   treeSource;
+			private final TextContentSource  textSource;
+			private final TreeContentSource  treeSource;
 			private boolean isObsolete;
 		
 			ContentLoadWorker(               ByteContentSource source) { this(source,  null,  null); }
@@ -1774,11 +1778,13 @@ class SteamInspector {
 			}
 			
 			private void setHexTable(byte[] bytes) {
+				if (bytes==null) bytes = new byte[0];
 				showMessageFromThread("ContentLoadWorker.setHexTable started (bytes:%d)", bytes.length);
 				hexView.setHexTableOutput(bytes);
 				showMessageFromThread("ContentLoadWorker.setHexTable finished");
 			}
 			private void setPlainText(String text) {
+				if (text==null) text="";
 				showMessageFromThread("ContentLoadWorker.setPlainText started (chars:%d)", text.length());
 				plainText.setText(text);
 				showMessageFromThread("ContentLoadWorker.setPlainText.setText finished");
@@ -1798,9 +1804,9 @@ class SteamInspector {
 				byte[]   bytes    = bytesSource==null ? null : bytesSource.getContentAsBytes();        if (isObsolete) return null;
 				String   text     =  textSource==null ? null :  textSource.getContentAsText ();        if (isObsolete) return null;
 				TreeRoot treeNode =  treeSource==null ? null :  treeSource.getContentAsTree ();        if (isObsolete) return null;
-				if (text    !=null) publish(setPlainText  = new PostponedTask("setPlainText ",()->setPlainText (text    )));  if (isObsolete) return null;
-				if (treeNode!=null) publish(setParsedTree = new PostponedTask("setParsedTree",()->setParsedTree(treeNode)));  if (isObsolete) return null;
-				if (bytes   !=null) publish(setHexView    = new PostponedTask("setHexTable  ",()->setHexTable  (bytes   )));  if (isObsolete) return null;
+				if ( textSource!=null) publish(setPlainText  = new PostponedTask("setPlainText ",()->setPlainText (text    )));  if (isObsolete) return null;
+				if ( treeSource!=null) publish(setParsedTree = new PostponedTask("setParsedTree",()->setParsedTree(treeNode)));  if (isObsolete) return null;
+				if (bytesSource!=null) publish(setHexView    = new PostponedTask("setHexTable  ",()->setHexTable  (bytes   )));  if (isObsolete) return null;
 				showMessageFromThread("ContentLoadWorker.doInBackground finished");
 				return Arrays.asList(setParsedTree,setPlainText,setHexView);
 			}
