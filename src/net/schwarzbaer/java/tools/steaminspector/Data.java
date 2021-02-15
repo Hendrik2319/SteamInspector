@@ -1922,14 +1922,14 @@ class Data {
 				// Unknown Labels: [10]
 				//    "GameInfos.AchievementMap(V2):Array"
 				//    "GameInfos.AchievementMap(V2)[]:Array"
-				//    "GameInfos.AchievementMap(V2)[][].bAchieved:Bool"
-				//    "GameInfos.AchievementMap(V2)[][].flAchieved:Float"
-				//    "GameInfos.AchievementMap(V2)[][].flAchieved:Integer"
-				//    "GameInfos.AchievementMap(V2)[][].strDescription:String"
-				//    "GameInfos.AchievementMap(V2)[][].strImage:String"
-				//    "GameInfos.AchievementMap(V2)[][].strName:String"
-				//    "GameInfos.AchievementMap(V2)[][]:Object"
-				//    "GameInfos.AchievementMap(V2)[][]:String"
+				//    "GameInfos.AchievementMap(V2)[][0]:String"
+				//    "GameInfos.AchievementMap(V2)[][1]:Object"
+				//    "GameInfos.AchievementMap(V2)[][1].bAchieved:Bool"
+				//    "GameInfos.AchievementMap(V2)[][1].flAchieved:Float"
+				//    "GameInfos.AchievementMap(V2)[][1].flAchieved:Integer"
+				//    "GameInfos.AchievementMap(V2)[][1].strDescription:String"
+				//    "GameInfos.AchievementMap(V2)[][1].strImage:String"
+				//    "GameInfos.AchievementMap(V2)[][1].strName:String"
 				// Optional Values: [1 blocks]
 				//    Block "GameInfos.AchievementMap(V2)[][]" [5]
 				//       bAchieved:Bool
@@ -1940,45 +1940,27 @@ class Data {
 				//       strName:String
 				
 				final Vector<Entry> entries;
+				final JSON_Data.Value<NV, V> parsedJsonValue;
 				
 				AchievementMap(JSON_Data.Value<NV, V> rawData, long version) {
 					super(rawData, version, false);
 					entries = null;
+					parsedJsonValue = null;
 				}
 				AchievementMap(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 					super(null, version, true);
 					
 					String jsonText = JSON_Data.getStringValue(blockDataValue, dataValueStr);
-					JSON_Data.Value<NV, V> value = JSONHelper.parseJsonText(jsonText, dataValueStr);
-					//DevHelper.scanJsonStructure(value, "GameInfos.AchievementMap(V"+version+")", true);
+					parsedJsonValue = JSONHelper.parseJsonText(jsonText, dataValueStr);
 					
-					String jsonValueDebugPrefixStr = dataValueStr+"<ParsedJsonText>";
-					
-					entries = new Vector<>();
-					JSON_Array<NV, V> array_L0 = JSON_Data.getArrayValue(value, jsonValueDebugPrefixStr);
-					for (int i0=0; i0<array_L0.size(); i0++) {
-						String arrayL0DebugPrefixStr = jsonValueDebugPrefixStr+"["+i0+"]";
-						JSON_Array<NV, V> array_L1 = JSON_Data.getArrayValue(array_L0.get(i0), arrayL0DebugPrefixStr);
-						for (int i1=0; i1<array_L1.size(); i1++) {
-							String arrayL1DebugPrefixStr = arrayL0DebugPrefixStr+"["+i1+"]";
-							JSON_Data.Value<NV, V> val_L1 = array_L1.get(i1);
-							try {
-								entries.add(new Entry(i0, i1, val_L1, arrayL1DebugPrefixStr));
-							} catch (TraverseException e) {
-								showException(e, file);
-								entries.add(new Entry(i0, i1, val_L1));
-							}
-						}
-					}
-					
-					
+					entries = parseArray(Entry::new, Entry::new, parsedJsonValue, dataValueStr+"<ParsedJsonText>", file);
 				}
 				
 				@Override boolean isEmpty() {
 					return super.isEmpty() && (!hasParsedData || entries.isEmpty());
 				}
 				
-				static class Entry implements Comparable<Entry> {
+				static class Entry {
 					
 					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
 							.add("bAchieved"     , JSON_Data.Value.Type.Bool   )
@@ -1988,75 +1970,46 @@ class Data {
 							.add("strImage"      , JSON_Data.Value.Type.String )
 							.add("strName"       , JSON_Data.Value.Type.String );
 					
-					final int i0;
-					final int i1;
 					final JSON_Data.Value<NV, V> rawData;
 					final boolean hasParsedData;
 					
-					final boolean validStrData;
-					final boolean validObjData;
-					final String strData;
+					final String id;
+					final String name;
+					final String image;
+					final String description;
 					final boolean isAchieved;
 					final double achievedRatio;
-					final String description;
-					final String image;
-					final String name;
 
-					@Override public int compareTo(Entry other) {
-						if (other==null) return -1;
-						if (this.i0!=other.i0) return this.i0-other.i0;
-						if (this.i1!=other.i1) return this.i1-other.i1;
-						return 0;
-					}
 
-					Entry(int i0, int i1, JSON_Data.Value<NV, V> rawData) {
-						this.i0 = i0;
-						this.i1 = i1;
+					Entry(JSON_Data.Value<NV, V> rawData) {
 						this.rawData = rawData;
 						hasParsedData = false;
 						
-						validStrData = false;
-						validObjData = false;
-						
-						strData       = null;
+						id            = null;
+						name          = null;
+						image         = null;
+						description   = null;
 						isAchieved    = false;
 						achievedRatio = Double.NaN;
-						description   = null;
-						image         = null;
-						name          = null;
 					}
 					
-					Entry(int i0, int i1, JSON_Data.Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
-						this.i0 = i0;
-						this.i1 = i1;
+					Entry(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
 						this.rawData = null;
 						hasParsedData = true;
 						
+						JSON_Array<NV, V> array = JSON_Data.getArrayValue(value, debugOutputPrefixStr);
+						if (array.size()!=2) throw new TraverseException("%s:Array has a length(==%d) != 2", debugOutputPrefixStr, array.size());
+						
 						JSON_Object<NV, V> object;
-						strData = JSON_Data.getValue(value, JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, true, debugOutputPrefixStr);
-						object  = JSON_Data.getValue(value, JSON_Data.Value.Type.Object, JSON_Data.Value::castToObjectValue, true, debugOutputPrefixStr);
-						if (strData==null && object==null) throw new TraverseException("%s is neither an ObjectValue nor a StringValue", debugOutputPrefixStr);
+						id     = JSON_Data.getStringValue(array.get(0), debugOutputPrefixStr+"[0]");
+						object = JSON_Data.getObjectValue(array.get(1), debugOutputPrefixStr+"[1]");
 						
-						validStrData = strData!=null;
-						validObjData = object !=null;
-						
-						//if (strData!=null)
-						//	DevHelper.unknownValues.add("GameInfos.AchievementMap.Entry.strData == \""+strData+"\"");
-						
-						if (object!=null) {
-							isAchieved    = JSON_Data.getBoolValue   (object,"bAchieved"     ,debugOutputPrefixStr);
-							achievedRatio = JSON_Data.getNumber      (object,"flAchieved"    ,debugOutputPrefixStr);
-							description   = JSON_Data.getStringValue (object,"strDescription",debugOutputPrefixStr);
-							image         = JSON_Data.getStringValue (object,"strImage"      ,debugOutputPrefixStr);
-							name          = JSON_Data.getStringValue (object,"strName"       ,debugOutputPrefixStr);
-							DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "GameInfos.AchievementMap.Entry");
-						} else {
-							isAchieved    = false;
-							achievedRatio = Double.NaN;
-							description   = null;
-							image         = null;
-							name          = null;
-						}
+						isAchieved    = JSON_Data.getBoolValue   (object,"bAchieved"     ,debugOutputPrefixStr+"[1]");
+						achievedRatio = JSON_Data.getNumber      (object,"flAchieved"    ,debugOutputPrefixStr+"[1]");
+						description   = JSON_Data.getStringValue (object,"strDescription",debugOutputPrefixStr+"[1]");
+						image         = JSON_Data.getStringValue (object,"strImage"      ,debugOutputPrefixStr+"[1]");
+						name          = JSON_Data.getStringValue (object,"strName"       ,debugOutputPrefixStr+"[1]");
+						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "GameInfos.AchievementMap.Entry(array[1])");
 					}
 				}
 			}

@@ -447,6 +447,7 @@ class TreeNodes {
 		}
 	}
 
+	@SuppressWarnings("unused")
 	private static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, FileCreatingNode, ExternViewableNode, FilterableNode, TreeContentSource, TextContentSource {
 		
 		private final Collection<ValueType> values;
@@ -488,12 +489,11 @@ class TreeNodes {
 		private static GroupingNode<Object> create(TreeNode parent, String title, BiConsumer<TreeNode,Vector<TreeNode>> createAllChildNodes) {
 			return new GroupingNode<>(parent, title, null, null, null, null, createAllChildNodes);
 		}
-		@SuppressWarnings("unused")
 		private static GroupingNode<Object> create(TreeNode parent, String title, Icon icon, BiConsumer<TreeNode,Vector<TreeNode>> createAllChildNodes) {
 			return new GroupingNode<>(parent, title, null, null, icon, null, createAllChildNodes);
 		}
 		private GroupingNode(TreeNode parent, String title, Collection<ValueType> values, Comparator<ValueType> sortOrder, Icon icon, NodeCreator1<ValueType> createChildNode, BiConsumer<TreeNode,Vector<TreeNode>> createAllChildNodes) {
-			super(parent, title, true, false, icon);
+			super(parent, title, areChildrenExpectable(values, createAllChildNodes), !areChildrenExpectable(values, createAllChildNodes), icon==null ? TreeIcons.Folder.getIcon() : icon);
 			this.values = values;
 			this.sortOrder = sortOrder;
 			this.createChildNode = createChildNode;
@@ -504,6 +504,10 @@ class TreeNodes {
 			filter = null;
 			dataTree = null;
 			textSource = null;
+		}
+		
+		private static <ValueType> boolean areChildrenExpectable(Collection<ValueType> values, BiConsumer<TreeNode, Vector<TreeNode>> createAllChildNodes) {
+			return (values!=null && !values.isEmpty()) || createAllChildNodes!=null;
 		}
 		
 		interface NodeCreator1<ValueType> {
@@ -684,7 +688,7 @@ class TreeNodes {
 		
 		ImageUrlNode(TreeNode parent, String label,                    String url) { super(parent, TreeIcons.ImageFile.getIcon(), label,             url); }
 		ImageUrlNode(TreeNode parent, String label, String urlInTitle, String url) { super(parent, TreeIcons.ImageFile.getIcon(), label, urlInTitle, url); }
-
+		
 		@Override ContentType getContentType() { return ContentType.Image; }
 		@Override public BufferedImage getContentAsImage() { return readImageFromURL(url,"image"); }
 	}
@@ -804,7 +808,6 @@ class TreeNodes {
 		
 	}
 
-	@SuppressWarnings("unused")
 	private static class RawJsonDataNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
 	
 		private final File file;
@@ -1359,30 +1362,11 @@ class TreeNodes {
 				}
 				if (data.achievementMap!=null) {
 					if (data.achievementMap.hasParsedData) {
-						if (!data.achievementMap.entries.isEmpty())
-							children.add(GroupingNode.create(this, "Achievement Map", data.achievementMap.entries, Comparator.naturalOrder(), (parent,entry)->{
-								String title = String.format("Entry [%d,%d]",entry.i0,entry.i1);
-								if (entry.hasParsedData) {
-									if (entry.validStrData)
-										return new PrimitiveValueNode(parent, title, entry.strData);
-									if (entry.validObjData)
-										return new TextContentNode(parent, title, ()->{
-											ValueListOutput out = new ValueListOutput();
-											out.add(0, "Name"       , "\"%s\"", entry.name);
-											out.add(0, "Image"      , "\"%s\"", entry.image);
-											out.add(0, "Description", "\"%s\"", entry.description);
-											out.add(0, "Is Achieved", "%s"    , entry.isAchieved);
-											out.add(0, "Ratio"      , "%f"    , entry.achievedRatio);
-											return out.generateOutput();
-										});
-								}
-								if (entry.rawData!=null)
-									return new RawJsonDataNode(parent, title, entry.rawData);
-								return null;
-							}));
+						children.add(groupingNode = GroupingNode.create(this, "Achievement Map", data.achievementMap.entries, null, TreeIcons.Achievement.getIcon(), AchievementMapEntryNode::new));
+						groupingNode.setDataTree(JSONHelper.createTreeRoot(data.achievementMap.parsedJsonValue,false));
 					} else
 						if (data.achievementMap.rawData!=null)
-							children.add(new RawJsonDataNode(this, "Achievement Map [Raw Data]", data.achievementMap.rawData));
+							children.add(new RawJsonDataNode(this, "Achievement Map [Raw Data]", data.achievementMap.rawData, TreeIcons.Achievement.getIcon()));
 				}
 				if (data.communityItems!=null) {
 					if (data.communityItems.hasParsedData) {
@@ -1440,21 +1424,6 @@ class TreeNodes {
 					if (data.rawData!=null)
 						groupingNode.setDataTree(JSONHelper.createTreeRoot(data.rawData, false));
 				}
-				
-				// TODO: show all data in GameInfosNode
-				// data.fullDesc      ; // Ok
-				// data.shortDesc     ; // Ok
-				// data.badge         ; // Ok
-				// data.achievements  ; // Ok
-				// data.userNews      ; // Ok
-				// data.gameActivity  ; // Ok
-				// data.achievementMap;
-				// data.socialMedia   ; // Ok
-				// data.associations  ; // Ok
-				// data.appActivity   ; // Ok
-				// data.releaseData   ; // Ok
-				// data.friends       ; // Ok
-				// data.communityItems; // Ok
 				
 				return children;
 			}
@@ -1856,6 +1825,63 @@ class TreeNodes {
 				}
 				
 			}
+			static class AchievementMapEntryNode extends BaseTreeNode<TreeNode,TreeNode> implements ImageNTextContentSource, TreeContentSource {
+				
+				private final GameInfos.AchievementMap.Entry data;
+				
+				AchievementMapEntryNode(TreeNode parent, GameInfos.AchievementMap.Entry data) {
+					super(parent, generateTitle(data), false, true, TreeIcons.Achievement);
+					this.data = data;
+				}
+				
+				private static String generateTitle(GameInfos.AchievementMap.Entry data) {
+					if (data==null)
+						return "Entry == <null>";
+					if (data.hasParsedData) {
+						String str = data.name;
+						if (data.isAchieved) str = "[+] "+str;
+						return str;
+					}
+					if (data.rawData!=null)
+						return "Entry [ Raw Data ]";
+					return "Entry ???";
+				}
+				
+				@Override ContentType getContentType() {
+					if (data.hasParsedData) return ContentType.ImageNText;
+					if (data.rawData!=null) return ContentType.DataTree;
+					return null;
+				}
+
+				@Override
+				public BufferedImage getContentAsImage() {
+					return readImageFromURL(data.image,"entry image");
+				}
+
+				@Override
+				public String getContentAsText() {
+					if (data.hasParsedData) {
+						ValueListOutput out = new ValueListOutput();
+						out.add(0, "ID"         , "\"%s\"", data.id);
+						out.add(0, "Name"       , "\"%s\"", data.name);
+						out.add(0, "Image"      , "\"%s\"", data.image);
+						out.add(0, "Description", "\"%s\"", data.description);
+						out.add(0, "Is Achieved", "%s"    , data.isAchieved);
+						out.add(0, "Ratio"      , "%f"    , data.achievedRatio);
+						return out.generateOutput();
+					}
+					return null;
+				}
+
+				@Override
+				public TreeRoot getContentAsTree() {
+					if (data.rawData==null) return null;
+					return JSONHelper.createTreeRoot(data.rawData, false);
+				}
+
+				@Override protected Vector<? extends TreeNode> createChildren() { return null; }
+			}
+			
 
 			static class BadgeNode extends BaseTreeNode<TreeNode,TreeNode> implements ImageContentSource, ExternViewableNode, URLBasedNode {
 
