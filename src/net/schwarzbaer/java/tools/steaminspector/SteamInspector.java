@@ -79,7 +79,6 @@ import javax.swing.tree.TreeSelectionModel;
 import net.schwarzbaer.gui.ImageView;
 import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.LabeledFile;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.system.ClipboardTools;
 import net.schwarzbaer.system.Settings;
@@ -320,9 +319,8 @@ class SteamInspector {
 	private JMenuBar createMenuBar() {
 		JMenuBar menuBar = new JMenuBar();
 		JMenu settingsMenu = menuBar.add(new JMenu("Settings"));
-		settingsMenu.add(createMenuItem("Set Path to "+ExternalViewerInfo.TextEditor .viewerName+" ...", true, e->ExternalViewerInfo.TextEditor .chooseExecutable(mainWindow)));
-		settingsMenu.add(createMenuItem("Set Path to "+ExternalViewerInfo.ImageViewer.viewerName+" ...", true, e->ExternalViewerInfo.ImageViewer.chooseExecutable(mainWindow)));
-		settingsMenu.add(createMenuItem("Set Path to "+ExternalViewerInfo.Browser    .viewerName+" ...", true, e->ExternalViewerInfo.Browser    .chooseExecutable(mainWindow)));
+		for (ExternalViewerInfo evi:ExternalViewerInfo.values())
+			settingsMenu.add(createMenuItem("Set Path to "+evi.viewerName+" ...", true, e->evi.chooseExecutable(mainWindow)));
 		settingsMenu.addSeparator();
 		settingsMenu.add(createMenuItem("Set All Paths ...", true, e->new FolderSettingsDialog(mainWindow, "Define Paths").showDialog()));
 		return menuBar;
@@ -682,27 +680,29 @@ class SteamInspector {
 		private static final Color COLOR_FILE_EXISTS     = Color.GREEN.darker();
 		private static final Color COLOR_FILE_NOT_EXISTS = Color.RED;
 		
-		private final ModifiedTextField<File> txtImageViewer;
-		private final ModifiedTextField<File> txtTextEditor;
-		private final ModifiedTextField<File> txtSteamClientFolder;
 		private JFileChooser folderChooser;
-
 		public FolderSettingsDialog(Window parent, String title) {
 			super(parent, title);
 			
 			folderChooser = new JFileChooser("./");
 			folderChooser.setMultiSelectionEnabled(false);
 			folderChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-
-			ToggleBox tglbxImageViewer       = createToggleBox(null, 100,5,  "file exists",   "file not exists", "?????", COLOR_FILE_EXISTS, COLOR_FILE_NOT_EXISTS, null);
-			ToggleBox tglbxTextEditor        = createToggleBox(null, 100,5,  "file exists",   "file not exists", "?????", COLOR_FILE_EXISTS, COLOR_FILE_NOT_EXISTS, null);
+			
+			EnumMap<ExternalViewerInfo,ToggleBox              > viewerToggleBoxes = new EnumMap<>(ExternalViewerInfo.class);
+			EnumMap<ExternalViewerInfo,ModifiedTextField<File>> viewerFileFields  = new EnumMap<>(ExternalViewerInfo.class);
+			EnumMap<ExternalViewerInfo,JButton                > viewerSetButtons  = new EnumMap<>(ExternalViewerInfo.class);
+			
+			for (ExternalViewerInfo evi : ExternalViewerInfo.values())
+				viewerToggleBoxes.put(evi,     createToggleBox(null, 100,5,  "file exists",   "file not exists", "?????", COLOR_FILE_EXISTS, COLOR_FILE_NOT_EXISTS, null));
 			ToggleBox tglbxSteamClientFolder = createToggleBox(null, 100,5,"folder exists", "folder not exists", "?????", COLOR_FILE_EXISTS, COLOR_FILE_NOT_EXISTS, null);
-			txtImageViewer       = createFileField(File::isFile     , tglbxImageViewer      , AppSettings.ValueKey.ImageViewer      );
-			txtTextEditor        = createFileField(File::isFile     , tglbxTextEditor       , AppSettings.ValueKey.TextEditor       );
-			txtSteamClientFolder = createFileField(File::isDirectory, tglbxSteamClientFolder, AppSettings.ValueKey.SteamClientFolder);
-			JButton btnSetImageViewer       = createButton("...", true, e->selectFile(this,executableFileChooser, AppSettings.ValueKey.ImageViewer      , txtImageViewer      ));
-			JButton btnSetTextEditor        = createButton("...", true, e->selectFile(this,executableFileChooser, AppSettings.ValueKey.TextEditor       , txtTextEditor       ));
-			JButton btnSetSteamClientFolder = createButton("...", true, e->selectFile(this,folderChooser        , AppSettings.ValueKey.SteamClientFolder, txtSteamClientFolder));
+			
+			for (ExternalViewerInfo evi : ExternalViewerInfo.values())
+				viewerFileFields.put(evi,                  createFileField(File::isFile     , viewerToggleBoxes.get(evi), evi.viewerKey                         ));
+			ModifiedTextField<File> txtSteamClientFolder = createFileField(File::isDirectory, tglbxSteamClientFolder    , AppSettings.ValueKey.SteamClientFolder);
+			
+			for (ExternalViewerInfo evi : ExternalViewerInfo.values())
+				viewerSetButtons.put(evi,     createButton("...", true, e->selectFile(this,executableFileChooser, evi.viewerKey                         , viewerFileFields.get(evi))));
+			JButton btnSetSteamClientFolder = createButton("...", true, e->selectFile(this,folderChooser        , AppSettings.ValueKey.SteamClientFolder, txtSteamClientFolder     ));
 			
 			FolderListModel folderListModel = new FolderListModel(AppSettings.ValueKey.SteamLibraryFolders);
 			JList<File> folderList = new JList<>(folderListModel);
@@ -716,35 +716,42 @@ class SteamInspector {
 			c.weighty = 0;
 			c.gridx = 0;
 			c.gridheight = 1;
-			c.gridy=0; c.gridwidth=1;   contentPane.add(createLabel("Image Viewer : ",JLabel.CENTER),c);
-			c.gridy++; c.gridwidth=RMD; contentPane.add(createHorizontalLine(),c);
-			c.gridy++; c.gridwidth=1;   contentPane.add(createLabel("Text Editor : ",JLabel.CENTER),c);
-			c.gridy++; c.gridwidth=RMD; contentPane.add(createHorizontalLine(),c);
-			c.gridy++; c.gridwidth=1;   contentPane.add(createLabel("Steam Client Folder : ",JLabel.CENTER),c);
-			c.gridy++; c.gridwidth=RMD; contentPane.add(createHorizontalLine(),c);
+			c.gridy=0;
+			for (ExternalViewerInfo evi : ExternalViewerInfo.values()) {
+				c.gridwidth=1  ; contentPane.add(createLabel(evi.viewerName+" : ",JLabel.CENTER),c); c.gridy++;
+				c.gridwidth=RMD; contentPane.add(createHorizontalLine(),c); c.gridy++;
+			}
+			c.gridwidth=1;   contentPane.add(createLabel("Steam Client Folder : ",JLabel.CENTER),c); c.gridy++;
+			c.gridwidth=RMD; contentPane.add(createHorizontalLine(),c);
 			c.gridwidth=1;
 			int nextRow = c.gridy+1;
 			
 			c.weightx = 1;
 			c.weighty = 0;
 			c.gridx = 1;
-			c.gridy=0;  contentPane.add(txtImageViewer      ,c);
-			c.gridy+=2; contentPane.add(txtTextEditor       ,c);
-			c.gridy+=2; contentPane.add(txtSteamClientFolder,c);
+			c.gridy=0;
+			for (ExternalViewerInfo evi : ExternalViewerInfo.values()) {
+				contentPane.add(viewerFileFields.get(evi),c); c.gridy+=2;
+			}
+			contentPane.add(txtSteamClientFolder,c);
 			
 			c.weightx = 0;
 			c.weighty = 0;
 			c.gridx = 2;
-			c.gridy=0;  contentPane.add(btnSetImageViewer      ,c);
-			c.gridy+=2; contentPane.add(btnSetTextEditor       ,c);
-			c.gridy+=2; contentPane.add(btnSetSteamClientFolder,c);
+			c.gridy=0;
+			for (ExternalViewerInfo evi : ExternalViewerInfo.values()) {
+				contentPane.add(viewerSetButtons.get(evi),c); c.gridy+=2;
+			}
+			contentPane.add(btnSetSteamClientFolder,c);
 			
 			c.weightx = 0;
 			c.weighty = 0;
 			c.gridx = 3;
-			c.gridy=0;  contentPane.add(tglbxImageViewer      ,c);
-			c.gridy+=2; contentPane.add(tglbxTextEditor       ,c);
-			c.gridy+=2; contentPane.add(tglbxSteamClientFolder,c);
+			c.gridy=0;
+			for (ExternalViewerInfo evi : ExternalViewerInfo.values()) {
+				contentPane.add(viewerToggleBoxes.get(evi),c); c.gridy+=2;
+			}
+			contentPane.add(tglbxSteamClientFolder,c);
 			
 			c.gridwidth = 1;
 			c.gridy = nextRow;
@@ -910,19 +917,48 @@ class SteamInspector {
 		}
 		
 	}
+
+	static class LabeledFile {
+		final String label;
+		final File file;
+		LabeledFile(File file) { this(null,file); }
+		LabeledFile(String label, File file) {
+			if (file==null) throw new IllegalArgumentException();
+			this.label = label!=null ? label : String.format("%s\"%s\"", file.isDirectory() ? "Folder " : file.isFile() ? "File " : "", file.getName());
+			this.file = file;
+		}
+		static LabeledFile create(File file) {
+			return create(null, file);
+		}
+		static LabeledFile create(String label, File file) {
+			if (file==null) return null;
+			return new LabeledFile(label, file);
+		}
+	}
+
+	static class FilePromise {
+		final String label;
+		final Supplier<File> createFile;
+		FilePromise(String label, Supplier<File> createFile) {
+			if (label     ==null) throw new IllegalArgumentException();
+			if (createFile==null) throw new IllegalArgumentException();
+			this.label = label;
+			this.createFile = createFile;
+		}
+	}
 	
 	static class ExternViewableItem {
 		
-		final String url;
-		final TreeNodes.LabeledFile file;
-		final TreeNodes.FilePromise filePromise;
+		final String      url;
+		final LabeledFile file;
+		final FilePromise filePromise;
 		final ExternalViewerInfo viewerInfo;
 		
-		ExternViewableItem(String                url        , ExternalViewerInfo viewerInfo) { this( url, null,        null, viewerInfo); if (url        ==null) throw new IllegalArgumentException(); }
-		ExternViewableItem(TreeNodes.LabeledFile file       , ExternalViewerInfo viewerInfo) { this(null, file,        null, viewerInfo); if (file       ==null) throw new IllegalArgumentException();}
-		ExternViewableItem(TreeNodes.FilePromise filePromise, ExternalViewerInfo viewerInfo) { this(null, null, filePromise, viewerInfo); if (filePromise==null) throw new IllegalArgumentException();}
+		ExternViewableItem(String      url        , ExternalViewerInfo viewerInfo) { this( url, null,        null, viewerInfo); if (url        ==null) throw new IllegalArgumentException(); }
+		ExternViewableItem(LabeledFile file       , ExternalViewerInfo viewerInfo) { this(null, file,        null, viewerInfo); if (file       ==null) throw new IllegalArgumentException();}
+		ExternViewableItem(FilePromise filePromise, ExternalViewerInfo viewerInfo) { this(null, null, filePromise, viewerInfo); if (filePromise==null) throw new IllegalArgumentException();}
 		
-		private ExternViewableItem(String url, TreeNodes.LabeledFile file, TreeNodes.FilePromise filePromise, ExternalViewerInfo viewerInfo) {
+		private ExternViewableItem(String url, LabeledFile file, FilePromise filePromise, ExternalViewerInfo viewerInfo) {
 			this.url = url;
 			this.file = file;
 			this.filePromise = filePromise;
@@ -977,9 +1013,9 @@ class SteamInspector {
 		
 		enum AddressType { Folder, File, URL }
 		
-		final String viewerName;
-		final AppSettings.ValueKey viewerKey;
-		final EnumSet<AddressType> acceptedAddressTypes;
+		private final String viewerName;
+		private final AppSettings.ValueKey viewerKey;
+		private final EnumSet<AddressType> acceptedAddressTypes;
 		
 		ExternalViewerInfo(String viewerName, AppSettings.ValueKey viewerKey, AddressType... addressTypes) {
 			this.viewerName = viewerName;
@@ -992,15 +1028,14 @@ class SteamInspector {
 			return acceptedAddressTypes.contains(addressType);
 		}
 		
-		ExternViewableItem createItem(String                url        ) { return url         == null ? null : new ExternViewableItem(url        , this); }
-		ExternViewableItem createItem(TreeNodes.LabeledFile file       ) { return file        == null ? null : new ExternViewableItem(file       , this); }
-		ExternViewableItem createItem(TreeNodes.FilePromise filePromise) { return filePromise == null ? null : new ExternViewableItem(filePromise, this); }
+		ExternViewableItem createItem(String      url        ) { return url         == null ? null : new ExternViewableItem(url        , this); }
+		ExternViewableItem createItem(LabeledFile file       ) { return file        == null ? null : new ExternViewableItem(file       , this); }
+		ExternViewableItem createItem(FilePromise filePromise) { return filePromise == null ? null : new ExternViewableItem(filePromise, this); }
 		
 		File getExecutable(Component parent) {
-			if (settings.contains(viewerKey))
-				return settings.getFile(viewerKey);
-			else
-				return chooseExecutable(parent);
+			File file = settings.getFile(viewerKey);
+			if (file!=null && file.isFile()) return file;
+			return chooseExecutable(parent);
 		}
 		
 		File chooseExecutable(Component parent) {
@@ -1078,12 +1113,12 @@ class SteamInspector {
 		private final JMenu     menuFilterChildren;
 		private final ExtViewerChooseMenu extViewerChooseMenu;
 		
-		private TreePath              clickedPath   = null;
-		private Object                clickedNode   = null;
-		private String                clickedURL    = null;
-		private TreeNodes.LabeledFile clickedFile   = null;
-		private ExternViewableItem    clickedEVI    = null;
-		private Filter                clickedFilter = null;
+		private TreePath           clickedPath   = null;
+		private Object             clickedNode   = null;
+		private String             clickedURL    = null;
+		private LabeledFile        clickedFile   = null;
+		private ExternViewableItem clickedEVI    = null;
+		private Filter             clickedFilter = null;
 
 		MainTreeContextMenu(JTree tree, Supplier<DefaultTreeModel> getCurrentTreeModel) {
 			if (tree==null) throw new IllegalArgumentException();

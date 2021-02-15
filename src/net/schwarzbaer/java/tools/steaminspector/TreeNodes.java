@@ -66,8 +66,10 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteBasedTextFil
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternViewableItem;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerInfo;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.FilePromise;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageNTextContentSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.LabeledFile;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.ExternViewableNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FileBasedNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.Filter;
@@ -256,35 +258,6 @@ class TreeNodes {
 			}
 		}
 		
-	}
-
-	static class FilePromise {
-		final String label;
-		final Supplier<File> createFile;
-		FilePromise(String label, Supplier<File> createFile) {
-			if (label     ==null) throw new IllegalArgumentException();
-			if (createFile==null) throw new IllegalArgumentException();
-			this.label = label;
-			this.createFile = createFile;
-		}
-	}
-
-	static class LabeledFile {
-		final String label;
-		final File file;
-		LabeledFile(File file) { this(null,file); }
-		LabeledFile(String label, File file) {
-			if (file==null) throw new IllegalArgumentException();
-			this.label = label!=null ? label : String.format("%s\"%s\"", file.isDirectory() ? "Folder " : file.isFile() ? "File " : "", file.getName());
-			this.file = file;
-		}
-		static LabeledFile create(File file) {
-			return create(null, file);
-		}
-		static LabeledFile create(String label, File file) {
-			if (file==null) return null;
-			return new LabeledFile(label, file);
-		}
 	}
 	
 	static class FileNameNExt implements Comparable<FileNameNExt>{
@@ -522,10 +495,10 @@ class TreeNodes {
 			if (viewerInfo==null) throw new IllegalArgumentException();
 			viewableItem = new ExternViewableItem(file,viewerInfo);
 		}
-		void setExternViewable(FilePromise getFile, ExternalViewerInfo viewerInfo) {
-			if (getFile==null) throw new IllegalArgumentException();
+		void setExternViewable(FilePromise filePromise, ExternalViewerInfo viewerInfo) {
+			if (filePromise==null) throw new IllegalArgumentException();
 			if (viewerInfo==null) throw new IllegalArgumentException();
-			viewableItem = new ExternViewableItem(getFile,viewerInfo);
+			viewableItem = new ExternViewableItem(filePromise,viewerInfo);
 		}
 		void setExternViewable(String url, ExternalViewerInfo viewerInfo) {
 			if (url==null) throw new IllegalArgumentException();
