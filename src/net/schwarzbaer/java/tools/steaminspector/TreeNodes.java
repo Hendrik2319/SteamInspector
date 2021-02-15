@@ -64,12 +64,12 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeCont
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteBasedTextFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteFileSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternViewableItem;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerInfo;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageNTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.ExternViewableNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FileBasedNode;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FileCreatingNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.Filter;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FilterOption;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FilterableNode;
@@ -448,18 +448,17 @@ class TreeNodes {
 	}
 
 	@SuppressWarnings("unused")
-	private static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, FileCreatingNode, ExternViewableNode, FilterableNode, TreeContentSource, TextContentSource {
+	private static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, FilterableNode, TreeContentSource, TextContentSource {
 		
 		private final Collection<ValueType> values;
 		private final Comparator<ValueType> sortOrder;
 		private final NodeCreator1<ValueType> createChildNode;
-		private ExternalViewerInfo externalViewerInfo;
-		private LabeledFile file;
-		private FilePromise getFile;
-		private GroupingNodeFilter<ValueType,?> filter;
-		private TreeRoot dataTree;
-		private BiConsumer<TreeNode, Vector<TreeNode>> createAllChildNodes;
-		private Supplier<String> textSource;
+		private final BiConsumer<TreeNode, Vector<TreeNode>> createAllChildNodes;
+		private LabeledFile file = null;
+		private GroupingNodeFilter<ValueType,?> filter = null;
+		private TreeRoot dataTree = null;
+		private Supplier<String> textSource = null;
+		private ExternViewableItem viewableItem = null;
 		
 		private static <IT,VT> Comparator<Map.Entry<IT,VT>> createMapKeyOrder(Comparator<IT> keyOrder) {
 			return Comparator.comparing(Map.Entry<IT,VT>::getKey,keyOrder);
@@ -498,12 +497,6 @@ class TreeNodes {
 			this.sortOrder = sortOrder;
 			this.createChildNode = createChildNode;
 			this.createAllChildNodes = createAllChildNodes;
-			file = null;
-			getFile = null;
-			externalViewerInfo = null;
-			filter = null;
-			dataTree = null;
-			textSource = null;
 		}
 		
 		private static <ValueType> boolean areChildrenExpectable(Collection<ValueType> values, BiConsumer<TreeNode, Vector<TreeNode>> createAllChildNodes) {
@@ -518,30 +511,33 @@ class TreeNodes {
 			TreeNode create(TreeNode parent, IDType id, ValueType value);
 		}
 
-		void setFileSource(File file, ExternalViewerInfo externalViewerInfo) {
-			setFileSource(new LabeledFile(file), externalViewerInfo);
+		void setFile(File file) { setFile(new LabeledFile(file)); }
+		void setFile(LabeledFile file) { this.file = file; }
+
+		void setExternViewable(File file, ExternalViewerInfo externalViewerInfo) {
+			setExternViewable(new LabeledFile(file), externalViewerInfo);
 		}
-		void setFileSource(LabeledFile file, ExternalViewerInfo externalViewerInfo) {
-			this.file = file;
-			this.externalViewerInfo = externalViewerInfo;
-			if (getFile!=null) throw new IllegalStateException();
+		void setExternViewable(LabeledFile file, ExternalViewerInfo viewerInfo) {
 			if (file==null) throw new IllegalArgumentException();
+			if (viewerInfo==null) throw new IllegalArgumentException();
+			viewableItem = new ExternViewableItem(file,viewerInfo);
 		}
-		void setFileSource(FilePromise getFile, ExternalViewerInfo externalViewerInfo) {
-			this.getFile = getFile;
-			this.externalViewerInfo = externalViewerInfo;
+		void setExternViewable(FilePromise getFile, ExternalViewerInfo viewerInfo) {
 			if (getFile==null) throw new IllegalArgumentException();
-			if (file!=null) throw new IllegalStateException();
+			if (viewerInfo==null) throw new IllegalArgumentException();
+			viewableItem = new ExternViewableItem(getFile,viewerInfo);
+		}
+		void setExternViewable(String url, ExternalViewerInfo viewerInfo) {
+			if (url==null) throw new IllegalArgumentException();
+			if (viewerInfo==null) throw new IllegalArgumentException();
+			viewableItem = new ExternViewableItem(url,viewerInfo);
 		}
 		
 		@Override public LabeledFile getFile() { return file; }
-		@Override public FilePromise getFilePromise() { return getFile; }
-		@Override public ExternalViewerInfo getExternalViewerInfo() {
-			return externalViewerInfo;
-		}
+		@Override public ExternViewableItem getExternViewableItem() { return viewableItem; }
 		
-		void setTextSource(Supplier<String> textSource) { this.textSource = textSource; }
 		void setDataTree  (TreeRoot dataTree)           { this.dataTree   = dataTree; }
+		void setTextSource(Supplier<String> textSource) { this.textSource = textSource; }
 		@Override public TreeRoot getContentAsTree() { return dataTree; }
 		@Override public String   getContentAsText() { return textSource!=null ? textSource.get() : null; }
 		@Override ContentType getContentType() { return dataTree!=null ? ContentType.DataTree : textSource!=null ? ContentType.PlainText : null; }
@@ -681,7 +677,7 @@ class TreeNodes {
 		}
 
 		@Override public String getURL() { return url; }
-		@Override public ExternalViewerInfo getExternalViewerInfo() { return url==null ? null : ExternalViewerInfo.Browser; }
+		@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.Browser.createItem(getURL()); }
 	}
 	
 	private static class ImageUrlNode extends UrlNode implements ImageContentSource {
@@ -804,7 +800,7 @@ class TreeNodes {
 		@Override public TreeRoot getContentAsTree() { return rawData.getTreeRoot(new DataTreeNodeContextMenu()); }
 		@Override protected Vector<? extends TreeNode> createChildren() { return null; }
 		@Override public LabeledFile getFile() { return file==null ? null : new LabeledFile(file); }
-		@Override public ExternalViewerInfo getExternalViewerInfo() { return viewerInfo; }
+		@Override public ExternViewableItem getExternViewableItem() { return viewerInfo==null ? null : viewerInfo.createItem(getFile()); }
 		
 	}
 
@@ -812,20 +808,22 @@ class TreeNodes {
 	
 		private final File file;
 		private final JSON_Data.Value<Data.NV,Data.V> rawValue;
+		private final ExternalViewerInfo viewerInfo;
 	
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue) {
-			this(parent, title, rawValue, null, null);
+			this(parent, title, rawValue, null, null, null);
 		}
 		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, Icon icon) {
-			this(parent, title, rawValue, null, icon);
+			this(parent, title, rawValue, null, null, icon);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, File file) {
-			this(parent, title, rawValue, file, null);
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, File file, ExternalViewerInfo viewerInfo) {
+			this(parent, title, rawValue, file, viewerInfo, null);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, File file, Icon icon) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, File file, ExternalViewerInfo viewerInfo, Icon icon) {
 			super(parent, title, false, true, icon!=null ? icon : TreeIcons.JSONFile.getIcon());
-			this.file = file;
 			this.rawValue = rawValue;
+			this.file = file;
+			this.viewerInfo = viewerInfo;
 		}
 		
 		@Override protected Vector<? extends TreeNode> createChildren() { return null; }
@@ -837,14 +835,8 @@ class TreeNodes {
 			return SimpleTextNode.createSingleTextLineTree("RawJsonDataNode(<null>)");
 		}
 		
-		@Override
-		public LabeledFile getFile() {
-			return file==null ? null : new LabeledFile(file);
-		}
-		@Override
-		public ExternalViewerInfo getExternalViewerInfo() {
-			return file==null ? null : ExternalViewerInfo.TextEditor;
-		}
+		@Override public LabeledFile getFile() { return file==null ? null : new LabeledFile(file); }
+		@Override public ExternViewableItem getExternViewableItem() { return viewerInfo==null ? null : viewerInfo.createItem(getFile()); }
 	}
 
 	static class PlayersNGames {
@@ -910,7 +902,7 @@ class TreeNodes {
 		}
 		private static GroupingNode<ScreenShot> createGameScreenShotsNode(TreeNode parent, String title, ScreenShotLists.ScreenShotList screenShots, Icon icon) {
 			GroupingNode<ScreenShot> groupingNode = GroupingNode.create(parent, title, screenShots, Comparator.naturalOrder(), icon, ScreenShotNode::new);
-			groupingNode.setFileSource(screenShots.imagesFolder, null);
+			groupingNode.setFile(screenShots.imagesFolder);
 			return groupingNode;
 		}
 
@@ -942,7 +934,7 @@ class TreeNodes {
 			}
 
 			@Override public String getURL() { return "https://store.steampowered.com/app/"+game.appID+"/"; }
-			@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
+			@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.Browser.createItem(getURL()); }
 
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
@@ -1012,7 +1004,7 @@ class TreeNodes {
 
 			@Override public LabeledFile getFile() { return new LabeledFile(player.folder); }
 			@Override public String getURL() { return "https://steamcommunity.com/profiles/"+player.getSteamID()+"/"; }
-			@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
+			@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.Browser.createItem(getURL()); }
 
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
@@ -1026,7 +1018,7 @@ class TreeNodes {
 							Data.createGameIdKeyOrder(),
 							this::createSteamCloudFolderNode
 					));
-					groupingNode.setFileSource(player.folder, null);
+					groupingNode.setFile(player.folder);
 				}
 				if (player.screenShots!=null && !player.screenShots.isEmpty()) {
 					children.add(groupingNode = GroupingNode.create(
@@ -1036,7 +1028,7 @@ class TreeNodes {
 							TreeIcons.ImageFile.getIcon(),
 							PlayersNGames::createGameScreenShotsNode
 					));
-					groupingNode.setFileSource(player.screenShots.folder, null);
+					groupingNode.setFile(player.screenShots.folder);
 				}
 				if (player.configFolder!=null) {
 					children.add(new FileSystem.FolderNode(this, "Config Folder", player.configFolder));
@@ -1066,7 +1058,7 @@ class TreeNodes {
 							Data.createGameIdKeyOrder(),
 							GameInfosNode::new
 					));
-					groupingNode1.setFileSource(player.gameStateFolder, null);
+					groupingNode1.setFile(player.gameStateFolder);
 					groupingNode1.setFilter(GroupingNode.createMapFilter(
 							GameInfosFilterOptions.class,
 							GameInfosFilterOptions.values(),
@@ -1203,13 +1195,13 @@ class TreeNodes {
 			}
 
 			@Override public LabeledFile getFile() { return new LabeledFile(data.file); }
-			@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.TextEditor; }
+			@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.TextEditor.createItem(getFile()); }
 
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				if (data.rawData!=null)
-					children.add( new RawJsonDataNode(this, "Raw JSON Data", data.rawData, data.file) );
+					children.add( new RawJsonDataNode(this, "Raw JSON Data", data.rawData, data.file, ExternalViewerInfo.TextEditor) );
 				if (data.gameStates!=null) {
 					Vector<Integer> vec = new Vector<>(data.gameStates.keySet());
 					vec.sort(Data.createGameIdOrder());
@@ -1334,7 +1326,7 @@ class TreeNodes {
 			}
 			
 			@Override public LabeledFile getFile() { return new LabeledFile(data.file); }
-			@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.TextEditor; }
+			@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.TextEditor.createItem(getFile()); }
 
 			@Override ContentType getContentType() { return ContentType.DataTree; }
 			@Override public TreeRoot getContentAsTree() {
@@ -1422,7 +1414,7 @@ class TreeNodes {
 				}
 				if (data.blocks!=null) {
 					children.add(groupingNode = GroupingNode.create(this, "Unparsed Data Blocks", data.blocks, null, BlockNode::new));
-					groupingNode.setFileSource(data.file,ExternalViewerInfo.TextEditor);
+					groupingNode.setExternViewable(data.file,ExternalViewerInfo.TextEditor);
 					if (data.rawData!=null)
 						groupingNode.setDataTree(JSONHelper.createTreeRoot(data.rawData, false));
 				}
@@ -1905,7 +1897,7 @@ class TreeNodes {
 				}
 
 				@Override public String getURL() { return badge.iconURL; }
-				@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
+				@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.Browser.createItem(getURL()); }
 
 				@Override ContentType getContentType() { return ContentType.Image; }
 				@Override public BufferedImage getContentAsImage() { return readImageFromURL(badge.iconURL,"badge icon"); }
@@ -1929,7 +1921,7 @@ class TreeNodes {
 						//children.add(new PrimitiveValueNode(this, "next level XP"  , badge.nextLevelXP  ));
 						children.add(new ImageUrlNode      (this, "icon URL"       , badge.iconURL      ));
 						children.add(gnode = GroupingNode.create(this, "Trading Cards", badge.tradingCards, null, TradingCardNode::new));
-						gnode.setFileSource(new FilePromise("HTML-Overview", ()->badge.createTempTradingCardsOverviewHTML()), ExternalViewerInfo.Browser);
+						gnode.setExternViewable(new FilePromise("HTML-Overview", badge::createTempTradingCardsOverviewHTML), ExternalViewerInfo.Browser);
 					}
 					return children;
 				}
@@ -1956,7 +1948,7 @@ class TreeNodes {
 				}
 
 				@Override public String getURL() { return tradingCard.imageURL; }
-				@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
+				@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.Browser.createItem(getURL()); }
 
 				@Override ContentType getContentType() { return ContentType.Image; }
 				@Override public BufferedImage getContentAsImage() { return readImageFromURL(tradingCard.imageURL,"trading card image"); }
@@ -2041,7 +2033,7 @@ class TreeNodes {
 				}
 			}
 		
-			@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.ImageViewer; }
+			@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.ImageViewer.createItem(getFile()); }
 			@Override public LabeledFile getFile() { return new LabeledFile(screenShot.image); }
 			@Override protected Vector<? extends TreeNode> createChildren() { return null; }
 		}
@@ -2407,14 +2399,14 @@ class TreeNodes {
 		private static class FileNode extends FileSystemNode implements ByteFileSource, ExternViewableNode {
 		
 			protected byte[] byteContent;
-			private final ExternalViewerInfo externalViewerInfo;
+			private final ExternalViewerInfo viewerInfo;
 			
 			FileNode(TreeNode parent, File file) {
 				this(parent, file, TreeIcons.GeneralFile, null);
 			}
-			protected FileNode(TreeNode parent, File file, TreeIcons icon, ExternalViewerInfo externalViewerInfo) {
+			protected FileNode(TreeNode parent, File file, TreeIcons icon, ExternalViewerInfo viewerInfo) {
 				super(parent, file, file.getName(), false, true, icon);
-				this.externalViewerInfo = externalViewerInfo;
+				this.viewerInfo = viewerInfo;
 				this.byteContent = null;
 				if (!fileObj.isFile())
 					throw new IllegalStateException("Can't create a FileSystem.FileNode from nonexisting file or nonfile");
@@ -2432,8 +2424,8 @@ class TreeNodes {
 				throw new UnsupportedOperationException("Call of FileSystem.FileNode.createChildren() is not supported.");
 			}
 
-			@Override public ExternalViewerInfo getExternalViewerInfo() {
-				return externalViewerInfo;
+			@Override public ExternViewableItem getExternViewableItem() {
+				return viewerInfo==null ? null : viewerInfo.createItem(getFile());
 			}
 			
 			@Override ContentType getContentType() {

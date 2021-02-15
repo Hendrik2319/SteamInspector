@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
@@ -78,7 +79,6 @@ import javax.swing.tree.TreeSelectionModel;
 import net.schwarzbaer.gui.ImageView;
 import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FilePromise;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.LabeledFile;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.system.ClipboardTools;
@@ -911,6 +911,63 @@ class SteamInspector {
 		
 	}
 	
+	static class ExternViewableItem {
+		
+		final String url;
+		final TreeNodes.LabeledFile file;
+		final TreeNodes.FilePromise filePromise;
+		final ExternalViewerInfo viewerInfo;
+		
+		ExternViewableItem(String                url        , ExternalViewerInfo viewerInfo) { this( url, null,        null, viewerInfo); if (url        ==null) throw new IllegalArgumentException(); }
+		ExternViewableItem(TreeNodes.LabeledFile file       , ExternalViewerInfo viewerInfo) { this(null, file,        null, viewerInfo); if (file       ==null) throw new IllegalArgumentException();}
+		ExternViewableItem(TreeNodes.FilePromise filePromise, ExternalViewerInfo viewerInfo) { this(null, null, filePromise, viewerInfo); if (filePromise==null) throw new IllegalArgumentException();}
+		
+		private ExternViewableItem(String url, TreeNodes.LabeledFile file, TreeNodes.FilePromise filePromise, ExternalViewerInfo viewerInfo) {
+			this.url = url;
+			this.file = file;
+			this.filePromise = filePromise;
+			this.viewerInfo = viewerInfo;
+			if (viewerInfo==null) throw new IllegalArgumentException();
+		}
+		
+		ExternViewableItem createCopy(ExternalViewerInfo evi) {
+			return new ExternViewableItem(url, file, filePromise, evi);
+		}
+		
+		String getViewerName() {
+			return viewerInfo.viewerName;
+		}
+		String getItemLabel() {
+			if (url        !=null) return "URL";
+			if (file       !=null) return file.label;
+			if (filePromise!=null) return filePromise.label; 
+			return "";
+		}
+		boolean areItemAndViewerCompatible() {
+			for (ExternalViewerInfo.AddressType addressType:viewerInfo.acceptedAddressTypes)
+				switch (addressType) {
+				case URL   : if (   url !=null                                                   ) return true; break;
+				case Folder: if (   file!=null && file.file.isDirectory()                        ) return true; break;
+				case File  : if ( ( file!=null && file.file.isFile     () ) || filePromise!=null ) return true; break;
+				}
+			return false;
+		}
+		String getItemPath() {
+			for (ExternalViewerInfo.AddressType addressType:viewerInfo.acceptedAddressTypes)
+				switch (addressType) {
+				case URL   : if (url !=null) return url; break;
+				case Folder: if (file!=null && file.file.isDirectory()) return file.file.getAbsolutePath(); break;
+				case File  : if (file!=null && file.file.isFile     ()) return file.file.getAbsolutePath();
+					if (filePromise!=null) {
+						File file = filePromise.createFile.get();
+						if (file!=null) return file.getAbsolutePath();
+					}
+					break;
+				}
+			return null;
+		}
+	}
+	
 	enum ExternalViewerInfo {
 		TextEditor  ( "Text Editor"    , AppSettings.ValueKey.TextEditor , AddressType.File),
 		ImageViewer ( "Image Viewer"   , AppSettings.ValueKey.ImageViewer, AddressType.File),
@@ -922,26 +979,30 @@ class SteamInspector {
 		
 		final String viewerName;
 		final AppSettings.ValueKey viewerKey;
-		final AddressType[] addressTypes;
+		final EnumSet<AddressType> acceptedAddressTypes;
 		
 		ExternalViewerInfo(String viewerName, AppSettings.ValueKey viewerKey, AddressType... addressTypes) {
 			this.viewerName = viewerName;
 			this.viewerKey = viewerKey;
-			this.addressTypes = addressTypes;
+			this.acceptedAddressTypes = EnumSet.copyOf(Arrays.asList(addressTypes));
 			if (this.viewerName==null) throw new IllegalArgumentException();
 			if (this.viewerKey ==null) throw new IllegalArgumentException();
 		}
 		boolean accept(AddressType addressType) {
-			for (AddressType at:addressTypes)
-				if (addressType==at) return true;
-			return false;
+			return acceptedAddressTypes.contains(addressType);
 		}
+		
+		ExternViewableItem createItem(String                url        ) { return url         == null ? null : new ExternViewableItem(url        , this); }
+		ExternViewableItem createItem(TreeNodes.LabeledFile file       ) { return file        == null ? null : new ExternViewableItem(file       , this); }
+		ExternViewableItem createItem(TreeNodes.FilePromise filePromise) { return filePromise == null ? null : new ExternViewableItem(filePromise, this); }
+		
 		File getExecutable(Component parent) {
 			if (settings.contains(viewerKey))
 				return settings.getFile(viewerKey);
 			else
 				return chooseExecutable(parent);
 		}
+		
 		File chooseExecutable(Component parent) {
 			executableFileChooser.setDialogTitle("Select Executable of "+viewerName);
 			if (settings.contains(viewerKey)) {
@@ -986,12 +1047,12 @@ class SteamInspector {
 			LabeledFile getFile();
 		}
 
-		interface FileCreatingNode {
-			FilePromise getFilePromise();
-		}
+//		interface FileCreatingNode {
+//			FilePromise getFilePromise();
+//		}
 		
 		interface ExternViewableNode {
-			ExternalViewerInfo getExternalViewerInfo();
+			ExternViewableItem getExternViewableItem();
 		}
 		
 		interface FilterOption {}
@@ -1014,16 +1075,15 @@ class SteamInspector {
 		private final JMenuItem miExtViewer;
 		private final JMenuItem miSetTitle;
 		private final JMenuItem miCollapseChildren;
-		private final JMenu menuFilterChildren;
+		private final JMenu     menuFilterChildren;
 		private final ExtViewerChooseMenu extViewerChooseMenu;
 		
-		private TreePath clickedPath = null;
-		private Object clickedNode = null;
-		private TreeNodes.LabeledFile clickedFile = null;
-		private TreeNodes.FilePromise clickedFileCreator = null;
-		private String clickedURL = null;
-		private ExternalViewerInfo clickedExternalViewerInfo = null;
-		private Filter clickedFilter = null;
+		private TreePath              clickedPath   = null;
+		private Object                clickedNode   = null;
+		private String                clickedURL    = null;
+		private TreeNodes.LabeledFile clickedFile   = null;
+		private ExternViewableItem    clickedEVI    = null;
+		private Filter                clickedFilter = null;
 
 		MainTreeContextMenu(JTree tree, Supplier<DefaultTreeModel> getCurrentTreeModel) {
 			if (tree==null) throw new IllegalArgumentException();
@@ -1033,16 +1093,12 @@ class SteamInspector {
 			
 			extViewerChooseMenu = new ExtViewerChooseMenu();
 			
-			add(miCopyPath = createMenuItem("Copy Path to Clipboard", true, e->{
-				ClipboardTools.copyToClipBoard(clickedFile.file.getAbsolutePath());
-			}));
-			add(miCopyURL = createMenuItem("Copy URL to Clipboard", true, e->{
-				ClipboardTools.copyToClipBoard(clickedURL);
-			}));
-			add(miExtViewer = createMenuItem("Open in External Viewer", true, e->{
-				openAs(clickedExternalViewerInfo);
-			}));
+			add(miCopyPath  = createMenuItem("Copy Path to Clipboard" , true, e->ClipboardTools.copyToClipBoard(clickedFile.file.getAbsolutePath())));
+			add(miCopyURL   = createMenuItem("Copy URL to Clipboard"  , true, e->ClipboardTools.copyToClipBoard(clickedURL)));
+			add(miExtViewer = createMenuItem("Open in External Viewer", true, e->openAs(clickedEVI)));
+			
 			add(extViewerChooseMenu.createMenu());
+			
 			add(miSetTitle = createMenuItem("Set Title", true, e->{
 				DefaultTreeModel treeModel = this.getCurrentTreeModel.get();
 				if (treeModel==null) return;
@@ -1090,12 +1146,12 @@ class SteamInspector {
 			});
 		}
 
-		private void openAs(ExternalViewerInfo viewerInfo) {
-			File viewer = viewerInfo.getExecutable(tree);
+		private void openAs(ExternViewableItem viewableItem) {
+			File viewer = viewableItem.viewerInfo.getExecutable(tree);
 			if (viewer==null) return;
 			
 			String viewerPath = viewer.getAbsolutePath();
-			String filePath = getFilePath(viewerInfo);
+			String filePath = viewableItem.getItemPath();
 			
 			if (viewerPath!=null && filePath!=null)
 				try {
@@ -1109,57 +1165,26 @@ class SteamInspector {
 				}
 		}
 
-		private boolean isClickedContentAcceptedBy(ExternalViewerInfo viewerInfo) {
-			if (viewerInfo==null) return false;
-			for (ExternalViewerInfo.AddressType addressType:ExternalViewerInfo.AddressType.values())
-				if (viewerInfo.accept(addressType))
-					switch (addressType) {
-					case URL   : if (   clickedURL !=null                                                                 ) return true; break;
-					case Folder: if (   clickedFile!=null && clickedFile.file.isDirectory()                               ) return true; break;
-					case File  : if ( ( clickedFile!=null && clickedFile.file.isFile     () ) || clickedFileCreator!=null ) return true; break;
-					}
-			return false;
-		}
-
-		private String getFilePath(ExternalViewerInfo viewerInfo) {
-			for (ExternalViewerInfo.AddressType addressType:ExternalViewerInfo.AddressType.values()) {
-				if (viewerInfo.accept(addressType))
-					switch (addressType) {
-					case URL   : if (clickedURL !=null) return clickedURL; break;
-					case Folder: if (clickedFile!=null && clickedFile.file.isDirectory()) return clickedFile.file.getAbsolutePath(); break;
-					case File  : if (clickedFile!=null && clickedFile.file.isFile     ()) return clickedFile.file.getAbsolutePath();
-						if (clickedFileCreator!=null) {
-							File file = clickedFileCreator.createFile.get();
-							if (file!=null) return file.getAbsolutePath();
-						}
-						break;
-					}
-			}
-			return null;
-		}
-
 		protected void prepareMenuItems() {
-			clickedURL                = clickedNode instanceof URLBasedNode       ? ((URLBasedNode      ) clickedNode).getURL()                : null;
-			clickedFile               = clickedNode instanceof FileBasedNode      ? ((FileBasedNode     ) clickedNode).getFile()               : null;
-			clickedFileCreator        = clickedNode instanceof FileCreatingNode   ? ((FileCreatingNode  ) clickedNode).getFilePromise()        : null;
-			clickedExternalViewerInfo = clickedNode instanceof ExternViewableNode ? ((ExternViewableNode) clickedNode).getExternalViewerInfo() : null;
-			clickedFilter             = clickedNode instanceof FilterableNode     ? ((FilterableNode    ) clickedNode).getFilter()             : null;
-			
-			// TODO: Solve Problem: more than one of clickedURL/File/FileCreator --> prio: File <-> URL
+			clickedURL    = clickedNode instanceof URLBasedNode       ? ((URLBasedNode      ) clickedNode).getURL()                : null;
+			clickedFile   = clickedNode instanceof FileBasedNode      ? ((FileBasedNode     ) clickedNode).getFile()               : null;
+			clickedEVI    = clickedNode instanceof ExternViewableNode ? ((ExternViewableNode) clickedNode).getExternViewableItem() : null;
+			clickedFilter = clickedNode instanceof FilterableNode     ? ((FilterableNode    ) clickedNode).getFilter()             : null;
 			
 			extViewerChooseMenu.prepareMenuItems();
 			
 			miCollapseChildren.setEnabled(clickedNode!=null);
 			miCopyPath .setEnabled(clickedFile!=null);
 			miCopyURL  .setEnabled(clickedURL !=null);
-			miExtViewer.setEnabled(isClickedContentAcceptedBy(clickedExternalViewerInfo));
+			miExtViewer.setEnabled(clickedEVI!=null && clickedEVI.areItemAndViewerCompatible());
 			
-			String pathPrefix = clickedFile!=null ? (clickedFile.file.isFile() ? "File " : clickedFile.file.isDirectory() ? "Folder " : "") : clickedFileCreator!=null ? "File " : "";
-			String viewerName = clickedExternalViewerInfo==null ? "External Viewer" : clickedExternalViewerInfo.viewerName;
-			String fileLabel  = getFileLabel();
+			String pathPrefix = clickedFile!=null ? (clickedFile.file.isFile() ? "File " : clickedFile.file.isDirectory() ? "Folder " : "") : "";
+			String viewerName = clickedEVI==null ? "External Viewer" : clickedEVI.getViewerName();
+			String fileLabel  = clickedEVI==null ? ""                : clickedEVI.getItemLabel();
+			if (!fileLabel.isEmpty()) fileLabel+=" ";
 			
 			miCopyPath .setText(String.format("Copy %sPath to Clipboard", pathPrefix));
-			miExtViewer.setText(String.format("Open %sin %s" , fileLabel.isEmpty() ? "" : fileLabel+" ", viewerName));
+			miExtViewer.setText(String.format("Open %sin %s" , fileLabel, viewerName));
 			
 			if (clickedNode instanceof TreeNode) {
 				TreeNode treeNode = (TreeNode) clickedNode;
@@ -1206,10 +1231,6 @@ class SteamInspector {
 			}
 		}
 
-		private String getFileLabel() {
-			return clickedFile!=null ? clickedFile.label : clickedFileCreator!=null ? clickedFileCreator.label : clickedURL!=null ? "URL" : "";
-		}
-
 		private class ExtViewerChooseMenu {
 		
 			private JMenu menu;
@@ -1226,16 +1247,17 @@ class SteamInspector {
 				menu = new JMenu("Open in ...");
 				menuItems.clear();
 				for (ExternalViewerInfo evi:ExternalViewerInfo.values())
-					menuItems.put(evi, menu.add(createMenuItem(evi.viewerName, true, e->openAs(evi))));
+					menuItems.put(evi, menu.add(createMenuItem(evi.viewerName, true, e->openAs(clickedEVI.createCopy(evi)))));
 				return menu;
 			}
 		
 			public void prepareMenuItems() {
-				String fileLabel  = getFileLabel();
-				menu.setText(String.format("Open %sin ..." , fileLabel.isEmpty() ? "" : fileLabel+" "));
+				String fileLabel = clickedEVI==null ? "" : clickedEVI.getItemLabel();
+				if (!fileLabel.isEmpty()) fileLabel+=" ";
+				menu.setText(String.format("Open %sin ..." , fileLabel));
 				setMenuActive = false;
 				menuItems.forEach((evi,mi)->{
-					boolean b = isClickedContentAcceptedBy(evi);
+					boolean b = clickedEVI!=null && clickedEVI.createCopy(evi).areItemAndViewerCompatible();
 					if (b) setMenuActive = true;
 					mi.setEnabled(b);
 				});
