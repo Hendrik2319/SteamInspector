@@ -1030,35 +1030,42 @@ class Data {
 				if (option==null) return true;
 				if (gameInfos==null) return true;
 				switch (option) {
-				case RawData       : return !gameInfos.hasParsedData && gameInfos.rawData       !=null;
-				case Badge         : return  gameInfos.hasParsedData && gameInfos.badge         !=null && !gameInfos.badge         .isEmpty();
-				case Achievements  : return  gameInfos.hasParsedData && gameInfos.achievements  !=null && !gameInfos.achievements  .isEmpty();
-				case UserNews      : return  gameInfos.hasParsedData && gameInfos.userNews      !=null && !gameInfos.userNews      .isEmpty();
-				case GameActivity  : return  gameInfos.hasParsedData && gameInfos.gameActivity  !=null && !gameInfos.gameActivity  .isEmpty();
-				case AchievementMap: return  gameInfos.hasParsedData && gameInfos.achievementMap!=null && !gameInfos.achievementMap.isEmpty();
-				case SocialMedia   : return  gameInfos.hasParsedData && gameInfos.socialMedia   !=null && !gameInfos.socialMedia   .isEmpty();
-				case Associations  : return  gameInfos.hasParsedData && gameInfos.associations  !=null && !gameInfos.associations  .isEmpty();
-				case AppActivity   : return  gameInfos.hasParsedData && gameInfos.appActivity   !=null && !gameInfos.appActivity   .isEmpty();
-				case ReleaseData   : return  gameInfos.hasParsedData && gameInfos.releaseData   !=null && !gameInfos.releaseData   .isEmpty();
-				case Friends       : return  gameInfos.hasParsedData && gameInfos.friends       !=null && !gameInfos.friends       .isEmpty();
-				case CommunityItems: return  gameInfos.hasParsedData && gameInfos.communityItems!=null && !gameInfos.communityItems.isEmpty();
+				case RawData         : return !gameInfos.hasParsedData && gameInfos.rawData       !=null;
+				case Badge           : return  gameInfos.hasParsedData && !isEmpty(gameInfos.badge         );
+				case Achievements    : return  gameInfos.hasParsedData && !isEmpty(gameInfos.achievements  );
+				case AchievementMap  : return  gameInfos.hasParsedData && !isEmpty(gameInfos.achievementMap);
+				case SocialMedia     : return  gameInfos.hasParsedData && !isEmpty(gameInfos.socialMedia   );
+				case Associations    : return  gameInfos.hasParsedData && !isEmpty(gameInfos.associations  );
+				case ReleaseData     : return  gameInfos.hasParsedData && !isEmpty(gameInfos.releaseData   );
+				case Friends         : return  gameInfos.hasParsedData && !isEmpty(gameInfos.friends       );
+				case CommunityItems  : return  gameInfos.hasParsedData && !isEmpty(gameInfos.communityItems);
+				//case UserNews      : return  gameInfos.hasParsedData && !isEmpty(gameInfos.userNews      );
+				//case GameActivity  : return  gameInfos.hasParsedData && !isEmpty(gameInfos.gameActivity  );
+				//case AppActivity   : return  gameInfos.hasParsedData && !isEmpty(gameInfos.appActivity   );
+				case Descriptions    : return  gameInfos.hasParsedData && ( !isEmpty(gameInfos.fullDesc) || !isEmpty(gameInfos.shortDesc) );
+				case SomeBase64Values: return  gameInfos.hasParsedData && ( !isEmpty(gameInfos.appActivity ) || !isEmpty(gameInfos.gameActivity) || !isEmpty(gameInfos.userNews    ) );
 				}
 				return true;
 			}
+			
+			static boolean isEmpty(String      data) { if (data==null) return true; return data.isEmpty(); }
+			static boolean isEmpty(ParsedBlock data) { if (data==null) return true; return data.isEmpty(); }
 
 			enum GameInfosFilterOptions implements FilterOption {
-				RawData       ("has Raw Data"),
-				Badge         ("has Badge"),
-				Achievements  ("has Achievements"),
-				UserNews      ("has User News"),
-				GameActivity  ("has Game Activity"),
-				AchievementMap("has Achievement Map"),
-				SocialMedia   ("has Social Media"),
-				Associations  ("has Associations"),
-				AppActivity   ("has App Activity"),
-				ReleaseData   ("has Release Data"),
-				Friends       ("has Friends"),
-				CommunityItems("has Community Items"),
+				RawData         ("is unparsed (Raw Data)"),
+				Descriptions    ("has Descriptions"),
+				Badge           ("has Badge Data"),
+				Achievements    ("has Achievements Data"),
+				AchievementMap  ("has Achievement Map"),
+				CommunityItems  ("has Community Items"),
+				SocialMedia     ("has Social Media"),
+				Associations    ("has Associations"),
+				Friends         ("has Played/Owned Infos"),
+				ReleaseData     ("has Release Data"),
+				//UserNews      ("has User News"),
+				//GameActivity  ("has Game Activity"),
+				//AppActivity   ("has App Activity"),
+				SomeBase64Values("has Some Base64 Values"),
 				;
 				private final String label;
 				
@@ -1798,7 +1805,7 @@ class Data {
 				// "GameStateInfo.Block["socialmedia",V3].dataValue[].strURL:String"
 				// "GameStateInfo.Block["socialmedia",V3].dataValue[]:Object"
 				
-				final Vector<SocialMedia.SocialMediaEntry> entries;
+				final Vector<SocialMedia.Entry> entries;
 				
 				SocialMedia(JSON_Data.Value<NV, V> rawData, long version) {
 					super(rawData, version, false);
@@ -1806,14 +1813,14 @@ class Data {
 				}
 				SocialMedia(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 					super(null, version, true);
-					entries = parseArray(SocialMediaEntry::new, SocialMediaEntry::new, blockDataValue, dataValueStr, file);
+					entries = parseArray(Entry::new, Entry::new, blockDataValue, dataValueStr, file);
 				}
 				
 				@Override boolean isEmpty() {
 					return super.isEmpty() && (!hasParsedData || (entries.isEmpty())) ;
 				}
 				
-				static class SocialMediaEntry {
+				static class Entry {
 
 					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
 							.add("eType"  , JSON_Data.Value.Type.Integer)
@@ -1839,7 +1846,7 @@ class Data {
 					final String name;
 					final String url;
 					
-					SocialMediaEntry(JSON_Data.Value<NV, V> rawData) {
+					Entry(JSON_Data.Value<NV, V> rawData) {
 						this.rawData = rawData;
 						hasParsedData = false;
 						type  = null;
@@ -1847,7 +1854,7 @@ class Data {
 						name  = null;
 						url   = null;
 					}
-					SocialMediaEntry(JSON_Data.Value<NV, V> value, String dataValueStr) throws TraverseException {
+					Entry(JSON_Data.Value<NV, V> value, String dataValueStr) throws TraverseException {
 						this.rawData = null;
 						hasParsedData = true;
 						JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, dataValueStr);
@@ -1856,7 +1863,7 @@ class Data {
 						url   = JSON_Data.getStringValue (object, "strURL" , dataValueStr);
 						type  = Type.getType(typeN);
 						if (type==null) DevHelper.unknownValues.add("GameInfos.SocialMedia.SocialMediaEntry.type = "+type+"  <New Emum Value>");
-						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Player.GameInfos.SocialMedia.SocialMediaEntry");
+						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "GameInfos.SocialMedia.SocialMediaEntry");
 					}
 				}
 			}
@@ -1870,11 +1877,8 @@ class Data {
 				}
 				ReleaseData(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 					super(null, version, true);
+					//DevHelper.scanJsonStructure(blockDataValue, "GameInfos.ReleaseData(V"+version+")", true);
 					if (blockDataValue!=null) throw new TraverseException("%s != <null>. I have not expected any value.", dataValueStr);
-				}
-				
-				@Override boolean isEmpty() {
-					return super.isEmpty() && (!hasParsedData) ;
 				}
 			}
 			
@@ -1915,24 +1919,146 @@ class Data {
 			static class AchievementMap extends ParsedBlock {
 				
 				// "GameStateInfo.Block["achievementmap",V2].dataValue:String"
+				// Unknown Labels: [10]
+				//    "GameInfos.AchievementMap(V2):Array"
+				//    "GameInfos.AchievementMap(V2)[]:Array"
+				//    "GameInfos.AchievementMap(V2)[][].bAchieved:Bool"
+				//    "GameInfos.AchievementMap(V2)[][].flAchieved:Float"
+				//    "GameInfos.AchievementMap(V2)[][].flAchieved:Integer"
+				//    "GameInfos.AchievementMap(V2)[][].strDescription:String"
+				//    "GameInfos.AchievementMap(V2)[][].strImage:String"
+				//    "GameInfos.AchievementMap(V2)[][].strName:String"
+				//    "GameInfos.AchievementMap(V2)[][]:Object"
+				//    "GameInfos.AchievementMap(V2)[][]:String"
+				// Optional Values: [1 blocks]
+				//    Block "GameInfos.AchievementMap(V2)[][]" [5]
+				//       bAchieved:Bool
+				//       flAchieved:Integer
+				//       flAchieved:Float
+				//       strDescription:String
+				//       strImage:String
+				//       strName:String
 				
-				final JSON_Data.Value<NV, V> value;
+				final Vector<Entry> entries;
 				
 				AchievementMap(JSON_Data.Value<NV, V> rawData, long version) {
 					super(rawData, version, false);
-					value = null;
+					entries = null;
 				}
 				AchievementMap(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 					super(null, version, true);
 					
 					String jsonText = JSON_Data.getStringValue(blockDataValue, dataValueStr);
-					value = JSONHelper.parseJsonText(jsonText, dataValueStr);
+					JSON_Data.Value<NV, V> value = JSONHelper.parseJsonText(jsonText, dataValueStr);
+					//DevHelper.scanJsonStructure(value, "GameInfos.AchievementMap(V"+version+")", true);
+					
+					String jsonValueDebugPrefixStr = dataValueStr+"<ParsedJsonText>";
+					
+					entries = new Vector<>();
+					JSON_Array<NV, V> array_L0 = JSON_Data.getArrayValue(value, jsonValueDebugPrefixStr);
+					for (int i0=0; i0<array_L0.size(); i0++) {
+						String arrayL0DebugPrefixStr = jsonValueDebugPrefixStr+"["+i0+"]";
+						JSON_Array<NV, V> array_L1 = JSON_Data.getArrayValue(array_L0.get(i0), arrayL0DebugPrefixStr);
+						for (int i1=0; i1<array_L1.size(); i1++) {
+							String arrayL1DebugPrefixStr = arrayL0DebugPrefixStr+"["+i1+"]";
+							JSON_Data.Value<NV, V> val_L1 = array_L1.get(i1);
+							try {
+								entries.add(new Entry(i0, i1, val_L1, arrayL1DebugPrefixStr));
+							} catch (TraverseException e) {
+								showException(e, file);
+								entries.add(new Entry(i0, i1, val_L1));
+							}
+						}
+					}
+					
+					
 				}
 				
 				@Override boolean isEmpty() {
-					return super.isEmpty() && (!hasParsedData) ;
+					return super.isEmpty() && (!hasParsedData || entries.isEmpty());
 				}
 				
+				static class Entry implements Comparable<Entry> {
+					
+					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+							.add("bAchieved"     , JSON_Data.Value.Type.Bool   )
+							.add("flAchieved"    , JSON_Data.Value.Type.Integer)
+							.add("flAchieved"    , JSON_Data.Value.Type.Float  )
+							.add("strDescription", JSON_Data.Value.Type.String )
+							.add("strImage"      , JSON_Data.Value.Type.String )
+							.add("strName"       , JSON_Data.Value.Type.String );
+					
+					final int i0;
+					final int i1;
+					final JSON_Data.Value<NV, V> rawData;
+					final boolean hasParsedData;
+					
+					final boolean validStrData;
+					final boolean validObjData;
+					final String strData;
+					final boolean isAchieved;
+					final double achievedRatio;
+					final String description;
+					final String image;
+					final String name;
+
+					@Override public int compareTo(Entry other) {
+						if (other==null) return -1;
+						if (this.i0!=other.i0) return this.i0-other.i0;
+						if (this.i1!=other.i1) return this.i1-other.i1;
+						return 0;
+					}
+
+					Entry(int i0, int i1, JSON_Data.Value<NV, V> rawData) {
+						this.i0 = i0;
+						this.i1 = i1;
+						this.rawData = rawData;
+						hasParsedData = false;
+						
+						validStrData = false;
+						validObjData = false;
+						
+						strData       = null;
+						isAchieved    = false;
+						achievedRatio = Double.NaN;
+						description   = null;
+						image         = null;
+						name          = null;
+					}
+					
+					Entry(int i0, int i1, JSON_Data.Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
+						this.i0 = i0;
+						this.i1 = i1;
+						this.rawData = null;
+						hasParsedData = true;
+						
+						JSON_Object<NV, V> object;
+						strData = JSON_Data.getValue(value, JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, true, debugOutputPrefixStr);
+						object  = JSON_Data.getValue(value, JSON_Data.Value.Type.Object, JSON_Data.Value::castToObjectValue, true, debugOutputPrefixStr);
+						if (strData==null && object==null) throw new TraverseException("%s is neither an ObjectValue nor a StringValue", debugOutputPrefixStr);
+						
+						validStrData = strData!=null;
+						validObjData = object !=null;
+						
+						//if (strData!=null)
+						//	DevHelper.unknownValues.add("GameInfos.AchievementMap.Entry.strData == \""+strData+"\"");
+						
+						if (object!=null) {
+							isAchieved    = JSON_Data.getBoolValue   (object,"bAchieved"     ,debugOutputPrefixStr);
+							achievedRatio = JSON_Data.getNumber      (object,"flAchieved"    ,debugOutputPrefixStr);
+							description   = JSON_Data.getStringValue (object,"strDescription",debugOutputPrefixStr);
+							image         = JSON_Data.getStringValue (object,"strImage"      ,debugOutputPrefixStr);
+							name          = JSON_Data.getStringValue (object,"strName"       ,debugOutputPrefixStr);
+							DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "GameInfos.AchievementMap.Entry");
+						} else {
+							isAchieved    = false;
+							achievedRatio = Double.NaN;
+							description   = null;
+							image         = null;
+							name          = null;
+						}
+					}
+				}
 			}
 			
 			static class GameActivity extends ParsedBlock {

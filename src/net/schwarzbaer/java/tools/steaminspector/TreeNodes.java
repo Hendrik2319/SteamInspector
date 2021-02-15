@@ -1357,6 +1357,33 @@ class TreeNodes {
 				if (data.achievements!=null) {
 					children.add(new AchievementsNode(this, data.achievements));
 				}
+				if (data.achievementMap!=null) {
+					if (data.achievementMap.hasParsedData) {
+						if (!data.achievementMap.entries.isEmpty())
+							children.add(GroupingNode.create(this, "Achievement Map", data.achievementMap.entries, Comparator.naturalOrder(), (parent,entry)->{
+								String title = String.format("Entry [%d,%d]",entry.i0,entry.i1);
+								if (entry.hasParsedData) {
+									if (entry.validStrData)
+										return new PrimitiveValueNode(parent, title, entry.strData);
+									if (entry.validObjData)
+										return new TextContentNode(parent, title, ()->{
+											ValueListOutput out = new ValueListOutput();
+											out.add(0, "Name"       , "\"%s\"", entry.name);
+											out.add(0, "Image"      , "\"%s\"", entry.image);
+											out.add(0, "Description", "\"%s\"", entry.description);
+											out.add(0, "Is Achieved", "%s"    , entry.isAchieved);
+											out.add(0, "Ratio"      , "%f"    , entry.achievedRatio);
+											return out.generateOutput();
+										});
+								}
+								if (entry.rawData!=null)
+									return new RawJsonDataNode(parent, title, entry.rawData);
+								return null;
+							}));
+					} else
+						if (data.achievementMap.rawData!=null)
+							children.add(new RawJsonDataNode(this, "Achievement Map [Raw Data]", data.achievementMap.rawData));
+				}
 				if (data.communityItems!=null) {
 					if (data.communityItems.hasParsedData) {
 						if (!data.communityItems.items.isEmpty())
@@ -1398,6 +1425,15 @@ class TreeNodes {
 						if (data.friends.rawData!=null)
 							children.add(new RawJsonDataNode(this, "Played or Owned by Players (Raw Data)", data.friends.rawData));
 				}
+				if (data.releaseData!=null) {
+					if (data.releaseData.hasParsedData) {
+						if (!data.releaseData.isEmpty()) {
+							// spaceholder for future data
+						}
+					} else
+						if (data.releaseData.rawData!=null)
+							children.add(new RawJsonDataNode(this, "Release Data (Raw Data)", data.releaseData.rawData));
+				}
 				if (data.blocks!=null) {
 					children.add(groupingNode = GroupingNode.create(this, "Raw Blocks", data.blocks, null, BlockNode::new));
 					groupingNode.setFileSource(data.file,ExternalViewerInfo.TextEditor);
@@ -1416,7 +1452,7 @@ class TreeNodes {
 				// data.socialMedia   ; // Ok
 				// data.associations  ; // Ok
 				// data.appActivity   ; // Ok
-				// data.releaseData   ;
+				// data.releaseData   ; // Ok
 				// data.friends       ; // Ok
 				// data.communityItems; // Ok
 				
@@ -1484,7 +1520,7 @@ class TreeNodes {
 				return sb.toString();
 			}
 			
-			private static TreeNode createSocialMediaEntryNode(TreeNode parent, GameInfos.SocialMedia.SocialMediaEntry entry) {
+			private static TreeNode createSocialMediaEntryNode(TreeNode parent, GameInfos.SocialMedia.Entry entry) {
 				if (entry.hasParsedData) {
 					Icon icon = null;
 					if (entry.type!=null) {
