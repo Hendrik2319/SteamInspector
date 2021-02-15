@@ -76,18 +76,25 @@ class JSONHelper {
 		return new TreeRoot(JSON_TreeNode.create(null,null,value),true,!isLarge,JSON_TreeNode.contextMenu);
 	}
 	
+	private static final Color COLOR_WAS_NOT_PROCESSED       = new Color(0xFF0000);
 	private static final Color COLOR_WAS_PARTIALLY_PROCESSED = new Color(0xC000C0);
 	private static final Color COLOR_WAS_FULLY_PROCESSED     = new Color(0x00B000);
 
 	static Color getTextColor(Value<NV, V> value) {
 		if (value==null) return COLOR_WAS_FULLY_PROCESSED;
-		boolean wasProcessed = value.extra.wasProcessed;
-		boolean hasUnprocessedChildren = value.extra.hasUnprocessedChildren();
-		return getTextColor(wasProcessed, hasUnprocessedChildren);
+		return getTextColor(value.extra.wasProcessed, value.extra.hasUnprocessedChildren());
+	}
+
+	static Color getTextColor_WarnNew(Value<NV, V> value) {
+		if (value==null) return null;
+		return getTextColor(value.extra.wasProcessed, value.extra.hasUnprocessedChildren(), COLOR_WAS_NOT_PROCESSED, COLOR_WAS_PARTIALLY_PROCESSED, null);
 	}
 
 	static Color getTextColor(boolean wasProcessed, boolean hasUnprocessedChildren) {
-		return !wasProcessed ? null : hasUnprocessedChildren ? COLOR_WAS_PARTIALLY_PROCESSED : COLOR_WAS_FULLY_PROCESSED;
+		return getTextColor(wasProcessed, hasUnprocessedChildren, null, COLOR_WAS_PARTIALLY_PROCESSED, COLOR_WAS_FULLY_PROCESSED);
+	}
+	static Color getTextColor(boolean wasProcessed, boolean hasUnprocessedChildren, Color notProcessed, Color partiallyProcessed, Color fullyProcessed) {
+		return !wasProcessed ? notProcessed : hasUnprocessedChildren ? partiallyProcessed : fullyProcessed;
 	}
 
 	static class JSON_TreeNode<ChildValueType> extends BaseTreeNode<JSON_TreeNode<?>,JSON_TreeNode<?>> implements DataTreeNode {

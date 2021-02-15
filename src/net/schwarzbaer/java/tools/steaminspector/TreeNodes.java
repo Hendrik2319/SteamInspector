@@ -432,6 +432,7 @@ class TreeNodes {
 		private TreeRoot dataTree = null;
 		private Supplier<String> textSource = null;
 		private ExternViewableItem viewableItem = null;
+		private Color textColor = null;
 		
 		private static <IT,VT> Comparator<Map.Entry<IT,VT>> createMapKeyOrder(Comparator<IT> keyOrder) {
 			return Comparator.comparing(Map.Entry<IT,VT>::getKey,keyOrder);
@@ -534,6 +535,9 @@ class TreeNodes {
 			return children;
 		}
 
+		void setTextColor(Color textColor) { this.textColor = textColor; }
+		@Override Color getTextColor() { return textColor; }
+		
 		@Override public Filter getFilter() { return filter; }
 		void setFilter(GroupingNodeFilter<ValueType,?> filter) {
 			if (createAllChildNodes!=null) throw new IllegalStateException("You can't set a filter, if you have created child nodes directly.");
@@ -1308,7 +1312,7 @@ class TreeNodes {
 			}
 			
 			@Override Color getTextColor() {
-				return JSONHelper.getTextColor(data.rawData);
+				return JSONHelper.getTextColor_WarnNew(data.rawData);
 			}
 			
 			@Override
@@ -1386,10 +1390,12 @@ class TreeNodes {
 							children.add(new RawJsonDataNode(this, "Release Data (Raw Data)", data.releaseData.rawData));
 				}
 				if (data.blocks!=null) {
-					children.add(groupingNode = GroupingNode.create(this, "Unparsed Data Blocks", data.blocks, null, BlockNode::new));
+					children.add(groupingNode = GroupingNode.create(this, "All Data Blocks (unparsed)", data.blocks, null, BlockNode::new));
 					groupingNode.setExternViewable(data.file,ExternalViewerInfo.TextEditor);
-					if (data.rawData!=null)
+					if (data.rawData!=null) {
+						groupingNode.setTextColor(JSONHelper.getTextColor_WarnNew(data.rawData));
 						groupingNode.setDataTree(JSONHelper.createTreeRoot(data.rawData, false));
+					}
 				}
 				
 				return children;
@@ -1964,7 +1970,7 @@ class TreeNodes {
 				}
 			
 				@Override Color getTextColor() {
-					return JSONHelper.getTextColor(block.dataValue);
+					return JSONHelper.getTextColor_WarnNew(block.dataValue);
 				}
 
 				@Override ContentType getContentType() {
