@@ -927,7 +927,7 @@ class TreeNodes {
 			}
 		}
 		
-		private static class GameNode extends BaseTreeNode<TreeNode,TreeNode> {
+		private static class GameNode extends BaseTreeNode<TreeNode,TreeNode> implements URLBasedNode, ExternViewableNode {
 		
 			private final Game game;
 		
@@ -940,6 +940,9 @@ class TreeNodes {
 						@Override public void gameTitleWasChanged() { setTitle(GameNode.this.game.getTitle()); }
 					});
 			}
+
+			@Override public String getURL() { return "https://store.steampowered.com/app/"+game.appID+"/"; }
+			@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
 
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
@@ -996,7 +999,7 @@ class TreeNodes {
 			}
 		}
 
-		private static class PlayerNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode {
+		private static class PlayerNode extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, URLBasedNode, ExternViewableNode  {
 
 			//private long playerID;
 			private Player player;
@@ -1007,10 +1010,9 @@ class TreeNodes {
 				this.player = player;
 			}
 
-			@Override
-			public LabeledFile getFile() {
-				return new LabeledFile(player.folder);
-			}
+			@Override public LabeledFile getFile() { return new LabeledFile(player.folder); }
+			@Override public String getURL() { return "https://steamcommunity.com/profiles/"+player.getSteamID()+"/"; }
+			@Override public ExternalViewerInfo getExternalViewerInfo() { return ExternalViewerInfo.Browser; }
 
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
@@ -1419,7 +1421,7 @@ class TreeNodes {
 							children.add(new RawJsonDataNode(this, "Release Data (Raw Data)", data.releaseData.rawData));
 				}
 				if (data.blocks!=null) {
-					children.add(groupingNode = GroupingNode.create(this, "Raw Blocks", data.blocks, null, BlockNode::new));
+					children.add(groupingNode = GroupingNode.create(this, "Unparsed Data Blocks", data.blocks, null, BlockNode::new));
 					groupingNode.setFileSource(data.file,ExternalViewerInfo.TextEditor);
 					if (data.rawData!=null)
 						groupingNode.setDataTree(JSONHelper.createTreeRoot(data.rawData, false));
@@ -1482,9 +1484,9 @@ class TreeNodes {
 				});
 				return sb.toString();
 			}
-			private static String toString(String indent, GameInfos.Friends.SteamId[] arr) {
+			private static String toString(String indent, Data.SteamId[] arr) {
 				StringBuilder sb = new StringBuilder();
-				for (GameInfos.Friends.SteamId steamId : arr)
+				for (Data.SteamId steamId : arr)
 					sb.append(String.format("%s%s%n", indent, steamId==null ? "???" : steamId.getPlayerName()));
 				return sb.toString();
 			}
@@ -1975,36 +1977,49 @@ class TreeNodes {
 				}
 			}
 
-			static class BlockNode extends BaseTreeNode<TreeNode,TreeNode> {
+			static class BlockNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource {
 				
 				private final GameInfos.Block block;
 			
 				BlockNode(TreeNode parent, GameInfos.Block block) {
-					super(parent, generateTitle(block), true, false);
+					super(parent, generateTitle(block), false, true);
 					this.block = block;
 				}
 			
 				private static String generateTitle(GameInfos.Block block) {
-					if (block==null) return "Block ???";
-					if (block.rawData!=null) return "Block "+block.blockIndex+" (RawData)";
-					return "["+block.blockIndex+"] "+block.label;
+					if (block==null)
+						return "Block ???";
+					
+					if (block.hasParsedData)
+						return String.format("[%d] %s V%d", block.blockIndex, block.label, block.version);
+					
+					String str = String.format("Block %d V%d", block.blockIndex, block.version);
+					if (block.rawData!=null) str += " (RawData)";
+					return str;
 				}
 			
 				@Override Color getTextColor() {
 					return JSONHelper.getTextColor(block.dataValue);
 				}
 
-				@Override protected Vector<? extends TreeNode> createChildren() {
-					Vector<TreeNode> children = new Vector<>();
+				@Override ContentType getContentType() {
+					if (block.hasParsedData && block.dataValue!=null)
+						return ContentType.DataTree;
 					if (block.rawData!=null)
-						children.add(new RawJsonDataNode(this, "raw data", block.rawData));
-					else {
-						children.add(new PrimitiveValueNode(this, "version", block.version));
-						if (block.dataValue!=null)
-							children.add(new RawJsonDataNode(this, "data", block.dataValue));
-					}
-					return children;
+						return ContentType.DataTree;
+					return null;
 				}
+
+				@Override
+				public TreeRoot getContentAsTree() {
+					if (block.hasParsedData && block.dataValue!=null)
+						return JSONHelper.createTreeRoot(block.dataValue, false);
+					if (block.rawData!=null)
+						return JSONHelper.createTreeRoot(block.rawData, false);
+					return null;
+				}
+
+				@Override protected Vector<? extends TreeNode> createChildren() { return null; }
 			}
 		}
 

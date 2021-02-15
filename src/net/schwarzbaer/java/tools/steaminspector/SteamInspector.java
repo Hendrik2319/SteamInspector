@@ -1145,6 +1145,8 @@ class SteamInspector {
 			clickedExternalViewerInfo = clickedNode instanceof ExternViewableNode ? ((ExternViewableNode) clickedNode).getExternalViewerInfo() : null;
 			clickedFilter             = clickedNode instanceof FilterableNode     ? ((FilterableNode    ) clickedNode).getFilter()             : null;
 			
+			// TODO: Solve Problem: more than one of clickedURL/File/FileCreator --> prio: File <-> URL
+			
 			extViewerChooseMenu.prepareMenuItems();
 			
 			miCollapseChildren.setEnabled(clickedNode!=null);

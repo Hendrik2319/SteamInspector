@@ -23,6 +23,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Vector;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import javax.imageio.ImageIO;
@@ -405,13 +406,8 @@ class Data {
 		// collect all AppIDs
 		HashSet<Integer> idSet = new HashSet<>();
 		idSet.addAll(appManifests.keySet());
-		if (gameImages!=null)
-			idSet.addAll(gameImages.getGameIDs());
-		players.forEach((playerID,player)->{
-			idSet.addAll(player.steamCloudFolders.keySet());
-			if (player.screenShots!=null)
-				idSet.addAll(player.screenShots.keySet());
-		});
+		if (gameImages!=null) idSet.addAll(gameImages.getGameIDs());
+		players.forEach((playerID,player)->player.forEachGameIDSet(idSet::addAll));
 		
 		
 		games.clear();
@@ -627,6 +623,29 @@ class Data {
 		ClassType parse(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr, File file) throws TraverseException;
 	}
 	
+	static class SteamId {
+		
+		final String str;
+		final Long steamid;
+		
+		private SteamId(String str, Long steamid) {
+			this.str = str;
+			this.steamid = steamid;
+		}
+		
+		String getPlayerName() {
+			if (steamid==null)
+				return String.format("Player [%s]", str);
+			
+			String playerName = Data.getPlayerName(steamid.longValue()&0xFFFFFFFFL);
+			return String.format("%s [%s]", playerName, str);
+		}
+
+		static long getFullSteamID(long playerID) {
+			return (playerID & 0xFFFFFFFFL) | 0x0110000100000000L;
+		}
+	}
+
 	static class Player {
 		
 		final long playerID;
@@ -729,6 +748,19 @@ class Data {
 				this.gameStateFolder = null;
 			achievementProgress = preAchievementProgress;
 			
+		}
+
+		public void forEachGameIDSet(Consumer<Collection<Integer>> action) {
+			action.accept(steamCloudFolders.keySet());
+			if (screenShots!=null)
+				action.accept(screenShots.keySet());
+			action.accept(gameInfos.keySet());
+			if (achievementProgress!=null && achievementProgress.hasParsedData)
+				action.accept(achievementProgress.gameStates.keySet());
+		}
+
+		public long getSteamID() {
+			return SteamId.getFullSteamID(playerID);
 		}
 
 		public String getName() {
@@ -1631,25 +1663,6 @@ class Data {
 				
 				@Override boolean isEmpty() {
 					return super.isEmpty() && (!hasParsedData || (in_wishlist.length==0 && owns.length==0 && played_ever.isEmpty() && played_recently.isEmpty() && your_info==null));
-				}
-				
-				static class SteamId {
-					
-					final String str;
-					final Long steamid;
-					
-					private SteamId(String str, Long steamid) {
-						this.str = str;
-						this.steamid = steamid;
-					}
-					
-					String getPlayerName() {
-						if (steamid==null)
-							return String.format("Player [%s]", str);
-						
-						String playerName = Data.getPlayerName(steamid.longValue()&0xFFFFFFFFL);
-						return String.format("%s [%s]", playerName, str);
-					}
 				}
 				
 				static class Entry {
