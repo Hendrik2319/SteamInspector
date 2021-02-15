@@ -70,6 +70,7 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.FilePromise;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageNTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.LabeledFile;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.LabeledUrl;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.ExternViewableNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FileBasedNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.Filter;
@@ -501,7 +502,7 @@ class TreeNodes {
 			if (viewerInfo==null) throw new IllegalArgumentException();
 			viewableItem = new ExternViewableItem(filePromise,viewerInfo);
 		}
-		void setExternViewable(String url, ExternalViewerInfo viewerInfo) {
+		void setExternViewable(LabeledUrl url, ExternalViewerInfo viewerInfo) {
 			if (url==null) throw new IllegalArgumentException();
 			if (viewerInfo==null) throw new IllegalArgumentException();
 			viewableItem = new ExternViewableItem(url,viewerInfo);
@@ -653,7 +654,7 @@ class TreeNodes {
 			this.url = url;
 		}
 
-		@Override public String getURL() { return url; }
+		@Override public LabeledUrl getURL() { return LabeledUrl.create(url); }
 		@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.Browser.createItem(getURL()); }
 	}
 	
@@ -910,7 +911,7 @@ class TreeNodes {
 					});
 			}
 
-			@Override public String getURL() { return "https://store.steampowered.com/app/"+game.appID+"/"; }
+			@Override public LabeledUrl getURL() { return new LabeledUrl("Shop Page", "https://store.steampowered.com/app/"+game.appID+"/"); }
 			@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.Browser.createItem(getURL()); }
 
 			@Override
@@ -980,7 +981,7 @@ class TreeNodes {
 			}
 
 			@Override public LabeledFile getFile() { return new LabeledFile(player.folder); }
-			@Override public String getURL() { return "https://steamcommunity.com/profiles/"+player.getSteamID()+"/"; }
+			@Override public LabeledUrl getURL() { return new LabeledUrl("Steam Player Profile", "https://steamcommunity.com/profiles/"+player.getSteamID()+"/"); }
 			@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.Browser.createItem(getURL()); }
 
 			@Override
@@ -1875,7 +1876,7 @@ class TreeNodes {
 					return str;
 				}
 
-				@Override public String getURL() { return badge.iconURL; }
+				@Override public LabeledUrl getURL() { return LabeledUrl.create("Badge Icon", badge.iconURL); }
 				@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.Browser.createItem(getURL()); }
 
 				@Override ContentType getContentType() { return ContentType.Image; }
@@ -1926,7 +1927,7 @@ class TreeNodes {
 					return str;
 				}
 
-				@Override public String getURL() { return tradingCard.imageURL; }
+				@Override public LabeledUrl getURL() { return LabeledUrl.create("Trading Card Image", tradingCard.imageURL); }
 				@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.Browser.createItem(getURL()); }
 
 				@Override ContentType getContentType() { return ContentType.Image; }

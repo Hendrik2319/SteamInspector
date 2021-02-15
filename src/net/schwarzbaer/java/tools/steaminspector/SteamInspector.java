@@ -936,6 +936,24 @@ class SteamInspector {
 		}
 	}
 
+	static class LabeledUrl {
+		final String label;
+		final String url;
+		LabeledUrl(String url) { this(null,url); }
+		LabeledUrl(String label, String url) {
+			if (url==null) throw new IllegalArgumentException();
+			this.label = label!=null ? label : "";
+			this.url = url;
+		}
+		static LabeledUrl create(String url) {
+			return create(null, url);
+		}
+		static LabeledUrl create(String label, String url) {
+			if (url==null) return null;
+			return new LabeledUrl(label, url);
+		}
+	}
+
 	static class FilePromise {
 		final String label;
 		final Supplier<File> createFile;
@@ -949,16 +967,16 @@ class SteamInspector {
 	
 	static class ExternViewableItem {
 		
-		final String      url;
+		final LabeledUrl  url;
 		final LabeledFile file;
 		final FilePromise filePromise;
 		final ExternalViewerInfo viewerInfo;
 		
-		ExternViewableItem(String      url        , ExternalViewerInfo viewerInfo) { this( url, null,        null, viewerInfo); if (url        ==null) throw new IllegalArgumentException(); }
+		ExternViewableItem(LabeledUrl  url        , ExternalViewerInfo viewerInfo) { this( url, null,        null, viewerInfo); if (url        ==null) throw new IllegalArgumentException(); }
 		ExternViewableItem(LabeledFile file       , ExternalViewerInfo viewerInfo) { this(null, file,        null, viewerInfo); if (file       ==null) throw new IllegalArgumentException();}
 		ExternViewableItem(FilePromise filePromise, ExternalViewerInfo viewerInfo) { this(null, null, filePromise, viewerInfo); if (filePromise==null) throw new IllegalArgumentException();}
 		
-		private ExternViewableItem(String url, LabeledFile file, FilePromise filePromise, ExternalViewerInfo viewerInfo) {
+		private ExternViewableItem(LabeledUrl url, LabeledFile file, FilePromise filePromise, ExternalViewerInfo viewerInfo) {
 			this.url = url;
 			this.file = file;
 			this.filePromise = filePromise;
@@ -974,7 +992,7 @@ class SteamInspector {
 			return viewerInfo.viewerName;
 		}
 		String getItemLabel() {
-			if (url        !=null) return "URL";
+			if (url        !=null) return url.label;
 			if (file       !=null) return file.label;
 			if (filePromise!=null) return filePromise.label; 
 			return "";
@@ -991,7 +1009,7 @@ class SteamInspector {
 		String getItemPath() {
 			for (ExternalViewerInfo.AddressType addressType:viewerInfo.acceptedAddressTypes)
 				switch (addressType) {
-				case URL   : if (url !=null) return url; break;
+				case URL   : if (url !=null) return url.url; break;
 				case Folder: if (file!=null && file.file.isDirectory()) return file.file.getAbsolutePath(); break;
 				case File  : if (file!=null && file.file.isFile     ()) return file.file.getAbsolutePath();
 					if (filePromise!=null) {
@@ -1028,7 +1046,7 @@ class SteamInspector {
 			return acceptedAddressTypes.contains(addressType);
 		}
 		
-		ExternViewableItem createItem(String      url        ) { return url         == null ? null : new ExternViewableItem(url        , this); }
+		ExternViewableItem createItem(LabeledUrl  url        ) { return url         == null ? null : new ExternViewableItem(url        , this); }
 		ExternViewableItem createItem(LabeledFile file       ) { return file        == null ? null : new ExternViewableItem(file       , this); }
 		ExternViewableItem createItem(FilePromise filePromise) { return filePromise == null ? null : new ExternViewableItem(filePromise, this); }
 		
@@ -1075,7 +1093,7 @@ class SteamInspector {
 		private static final long serialVersionUID = -3729823093931172004L;
 
 		interface URLBasedNode {
-			String getURL();
+			LabeledUrl getURL();
 		}
 
 		interface FileBasedNode {
@@ -1115,7 +1133,7 @@ class SteamInspector {
 		
 		private TreePath           clickedPath   = null;
 		private Object             clickedNode   = null;
-		private String             clickedURL    = null;
+		private LabeledUrl         clickedURL    = null;
 		private LabeledFile        clickedFile   = null;
 		private ExternViewableItem clickedEVI    = null;
 		private Filter             clickedFilter = null;
@@ -1129,7 +1147,7 @@ class SteamInspector {
 			extViewerChooseMenu = new ExtViewerChooseMenu();
 			
 			add(miCopyPath  = createMenuItem("Copy Path to Clipboard" , true, e->ClipboardTools.copyToClipBoard(clickedFile.file.getAbsolutePath())));
-			add(miCopyURL   = createMenuItem("Copy URL to Clipboard"  , true, e->ClipboardTools.copyToClipBoard(clickedURL)));
+			add(miCopyURL   = createMenuItem("Copy URL to Clipboard"  , true, e->ClipboardTools.copyToClipBoard(clickedURL.url)));
 			add(miExtViewer = createMenuItem("Open in External Viewer", true, e->openAs(clickedEVI)));
 			
 			add(extViewerChooseMenu.createMenu());
@@ -1213,12 +1231,14 @@ class SteamInspector {
 			miCopyURL  .setEnabled(clickedURL !=null);
 			miExtViewer.setEnabled(clickedEVI!=null && clickedEVI.areItemAndViewerCompatible());
 			
-			String pathPrefix = clickedFile!=null ? (clickedFile.file.isFile() ? "File " : clickedFile.file.isDirectory() ? "Folder " : "") : "";
+			String pathLabel  = clickedFile!=null ? (clickedFile.file.isFile() ? "File Path" : clickedFile.file.isDirectory() ? "Folder Path" : "Path") : "Path";
+			String urlLabel   = clickedURL!=null ? clickedURL.label+" URL" : "URL";
 			String viewerName = clickedEVI==null ? "External Viewer" : clickedEVI.getViewerName();
 			String fileLabel  = clickedEVI==null ? ""                : clickedEVI.getItemLabel();
 			if (!fileLabel.isEmpty()) fileLabel+=" ";
 			
-			miCopyPath .setText(String.format("Copy %sPath to Clipboard", pathPrefix));
+			miCopyPath .setText(String.format("Copy %s to Clipboard", pathLabel));
+			miCopyURL  .setText(String.format("Copy %s to Clipboard", urlLabel));
 			miExtViewer.setText(String.format("Open %sin %s" , fileLabel, viewerName));
 			
 			if (clickedNode instanceof TreeNode) {
