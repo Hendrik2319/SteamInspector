@@ -16,6 +16,7 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Parser.ParseException;
 import net.schwarzbaer.java.tools.steaminspector.Data.NV;
 import net.schwarzbaer.java.tools.steaminspector.Data.V;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContextMenuHandler;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.DataTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.DataTreeNodeContextMenu;
@@ -45,35 +46,21 @@ class JSONHelper {
 		}
 	}
 
-	/*
-	static ArrayValue<NV, V> createArrayValue(JSON_Array<NV, V> array) {
-		V extra = new V(Value.Type.Array);
-		ArrayValue<NV, V> host = new ArrayValue<>(array,extra);
-		extra.setHost(host);
-		return host;
-	}
-    
-	static ObjectValue<NV, V> createObjectValue(JSON_Object<NV, V> object) {
-		V extra = new V(Value.Type.Object);
-		ObjectValue<NV, V> host = new ObjectValue<>(object,extra);
-		extra.setHost(host);
-		return host;
-	}
-    
-	
-	static TreeRoot createTreeRoot(JSON_Array<NV, V> array, boolean isLarge) {
-		if (array == null) return null;
-		return new TreeRoot(JSON_TreeNode.create(null,null,createArrayValue(array)),true,!isLarge,JSON_TreeNode.contextMenu);
+	static String getTreeIDStr(Class<?> hostClass, String suffix) {
+		return String.format("%s<%s>", hostClass.getCanonicalName(), suffix);
 	}
 	
-	static TreeRoot createTreeRoot(JSON_Object<NV, V> object, boolean isLarge) {
-		if (object == null) return null;
-		return new TreeRoot(JSON_TreeNode.create(null,null,createObjectValue(object)),true,!isLarge,JSON_TreeNode.contextMenu);
+	static TreeRoot createRawDataTreeRoot(Class<?> rawDataHostClass, Value<NV, V> value, boolean isLarge) {
+		return createDataTreeRoot(rawDataHostClass, "RawData", value, isLarge);
 	}
-	*/
-	
-	static TreeRoot createTreeRoot(Value<NV, V> value, boolean isLarge) {
-		return new TreeRoot(JSON_TreeNode.create(null,null,value),true,!isLarge,JSON_TreeNode.contextMenu);
+	static TreeRoot createDataTreeRoot(Class<?> hostClass, String suffix, Value<NV, V> value, boolean isLarge) {
+		return createDataTreeRoot(getTreeIDStr(hostClass,suffix), value, isLarge);
+	}
+	static TreeRoot createDataTreeRoot(String treeIDStr, Value<NV, V> value, boolean isLarge) {
+		return createTreeRoot(value, isLarge, new DataTreeNodeContextMenu(treeIDStr));
+	}
+	static TreeRoot createTreeRoot(Value<NV, V> value, boolean isLarge, TreeContextMenuHandler tcmh) {
+		return new TreeRoot(JSON_TreeNode.create(null,null,value),true,!isLarge,tcmh);
 	}
 	
 	private static final Color COLOR_WAS_NOT_PROCESSED       = new Color(0xFF0000);
@@ -98,7 +85,6 @@ class JSONHelper {
 	}
 
 	static class JSON_TreeNode<ChildValueType> extends BaseTreeNode<JSON_TreeNode<?>,JSON_TreeNode<?>> implements DataTreeNode {
-		private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
 
 		private final Vector<ChildValueType> childValues;
 		private final Function<ChildValueType, String> getChildName;

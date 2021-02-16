@@ -207,6 +207,11 @@ class TreeNodes {
 		}
 	}
 	
+	private static String getTreeIDStr(Class<?> rawDataHostClass) {
+		if (rawDataHostClass==null) return null;
+		return rawDataHostClass.getCanonicalName()+"<RawData>";
+	}
+
 	@SuppressWarnings("unused")
 	private static void log_ln(Object source, String format, Object... args) {
 		System.out.printf("[%s] \"%s\": %s%n", source.getClass().getSimpleName(), source.toString(), String.format(Locale.ENGLISH, format, args));
@@ -289,8 +294,10 @@ class TreeNodes {
 	}
 	
 	interface DataTreeNode extends TreeNodeII {
+		
 		default String getFullInfo() {
 			String str = "";
+			str += String.format("Class : %s%n", getClass().getCanonicalName());
 			str += !hasName()  ? String.format("Name : none%n")  : String.format("Name : \"%s\"%n", getName());
 			str += !hasValue() ? String.format("Value : none%n") : String.format("Value : %s%n", getValueStr());
 			str += String.format("Path : %s%n", getPath());
@@ -303,6 +310,10 @@ class TreeNodes {
 		String getAccessCall();
 		boolean hasName();
 		boolean hasValue();
+
+		default void markInteresting() {} // TODO: markInteresting
+		default boolean isInteresting() { return false; }
+		
 		boolean areChildrenSortable();
 		void setChildrenOrder(ChildrenOrder order, DefaultTreeModel currentTreeModel);
 		ChildrenOrder getChildrenOrder();
@@ -319,6 +330,7 @@ class TreeNodes {
 	static class DataTreeNodeContextMenu extends AbstractTreeContextMenu {
 		private static final long serialVersionUID = 7620430144231207201L;
 		
+		private final String treeIDStr;
 		private final JMenuItem miName;
 		private final JMenuItem miValue;
 		private final JMenuItem miPath;
@@ -326,21 +338,26 @@ class TreeNodes {
 		private final JMenuItem miFullInfo;
 		private final JMenuItem miCollapseChildren;
 		private final SortChildrenMenu menuSortChildren;
+		private final JCheckBoxMenuItem miMarkInteresting;
 		
 		private DataTreeNode clickedTreeNode;
 		private TreePath clickedTreePath;
 		private JTree tree;
 		private DefaultTreeModel currentTreeModel;
-		
-		DataTreeNodeContextMenu() {
+
+		//data.getClass().getCanonicalName()+"<RawData>"
+		DataTreeNodeContextMenu(String treeIDStr) {
+			this.treeIDStr = treeIDStr;
 			clickedTreeNode = null;
 			clickedTreePath = null;
 			tree = null;
-			add(miName       = SteamInspector.createMenuItem("Copy Name"       , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getName())));
-			add(miValue      = SteamInspector.createMenuItem("Copy Value"      , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getValueStr())));
-			add(miPath       = SteamInspector.createMenuItem("Copy Path"       , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getPath())));
-			add(miAccessCall = SteamInspector.createMenuItem("Copy Access Call", true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getAccessCall())));
-			add(miFullInfo   = SteamInspector.createMenuItem("Copy Full Info"  , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getFullInfo())));
+			add(miName            = SteamInspector.createMenuItem("Copy Name"          , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getName())));
+			add(miValue           = SteamInspector.createMenuItem("Copy Value"         , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getValueStr())));
+			add(miPath            = SteamInspector.createMenuItem("Copy Path"          , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getPath())));
+			add(miAccessCall      = SteamInspector.createMenuItem("Copy Access Call"   , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getAccessCall())));
+			add(miFullInfo        = SteamInspector.createMenuItem("Copy Full Info"     , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getFullInfo())));
+			addSeparator();
+			add(miMarkInteresting = SteamInspector.createCheckBoxMenuItem("Interesting", false, true, b->{clickedTreeNode.markInteresting();}));
 			addSeparator();
 			add(SteamInspector.createMenuItem("Expand Full Tree", true, e->{
 				if (tree!=null)
@@ -381,6 +398,8 @@ class TreeNodes {
 			miAccessCall.setEnabled(this.clickedTreeNode!=null);
 			miFullInfo  .setEnabled(this.clickedTreeNode!=null);
 			miCollapseChildren.setEnabled(this.clickedTreeNode!=null);
+			miMarkInteresting .setEnabled(this.clickedTreeNode!=null && treeIDStr!=null);
+			miMarkInteresting .setSelected(this.clickedTreeNode!=null && this.clickedTreeNode.isInteresting());
 			
 			menuSortChildren.prepareMenuItems();
 			
@@ -752,54 +771,83 @@ class TreeNodes {
 		@Override protected Vector<? extends TreeNode> createChildren() { return new Vector<>(); }
 	}
 
+	@SuppressWarnings("unused")
 	private static class RawVDFDataNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
 		
 		private final VDFTreeNode rawData;
+		private final String treeIDStr;
 		private final File file;
 		private final ExternalViewerInfo viewerInfo;
-
-		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData) {
-			this(parent, title, rawData, null, null, null);
+		
+		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, Class<?> rawDataHostClass) {
+			this(parent, title, rawData, rawDataHostClass, null, null, null);
 		}
-		@SuppressWarnings("unused")
-		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, Icon icon) {
-			this(parent, title, rawData, null, null, icon);
+		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, String treeIDStr) {
+			this(parent, title, rawData, treeIDStr       , null, null, null);
 		}
-		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, File file, ExternalViewerInfo viewerInfo) {
-			this(parent, title, rawData, file, viewerInfo, null);
+		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, Class<?> rawDataHostClass, Icon icon) {
+			this(parent, title, rawData, rawDataHostClass, null, null, icon);
 		}
-		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, File file, ExternalViewerInfo viewerInfo, Icon icon) {
+		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, String treeIDStr, Icon icon) {
+			this(parent, title, rawData, treeIDStr       , null, null, icon);
+		}
+		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, Class<?> rawDataHostClass, File file, ExternalViewerInfo viewerInfo) {
+			this(parent, title, rawData, rawDataHostClass, file, viewerInfo, null);
+		}
+		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, String treeIDStr, File file, ExternalViewerInfo viewerInfo) {
+			this(parent, title, rawData, treeIDStr       , file, viewerInfo, null);
+		}
+		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, Class<?> rawDataHostClass, File file, ExternalViewerInfo viewerInfo, Icon icon) {
+			this(parent, title, rawData, getTreeIDStr(rawDataHostClass), file, viewerInfo, icon);
+		}
+		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, String treeIDStr, File file, ExternalViewerInfo viewerInfo, Icon icon) {
 			super(parent, title, false, true, icon!=null ? icon : TreeIcons.VDFFile.getIcon());
 			this.rawData = rawData;
+			this.treeIDStr = treeIDStr;
 			this.file = file;
 			this.viewerInfo = viewerInfo;
 		}
 		@Override ContentType getContentType() { return ContentType.DataTree; }
-		@Override public TreeRoot getContentAsTree() { return rawData.getTreeRoot(new DataTreeNodeContextMenu()); }
+		@Override public TreeRoot getContentAsTree() { return rawData.createDataTreeRoot(treeIDStr); }
 		@Override protected Vector<? extends TreeNode> createChildren() { return null; }
 		@Override public LabeledFile getFile() { return file==null ? null : new LabeledFile(file); }
 		@Override public ExternViewableItem getExternViewableItem() { return viewerInfo==null ? null : viewerInfo.createItem(getFile()); }
 		
 	}
 
+	@SuppressWarnings("unused")
 	private static class RawJsonDataNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
 	
-		private final File file;
 		private final JSON_Data.Value<Data.NV,Data.V> rawValue;
+		private final String treeIDStr;
+		private final File file;
 		private final ExternalViewerInfo viewerInfo;
 	
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue) {
-			this(parent, title, rawValue, null, null, null);
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, Class<?> rawDataHostClass) {
+			this(parent, title, rawValue, rawDataHostClass, null, null, null);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, Icon icon) {
-			this(parent, title, rawValue, null, null, icon);
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, String treeIDStr) {
+			this(parent, title, rawValue, treeIDStr       , null, null, null);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, File file, ExternalViewerInfo viewerInfo) {
-			this(parent, title, rawValue, file, viewerInfo, null);
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, Class<?> rawDataHostClass, Icon icon) {
+			this(parent, title, rawValue, rawDataHostClass, null, null, icon);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, File file, ExternalViewerInfo viewerInfo, Icon icon) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, String treeIDStr, Icon icon) {
+			this(parent, title, rawValue, treeIDStr       , null, null, icon);
+		}
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, Class<?> rawDataHostClass, File file, ExternalViewerInfo viewerInfo) {
+			this(parent, title, rawValue, rawDataHostClass, file, viewerInfo, null);
+		}
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, String treeIDStr, File file, ExternalViewerInfo viewerInfo) {
+			this(parent, title, rawValue, treeIDStr       , file, viewerInfo, null);
+		}
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, Class<?> rawDataHostClass, File file, ExternalViewerInfo viewerInfo, Icon icon) {
+			this(parent, title, rawValue, getTreeIDStr(rawDataHostClass), file, viewerInfo, icon);
+		}
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, String treeIDStr, File file, ExternalViewerInfo viewerInfo, Icon icon) {
 			super(parent, title, false, true, icon!=null ? icon : TreeIcons.JSONFile.getIcon());
 			this.rawValue = rawValue;
+			this.treeIDStr = treeIDStr;
 			this.file = file;
 			this.viewerInfo = viewerInfo;
 		}
@@ -809,7 +857,7 @@ class TreeNodes {
 		
 		@Override public TreeRoot getContentAsTree() {
 			if (rawValue!=null)
-				return JSONHelper.createTreeRoot(rawValue, false);
+				return JSONHelper.createDataTreeRoot(treeIDStr, rawValue, false);
 			return SimpleTextNode.createSingleTextLineTree("RawJsonDataNode(<null>)");
 		}
 		
@@ -1016,11 +1064,12 @@ class TreeNodes {
 						children.add(new RawVDFDataNode(
 								this, "LocalConfig",
 								player.localconfig.vdfTreeNode,
+								player.localconfig.getClass().getCanonicalName(),
 								player.localconfig.file,
 								ExternalViewerInfo.TextEditor
 						));
 					else
-						children.add(new FileSystem.VDF_File(this, "LocalConfig", player.localconfig.file));
+						children.add(new FileSystem.VDF_File(this, "LocalConfig", player.localconfig.file,"LocalConfig<VDF>"));
 				}
 				if (player.friends!=null) {
 					children.add(new FriendListNode(this, player.friends));
@@ -1080,14 +1129,14 @@ class TreeNodes {
 			}
 			@Override public TreeRoot getContentAsTree() {
 				if (data.rawData==null) return null;
-				return data.rawData.getTreeRoot(new DataTreeNodeContextMenu());
+				return data.rawData.createRawDataTreeRoot(data.getClass());
 			}
 
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				if (data.rawData!=null)
-					children.add( new RawVDFDataNode(this, "Raw VDF Data", data.rawData) );
+					children.add( new RawVDFDataNode(this, "Raw VDF Data", data.rawData, data.getClass()) );
 				if (data.friends!=null) {
 					Vector<FriendList.Friend> vector = new Vector<>(data.friends);
 					vector.sort(Comparator.<FriendList.Friend,Long>comparing(friend->friend.hasParsedData ? friend.id : null,Comparator.nullsFirst(Comparator.naturalOrder())));
@@ -1141,7 +1190,7 @@ class TreeNodes {
 					return str;
 				}
 				@Override public TreeRoot getContentAsTree() {
-					return friend.rawData==null ? null : friend.rawData.getTreeRoot(new DataTreeNodeContextMenu());
+					return friend.rawData==null ? null : friend.rawData.createRawDataTreeRoot(friend.getClass());
 				}
 
 				@Override protected Vector<? extends TreeNode> createChildren() { return null; }
@@ -1168,7 +1217,7 @@ class TreeNodes {
 			@Override ContentType getContentType() { return data.rawData!=null ? ContentType.DataTree : null; }
 			@Override public TreeRoot getContentAsTree() {
 				if (data.rawData!=null)
-					return JSONHelper.createTreeRoot(data.rawData, false);
+					return JSONHelper.createRawDataTreeRoot(data.getClass(), data.rawData, false);
 				return null;
 			}
 
@@ -1179,7 +1228,7 @@ class TreeNodes {
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				if (data.rawData!=null)
-					children.add( new RawJsonDataNode(this, "Raw JSON Data", data.rawData, data.file, ExternalViewerInfo.TextEditor) );
+					children.add( new RawJsonDataNode(this, "Raw JSON Data", data.rawData, data.getClass(), data.file, ExternalViewerInfo.TextEditor) );
 				if (data.gameStates!=null) {
 					Vector<Integer> vec = new Vector<>(data.gameStates.keySet());
 					vec.sort(Data.createGameIdOrder());
@@ -1232,7 +1281,7 @@ class TreeNodes {
 				}
 				@Override public TreeRoot getContentAsTree() {
 					if (progress==null || progress.rawData==null) return null;
-					return JSONHelper.createTreeRoot(progress.rawData, false);
+					return JSONHelper.createRawDataTreeRoot(progress.getClass(), progress.rawData, false);
 				}
 
 				@Override
@@ -1240,7 +1289,7 @@ class TreeNodes {
 					Vector<TreeNode> children = new Vector<>();
 					if (progress!=null) {
 						if (progress.rawData!=null)
-							children.add(new RawJsonDataNode   (this, "Raw JSON Data", progress.rawData) );
+							children.add(new RawJsonDataNode   (this, "Raw JSON Data", progress.rawData, progress.getClass()) );
 						if (progress.hasParsedData) {
 							children.add(new SimpleTextNode    (this, "Unlocked: %d/%d (%f%%)", progress.unlocked, progress.total, progress.total==0 ? Double.NaN : progress.unlocked/(double)progress.total*100) );
 							children.add(new PrimitiveValueNode(this, "Percentage"  , progress.percentage));
@@ -1309,7 +1358,7 @@ class TreeNodes {
 			@Override ContentType getContentType() { return ContentType.DataTree; }
 			@Override public TreeRoot getContentAsTree() {
 				if (data.rawData==null) return null;
-				return JSONHelper.createTreeRoot(data.rawData, false);
+				return JSONHelper.createRawDataTreeRoot(data.getClass(), data.rawData, false);
 			}
 			
 			@Override Color getTextColor() {
@@ -1335,10 +1384,10 @@ class TreeNodes {
 				if (data.achievementMap!=null) {
 					if (data.achievementMap.hasParsedData) {
 						children.add(groupingNode = GroupingNode.create(this, "Achievement Map", data.achievementMap.entries, null, TreeIcons.Achievement.getIcon(), AchievementMapEntryNode::new));
-						groupingNode.setDataTree(JSONHelper.createTreeRoot(data.achievementMap.parsedJsonValue,false));
+						groupingNode.setDataTree(JSONHelper.createDataTreeRoot(data.achievementMap.getClass(), "ParsedJsonValue", data.achievementMap.parsedJsonValue,false));
 					} else
 						if (data.achievementMap.rawData!=null)
-							children.add(new RawJsonDataNode(this, "Achievement Map [Raw Data]", data.achievementMap.rawData, TreeIcons.Achievement.getIcon()));
+							children.add(new RawJsonDataNode(this, "Achievement Map [Raw Data]", data.achievementMap.rawData, data.achievementMap.getClass(), TreeIcons.Achievement.getIcon()));
 				}
 				if (data.communityItems!=null) {
 					if (data.communityItems.hasParsedData) {
@@ -1346,7 +1395,7 @@ class TreeNodes {
 							children.add(GroupingNode.create(this, "Community Items", data.communityItems.items, null, CommunityItemNode::new));
 					} else
 						if (data.communityItems.rawData!=null)
-							children.add(new RawJsonDataNode(this, "Community Items [Raw Data]", data.communityItems.rawData));
+							children.add(new RawJsonDataNode(this, "Community Items [Raw Data]", data.communityItems.rawData, data.communityItems.getClass()));
 				}
 				if (!CombinedBase64ValuesNode.isEmpty(data.appActivity,data.gameActivity,data.userNews)) {
 					children.add(new CombinedBase64ValuesNode(this, "Some Base64 Values", data.appActivity,data.gameActivity,data.userNews));
@@ -1357,7 +1406,7 @@ class TreeNodes {
 							children.add(GroupingNode.create(this, "Social Media", data.socialMedia.entries, null, GameInfosNode::createSocialMediaEntryNode));
 					} else
 						if (data.socialMedia.rawData!=null)
-							children.add(new RawJsonDataNode(this, "Social Media", data.socialMedia.rawData));
+							children.add(new RawJsonDataNode(this, "Social Media", data.socialMedia.rawData, data.socialMedia.getClass()));
 				}
 				if (data.associations!=null) {
 					if (data.associations.hasParsedData) {
@@ -1369,7 +1418,7 @@ class TreeNodes {
 							}));
 					} else
 						if (data.associations.rawData!=null)
-							children.add(new RawJsonDataNode(this, "Associations", data.associations.rawData));
+							children.add(new RawJsonDataNode(this, "Associations", data.associations.rawData, data.associations.getClass()));
 				}
 				if (data.friends!=null) {
 					if (data.friends.hasParsedData) {
@@ -1379,7 +1428,7 @@ class TreeNodes {
 						}
 					} else
 						if (data.friends.rawData!=null)
-							children.add(new RawJsonDataNode(this, "Played or Owned by Players (Raw Data)", data.friends.rawData));
+							children.add(new RawJsonDataNode(this, "Played or Owned by Players (Raw Data)", data.friends.rawData, data.friends.getClass()));
 				}
 				if (data.releaseData!=null) {
 					if (data.releaseData.hasParsedData) {
@@ -1388,14 +1437,14 @@ class TreeNodes {
 						}
 					} else
 						if (data.releaseData.rawData!=null)
-							children.add(new RawJsonDataNode(this, "Release Data (Raw Data)", data.releaseData.rawData));
+							children.add(new RawJsonDataNode(this, "Release Data (Raw Data)", data.releaseData.rawData, data.releaseData.getClass()));
 				}
 				if (data.blocks!=null) {
 					children.add(groupingNode = GroupingNode.create(this, "All Data Blocks (unparsed)", data.blocks, null, BlockNode::new));
 					groupingNode.setExternViewable(data.file,ExternalViewerInfo.TextEditor);
 					if (data.rawData!=null) {
 						groupingNode.setTextColor(JSONHelper.getTextColor_WarnNew(data.rawData));
-						groupingNode.setDataTree(JSONHelper.createTreeRoot(data.rawData, false));
+						groupingNode.setDataTree(JSONHelper.createRawDataTreeRoot(data.getClass(), data.rawData, false));
 					}
 				}
 				
@@ -1412,7 +1461,7 @@ class TreeNodes {
 			}
 			private static void addRawDataNodeTo(TreeNode p, Vector<TreeNode> ch, GameInfos.Friends.Entry entry, String label) {
 				if (entry.rawData!=null)
-					ch.add(new RawJsonDataNode(p, String.format("Raw Data \"%s\"", label), entry.rawData));
+					ch.add(new RawJsonDataNode(p, String.format("Raw Data \"%s\"", label), entry.rawData, entry.getClass()));
 			}
 			private static String toString(GameInfos.Friends friends, long playerID, int gameID) {
 				if (friends==null) throw new IllegalArgumentException();
@@ -1477,7 +1526,7 @@ class TreeNodes {
 					return new UrlNode(parent, icon, String.format("%s \"%s\"", entry.type==null ? "<Type "+entry.typeN+">" : entry.type.toString(), entry.name), entry.url);
 				}
 				if (entry.rawData!=null)
-					return new RawJsonDataNode(parent, "Entry", entry.rawData);
+					return new RawJsonDataNode(parent, "Entry", entry.rawData, entry.getClass());
 				return null;
 			}
 
@@ -1485,7 +1534,7 @@ class TreeNodes {
 				if (array==null) return;
 				array.forEach(v->{
 					if      (v.hasParsedData) ch.add(new UrlNode(parent, nodeLabel + (v.name!=null ? " \""+v.name+"\"" : ""), v.url));
-					else if (v.rawData!=null) ch.add(new RawJsonDataNode(parent, "["+nodeLabel+"]", v.rawData));
+					else if (v.rawData!=null) ch.add(new RawJsonDataNode(parent, "["+nodeLabel+"]", v.rawData, v.getClass()));
 				});
 			}
 
@@ -1515,21 +1564,21 @@ class TreeNodes {
 						if (appActivity.hasParsedData)
 							children.add(new Base64ValueNode(this, "App Activity", appActivity.value));
 						else if (appActivity.rawData!=null)
-							children.add(new RawJsonDataNode(this, "App Activity [Raw Data]", appActivity.rawData));
+							children.add(new RawJsonDataNode(this, "App Activity [Raw Data]", appActivity.rawData, appActivity.getClass()));
 					}
 					if (gameActivity!=null) {
 						if (gameActivity.hasParsedData)
 							for (int i=0; i<gameActivity.values.size(); i++)
 								children.add(new Base64ValueNode(this, "Game Activity ["+(i+1)+"]", gameActivity.values.get(i)));
 						else if (gameActivity.rawData!=null)
-							children.add(new RawJsonDataNode(this, "Game Activity [Raw Data]", gameActivity.rawData));
+							children.add(new RawJsonDataNode(this, "Game Activity [Raw Data]", gameActivity.rawData, gameActivity.getClass()));
 					}
 					if (userNews!=null) {
 						if (userNews.hasParsedData)
 							for (int i=0; i<userNews.values.size(); i++)
 								children.add(new Base64ValueNode(this, "User News ["+(i+1)+"]", userNews.values.get(i)));
 						else if (userNews.rawData!=null)
-							children.add(new RawJsonDataNode(this, "User News [Raw Data]", userNews.rawData));
+							children.add(new RawJsonDataNode(this, "User News [Raw Data]", userNews.rawData, userNews.getClass()));
 					}
 					return children;
 				}
@@ -1614,9 +1663,8 @@ class TreeNodes {
 				}
 				
 				@Override public TreeRoot getContentAsTree() {
-					if (!data.hasParsedData && data.rawData!=null)
-						return JSONHelper.createTreeRoot(data.rawData, false);
-					return null;
+					if (data.rawData==null) return null;
+					return JSONHelper.createRawDataTreeRoot(data.getClass(), data.rawData, false);
 				}
 
 				@Override protected Vector<? extends TreeNode> createChildren() {
@@ -1657,7 +1705,7 @@ class TreeNodes {
 							}
 						
 					} else if (values.rawData!=null) {
-						children.add(new RawJsonDataNode(parent, "KeyValues (Raw Data)", values.rawData));
+						children.add(new RawJsonDataNode(parent, "KeyValues (Raw Data)", values.rawData, values.getClass()));
 					}
 				}
 
@@ -1719,7 +1767,7 @@ class TreeNodes {
 				@Override protected Vector<? extends TreeNode> createChildren() {
 					Vector<TreeNode> children = new Vector<>();
 					if (achievements.rawData!=null)
-						children.add(new RawJsonDataNode   (this, "raw data"   , achievements.rawData   ));
+						children.add(new RawJsonDataNode(this, "raw data", achievements.rawData, achievements.getClass()));
 					if (achievements.hasParsedData) {
 						if (achievements.achievedHidden!=null) children.add(GroupingNode.create(this, "Achieved (hidden)", achievements.achievedHidden, null, AchievementNode::new));
 						if (achievements.highlight     !=null) children.add(GroupingNode.create(this, "Highlight"        , achievements.highlight     , null, AchievementNode::new));
@@ -1779,13 +1827,13 @@ class TreeNodes {
 					@Override
 					public TreeRoot getContentAsTree() {
 						if (achievement.rawData==null) return null;
-						return JSONHelper.createTreeRoot(achievement.rawData, false);
+						return JSONHelper.createRawDataTreeRoot(achievement.getClass(), achievement.rawData, false);
 					}
 
 					@Override protected Vector<? extends TreeNode> createChildren() {
 						Vector<TreeNode> children = new Vector<>();
 						if (achievement.rawData!=null)
-							children.add(new RawJsonDataNode   (this, "raw data"   , achievement.rawData    ));
+							children.add(new RawJsonDataNode   (this, "raw data"   , achievement.rawData    , achievement.getClass()));
 						if (achievement.hasParsedData) {
 							children.add(new PrimitiveValueNode(this, "Description", achievement.description));
 							children.add(new PrimitiveValueNode(this, "ID"         , achievement.id         ));
@@ -1850,7 +1898,7 @@ class TreeNodes {
 				@Override
 				public TreeRoot getContentAsTree() {
 					if (data.rawData==null) return null;
-					return JSONHelper.createTreeRoot(data.rawData, false);
+					return JSONHelper.createRawDataTreeRoot(data.getClass(), data.rawData, false);
 				}
 
 				@Override protected Vector<? extends TreeNode> createChildren() { return null; }
@@ -1887,7 +1935,7 @@ class TreeNodes {
 					GroupingNode<?> gnode;
 					
 					if (badge.rawData!=null)
-						children.add(new RawJsonDataNode   (this, "raw data"       , badge.rawData      ));
+						children.add(new RawJsonDataNode(this, "raw data", badge.rawData, badge.getClass()));
 					
 					if (badge.hasParsedData) {
 						children.add(new SimpleTextNode(this, "Next Level: \"%s\", XP: %d", badge.nextLevelName, badge.nextLevelXP));
@@ -1936,7 +1984,7 @@ class TreeNodes {
 				@Override protected Vector<? extends TreeNode> createChildren() {
 					Vector<TreeNode> children = new Vector<>();
 					if (tradingCard.rawData!=null)
-						children.add(new RawJsonDataNode   (this, "raw data"   , tradingCard.rawData   ));
+						children.add(new RawJsonDataNode   (this, "raw data"   , tradingCard.rawData   , tradingCard.getClass()));
 					if (tradingCard.hasParsedData) {
 						children.add(new PrimitiveValueNode(this, "name"       , tradingCard.name      ));
 						children.add(new PrimitiveValueNode(this, "title"      , tradingCard.title     ));
@@ -1985,9 +2033,9 @@ class TreeNodes {
 				@Override
 				public TreeRoot getContentAsTree() {
 					if (block.hasParsedData && block.dataValue!=null)
-						return JSONHelper.createTreeRoot(block.dataValue, false);
+						return JSONHelper.createDataTreeRoot(block.getClass(), "DataValue", block.dataValue, false);
 					if (block.rawData!=null)
-						return JSONHelper.createTreeRoot(block.rawData, false);
+						return JSONHelper.createRawDataTreeRoot(block.getClass(), block.rawData, false);
 					return null;
 				}
 
@@ -2025,6 +2073,9 @@ class TreeNodes {
 		@SuppressWarnings("unused")
 		private static Icon getIconForFile(String filename) {
 			return new JFileChooser().getIcon(new File(filename));
+		}
+		private static String getTreeIDStr(String nodeName, File file) {
+			return String.format("%s(%s)", nodeName, file==null ? "<null>" : file.getAbsolutePath());
 		}
 		
 		static class Root extends BaseTreeNode<TreeNode,TreeNode> {
@@ -2350,13 +2401,13 @@ class TreeNodes {
 						node = new TextFile(parent, file);
 						
 					} else if (VDF_File.is(file)) {
-						node = new VDF_File(parent, file);
+						node = new VDF_File(parent, file, getTreeIDStr("VDF_File", file));
 						
 					} else if (JSON_File.is(file)) {
-						node = new JSON_File(parent, file);
+						node = new JSON_File(parent, file, getTreeIDStr("JSON_File", file));
 						
 					} else if (ACF_File.is(file)) {
-						node = new ACF_File(parent, file);
+						node = new ACF_File(parent, file, getTreeIDStr("ACF_File", file));
 						
 					} else if (AppManifestNode.is(file)) {
 						node = new AppManifestNode(parent, file);
@@ -2504,12 +2555,14 @@ class TreeNodes {
 		private static class JSON_File extends TextFile implements ParsedByteBasedTextFileSource {
 			
 			private JSON_Data.Value<Data.NV,Data.V> parseResult;
+			private final String treeIDStr;
 
-			JSON_File(TreeNode parent, File file) {
-				this(parent, file, TreeIcons.JSONFile);
+			JSON_File(TreeNode parent, File file, String treeIDStr) {
+				this(parent, file, treeIDStr, TreeIcons.JSONFile);
 			}
-			JSON_File(TreeNode parent, File file, TreeIcons icon) {
+			JSON_File(TreeNode parent, File file, String treeIDStr, TreeIcons icon) {
 				super(parent, file, icon, StandardCharsets.UTF_8);
+				this.treeIDStr = treeIDStr;
 				parseResult = null;
 			}
 
@@ -2523,19 +2576,18 @@ class TreeNodes {
 			
 			@Override
 			public TreeRoot getContentAsTree() {
-				if (parseResult != null)
-					return JSONHelper.createTreeRoot(parseResult, isLarge());
-				
-				String text = getContentAsText();
-				if (text==null) return null;
-				try {
-					parseResult = JSONHelper.parseJsonText(text);
-				} catch (JSON_Parser.ParseException e) {
-					Data.showException(e, fileObj);
-					return SimpleTextNode.createSingleTextLineTree("Parse Error: %s", e.getMessage());
+				if (parseResult == null) {
+					String text = getContentAsText();
+					if (text==null) return null;
+					try {
+						parseResult = JSONHelper.parseJsonText(text);
+					} catch (JSON_Parser.ParseException e) {
+						Data.showException(e, fileObj);
+						return SimpleTextNode.createSingleTextLineTree("Parse Error: %s", e.getMessage());
+					}
 				}
 				if (parseResult != null)
-					return JSONHelper.createTreeRoot(parseResult, isLarge());
+					return JSONHelper.createDataTreeRoot(treeIDStr, parseResult, isLarge());
 				
 				return SimpleTextNode.createSingleTextLineTree("Parse Error: Parser returns <null>");
 			}
@@ -2543,23 +2595,23 @@ class TreeNodes {
 
 		private static class VDF_File extends TextFile implements ParsedByteBasedTextFileSource {
 			
-			private static final DataTreeNodeContextMenu contextMenu = new DataTreeNodeContextMenu();
-			
 			private VDFParser.Result vdfData;
 			private final String predefinedTitle;
+			private final String treeIDStr;
 
-			VDF_File(TreeNode parent, String predefinedTitle, File file) {
-				this(parent, predefinedTitle, file, TreeIcons.VDFFile);
+			VDF_File(TreeNode parent, String predefinedTitle, File file, String treeIDStr) {
+				this(parent, predefinedTitle, file, treeIDStr, TreeIcons.VDFFile);
 			}
-			VDF_File(TreeNode parent, File file) {
-				this(parent, null, file, TreeIcons.VDFFile);
+			VDF_File(TreeNode parent, File file, String treeIDStr) {
+				this(parent, null, file, null, TreeIcons.VDFFile);
 			}
-			VDF_File(TreeNode parent, File file, TreeIcons icon) {
-				this(parent, null, file, icon);
+			VDF_File(TreeNode parent, File file, String treeIDStr, TreeIcons icon) {
+				this(parent, null, file, treeIDStr, icon);
 			}
-			VDF_File(TreeNode parent, String predefinedTitle,  File file, TreeIcons icon) {
+			VDF_File(TreeNode parent, String predefinedTitle,  File file, String treeIDStr, TreeIcons icon) {
 				super(parent, file, icon, StandardCharsets.UTF_8);
 				this.predefinedTitle = predefinedTitle;
+				this.treeIDStr = treeIDStr;
 				this.vdfData = null;
 			}
 
@@ -2588,17 +2640,17 @@ class TreeNodes {
 						return SimpleTextNode.createSingleTextLineTree("Parse Error: %s", e.getMessage());
 					}
 				}
-				return vdfData==null ? null : vdfData.getTreeRoot(isLarge(),contextMenu);
+				return vdfData==null ? null : vdfData.getTreeRoot(isLarge(),new DataTreeNodeContextMenu(treeIDStr));
 			}
 		}
 
 		private static class ACF_File extends VDF_File {
 			
-			ACF_File(TreeNode parent, File file) {
-				this(parent, file, TreeIcons.VDFFile);
+			ACF_File(TreeNode parent, File file, String treeIDStr) {
+				this(parent, file, treeIDStr, TreeIcons.VDFFile);
 			}
-			ACF_File(TreeNode parent, File file, TreeIcons icon) {
-				super(parent, file, icon);
+			ACF_File(TreeNode parent, File file, String treeIDStr, TreeIcons icon) {
+				super(parent, file, treeIDStr, icon);
 			}
 		
 			static boolean is(File file) {
@@ -2611,7 +2663,7 @@ class TreeNodes {
 			private final int id;
 		
 			AppManifestNode(TreeNode parent, File file) {
-				super(parent, file, TreeIcons.AppManifest);
+				super(parent, file, "AppManifest<VDF>", TreeIcons.AppManifest);
 				id = AppManifest.getAppIDFromFile(file);
 			}
 		

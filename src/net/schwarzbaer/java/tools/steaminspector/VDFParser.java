@@ -449,7 +449,13 @@ class VDFParser {
 		//	if (this.valuePairArray==null) throw new IllegalArgumentException();
 		//}
 		
-		TreeRoot getTreeRoot(TreeContextMenuHandler tcmh) {
+		TreeRoot createRawDataTreeRoot(Class<?> rawDataHostClass) {
+			return createTreeRoot(new TreeNodes.DataTreeNodeContextMenu(rawDataHostClass.getCanonicalName()+"<RawData>"));
+		}
+		TreeRoot createDataTreeRoot(String treeIDStr) {
+			return createTreeRoot(new TreeNodes.DataTreeNodeContextMenu(treeIDStr));
+		}
+		TreeRoot createTreeRoot(TreeContextMenuHandler tcmh) {
 			return new TreeRoot(this, type!=Type.Root, true, tcmh);
 		}
 		
