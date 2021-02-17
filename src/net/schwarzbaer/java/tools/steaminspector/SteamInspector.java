@@ -33,6 +33,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
@@ -51,6 +52,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JRadioButton;
+import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
@@ -318,11 +320,16 @@ class SteamInspector {
 
 	private JMenuBar createMenuBar() {
 		JMenuBar menuBar = new JMenuBar();
+		
 		JMenu settingsMenu = menuBar.add(new JMenu("Settings"));
 		for (ExternalViewerInfo evi:ExternalViewerInfo.values())
 			settingsMenu.add(createMenuItem("Set Path to "+evi.viewerName+" ...", true, e->evi.chooseExecutable(mainWindow)));
 		settingsMenu.addSeparator();
 		settingsMenu.add(createMenuItem("Set All Paths ...", true, e->new FolderSettingsDialog(mainWindow, "Define Paths").showDialog()));
+		
+		JMenu debugMenu = menuBar.add(new JMenu("Debug"));
+		debugMenu.add(createMenuItem("Show Interesting Nodes", true, e->TreeNodes.interestingNodes.showTo(System.out)));
+		
 		return menuBar;
 	}
 
@@ -444,40 +451,33 @@ class SteamInspector {
 		fileContentPanel.repaint();
 	}
 
-	static JRadioButton createRadioButton(String title, boolean isSelected, boolean isEnabled, ButtonGroup bg, Consumer<Boolean> setValue) {
-		JRadioButton comp = new JRadioButton(title, isSelected);
+	private static <BTN extends AbstractButton> BTN configure(BTN comp, boolean isEnabled, ButtonGroup bg, ActionListener al) {
 		comp.setEnabled(isEnabled);
 		if (bg!=null) bg.add(comp);
-		if (setValue!=null) comp.addActionListener(e->setValue.accept(comp.isSelected()));
+		if (al!=null) comp.addActionListener(al);
 		return comp;
 	}
-	
+	private static <BTN extends AbstractButton> BTN configure(BTN comp, boolean isEnabled, ButtonGroup bg, Consumer<Boolean> setValue) {
+		return configure(comp, isEnabled, bg, setValue==null ? null : (ActionListener)e->setValue.accept(comp.isSelected()));
+	}
+
+	static JRadioButton createRadioButton(String title, boolean isSelected, boolean isEnabled, ButtonGroup bg, Consumer<Boolean> setValue) {
+		return configure(new JRadioButton(title, isSelected), isEnabled, bg, setValue);
+	}
 	static JButton createButton(String title, boolean enabled, ActionListener al) {
-		JButton comp = new JButton(title);
-		comp.setEnabled(enabled);
-		if (al!=null) comp.addActionListener(al);
-		return comp;
+		return configure(new JButton(title), enabled, null, al);
 	}
-	
 	static JCheckBoxMenuItem createCheckBoxMenuItem(String title, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
-		JCheckBoxMenuItem comp = new JCheckBoxMenuItem(title, isSelected);
-		comp.setEnabled(isEnabled);
-		if (setValue!=null) comp.addActionListener(e->setValue.accept(comp.isSelected()));
-		return comp;
+		return configure(new JCheckBoxMenuItem(title, isSelected), isEnabled, null, setValue);
 	}
-	
+	static JRadioButtonMenuItem createRadioButtonMenuItem(String title, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
+		return configure(new JRadioButtonMenuItem(title, isSelected), isEnabled, null, setValue);
+	}
 	static JMenuItem createMenuItem(String title, boolean isEnabled, ActionListener al) {
-		JMenuItem comp = new JMenuItem(title);
-		comp.setEnabled(isEnabled);
-		if (al!=null) comp.addActionListener(al);
-		return comp;
+		return configure(new JMenuItem(title), isEnabled, null, al);
 	}
-	
 	static JCheckBox createCheckBox(String title, boolean isSelected, boolean isEnabled, Consumer<Boolean> setValue) {
-		JCheckBox comp = new JCheckBox(title, isSelected);
-		comp.setEnabled(isEnabled);
-		if (setValue!=null) comp.addActionListener(e->setValue.accept(comp.isSelected()));
-		return comp;
+		return configure(new JCheckBox(title, isSelected), isEnabled, null, setValue);
 	}
 
 	static Component createHorizontalLine() {
@@ -1649,13 +1649,13 @@ class SteamInspector {
 		}
 	}
 
-	private static class DataTreeOutput extends FileContentOutput {
+	private static class TreeOutput extends FileContentOutput {
 		private final JTree view;
 		private final JScrollPane scrollPane;
 		private TreeRoot treeRoot;
 		private DefaultTreeModel currentTreeModel;
 
-		DataTreeOutput() {
+		TreeOutput() {
 			treeRoot = null;
 			currentTreeModel = null;
 			view = new JTree();
@@ -1688,6 +1688,8 @@ class SteamInspector {
 			if (this.treeRoot==null) {
 				view.setModel(currentTreeModel = null);
 			} else {
+				if (this.treeRoot.beforeViewAction!=null)
+					this.treeRoot.beforeViewAction.run();
 				view.setModel(currentTreeModel = new DefaultTreeModel(this.treeRoot.node));
 				view.setRootVisible(this.treeRoot.isRootVisible);
 				if (this.treeRoot.expandAllRows) {
@@ -1734,7 +1736,7 @@ class SteamInspector {
 		
 		private final HexTableOutput hexView;
 		private final TextOutput plainText;
-		private final DataTreeOutput dataTree;
+		private final TreeOutput dataTree;
 		
 		CombinedOutput(BaseTreeNode.ContentType type) {
 			this.type = type;
@@ -1757,7 +1759,7 @@ class SteamInspector {
 			case DataTree:
 				hexView    = null;
 				plainText  = null;
-				dataTree   = new DataTreeOutput();
+				dataTree   = new TreeOutput();
 				mainComp   = dataTree.getMainComponent();
 				break;
 			
@@ -1772,7 +1774,7 @@ class SteamInspector {
 			case ParsedByteBasedText:
 				add("Hex Table" , hexView   = new HexTableOutput());
 				add("Plain Text", plainText = new TextOutput    ());
-				add("Data Tree" , dataTree  = new DataTreeOutput());
+				add("Data Tree" , dataTree  = new TreeOutput    ());
 				setActiveTab(2);
 				mainComp  = super.getMainComponent();
 				break;
@@ -1988,15 +1990,20 @@ class SteamInspector {
 		final boolean isRootVisible;
 		final boolean expandAllRows;
 		final TreeContextMenuHandler tcmh;
+		final Runnable beforeViewAction;
 		
 		TreeRoot(TreeNode node, boolean isRootVisible, boolean expandAllRows) {
-			this(node, isRootVisible, expandAllRows, null);
+			this(node, isRootVisible, expandAllRows, null, null);
 		}
 		TreeRoot(TreeNode node, boolean isRootVisible, boolean expandAllRows, TreeContextMenuHandler tcmh) {
+			this(node, isRootVisible, expandAllRows, tcmh, null);
+		}
+		TreeRoot(TreeNode node, boolean isRootVisible, boolean expandAllRows, TreeContextMenuHandler tcmh, Runnable beforeViewAction) {
 			this.node = node;
 			this.isRootVisible = isRootVisible;
 			this.expandAllRows = expandAllRows;
 			this.tcmh = tcmh;
+			this.beforeViewAction = beforeViewAction;
 		}
 		@Override public void showContextMenu(JTree invoker, DefaultTreeModel currentTreeModel, int x, int y, TreePath clickedTreePath, Object clickedTreeNode) {
 			if (tcmh!=null)

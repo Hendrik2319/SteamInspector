@@ -6,6 +6,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
@@ -28,6 +29,7 @@ import java.util.Vector;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -38,6 +40,7 @@ import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JFileChooser;
 import javax.swing.JMenu;
 import javax.swing.JMenuItem;
+import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JTextArea;
 import javax.swing.JTree;
 import javax.swing.tree.DefaultTreeModel;
@@ -51,6 +54,7 @@ import net.schwarzbaer.java.tools.steaminspector.Data.AppManifest;
 import net.schwarzbaer.java.tools.steaminspector.Data.Base64String;
 import net.schwarzbaer.java.tools.steaminspector.Data.Game;
 import net.schwarzbaer.java.tools.steaminspector.Data.GameImages;
+import net.schwarzbaer.java.tools.steaminspector.Data.NV;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.AchievementProgress;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.AchievementProgress.AchievementProgressInGame;
@@ -60,6 +64,7 @@ import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos.Community
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos.GameInfosFilterOptions;
 import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShot;
 import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShotLists;
+import net.schwarzbaer.java.tools.steaminspector.Data.V;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteBasedTextFileSource;
@@ -217,6 +222,63 @@ class TreeNodes {
 		System.out.printf("[%s] \"%s\": %s%n", source.getClass().getSimpleName(), source.toString(), String.format(Locale.ENGLISH, format, args));
 	}
 	
+	static class NodeColorizer {
+		
+		interface ColorizableNode {
+			boolean wasProcessed();
+			boolean hasUnprocessedChildren();
+			Boolean isInteresting();
+		}
+		
+		enum ColorSetting {
+			Normal (null, new Color(0xC000C0), new Color(0x00B000), new Color(0x14C1FF), new Color(0xC0C0C0)),
+			WarnNew(new Color(0xFF0000), new Color(0xC000C0), null, new Color(0x14C1FF), new Color(0xC0C0C0)),
+			;
+			final Color notProcessed;
+			final Color partiallyProcessed;
+			final Color fullyProcessed;
+			final Color isInteresting;
+			final Color isNotInteresting;
+			private ColorSetting(Color notProcessed, Color partiallyProcessed, Color fullyProcessed, Color isInteresting, Color isNotInteresting) {
+				this.notProcessed = notProcessed;
+				this.partiallyProcessed = partiallyProcessed;
+				this.fullyProcessed = fullyProcessed;
+				this.isInteresting = isInteresting;
+				this.isNotInteresting = isNotInteresting;
+			}
+		}
+
+		static Color getTextColor        (ColorizableNode        node ) { return getTextColor(node , ColorSetting.Normal ); }
+		static Color getTextColor_WarnNew(ColorizableNode        node ) { return getTextColor(node , ColorSetting.WarnNew); }
+		static Color getTextColor        (JSON_Data.Value<NV, V> value) { return getTextColor(value, ColorSetting.Normal ); }
+		static Color getTextColor_WarnNew(JSON_Data.Value<NV, V> value) { return getTextColor(value, ColorSetting.WarnNew); }
+		
+		static Color getTextColor(ColorizableNode node, ColorSetting colorSetting) {
+			if (node==null) return getTextColor(false, false, null, colorSetting);
+			return getTextColor(node.wasProcessed(), node.hasUnprocessedChildren(), node.isInteresting(), colorSetting);
+		}
+		static Color getTextColor(JSON_Data.Value<NV, V> value, ColorSetting colorSetting) {
+			if (value==null) return getTextColor(false, false, null, colorSetting);
+			return getTextColor(value.extra.wasProcessed, value.extra.hasUnprocessedChildren(), null, colorSetting);
+		}
+		
+		static Color getTextColor(boolean wasProcessed, boolean hasUnprocessedChildren, Boolean isInteresting, ColorSetting colorSetting) {
+			if (colorSetting==null)
+				return null;
+			if (wasProcessed) {
+				if (hasUnprocessedChildren)
+					return colorSetting.partiallyProcessed;
+				return colorSetting.fullyProcessed;
+			}
+			if (isInteresting!=null) {
+				if (isInteresting)
+					return colorSetting.isInteresting;
+				return colorSetting.isNotInteresting;
+			}
+			return colorSetting.notProcessed;
+		}
+	}
+	
 	static class ValueListOutput extends Vector<ValueListOutput.Entry> {
 		private static final long serialVersionUID = -5898390765518030500L;
 
@@ -289,6 +351,67 @@ class TreeNodes {
 		}
 	}
 	
+	static final InterestingNodes interestingNodes = new InterestingNodes();
+	static class InterestingNodes {
+		
+		HashMap<String,HashMap<String,Boolean>> map = new HashMap<>();
+		
+		void set(String treeIDStr, DataTreeNode treeNode, Boolean isInteresting) {
+			if (treeNode==null) return;
+			if (treeIDStr==null) return;
+			
+			HashMap<String, Boolean> treeMap = map.get(treeIDStr);
+			if (treeMap==null) map.put(treeIDStr, treeMap = new HashMap<>());
+			String path = treeNode.getPath();
+			
+			if (isInteresting==null) treeMap.remove(path);
+			else treeMap.put(path, isInteresting);
+		}
+
+		Boolean get(String treeIDStr, DataTreeNode treeNode) {
+			if (treeNode==null) return false;
+			if (treeIDStr==null) return false;
+			
+			HashMap<String, Boolean> treeMap = map.get(treeIDStr);
+			if (treeMap==null) map.put(treeIDStr, treeMap = new HashMap<>());
+			String path = treeNode.getPath();
+			
+			return treeMap.get(path);
+		}
+
+		public void showTo(PrintStream out) {
+			out.println("Interesting Nodes:");
+			showTo(out, true, "    ");
+			out.println("Not Interesting Nodes:");
+			showTo(out, false, "    ");
+		}
+
+		public void showTo(PrintStream out, boolean value, String indent) {
+			Vector<String> treeIDStrs = new Vector<>(map.keySet());
+			treeIDStrs.sort(null);
+			for (String treeIDStr:treeIDStrs) {
+				out.printf("%s%s%n", indent, treeIDStr);
+				HashMap<String, Boolean> treeMap = map.get(treeIDStr);
+				Vector<String> nodePaths = new Vector<>(treeMap.keySet());
+				nodePaths.sort(Comparator.comparing(String::toLowerCase));
+				for (String nodePath:nodePaths) {
+					Boolean nodeValue = treeMap.get(nodePath);
+					if (nodeValue!=null && nodeValue.booleanValue()==value)
+						out.printf("%s    %s%n", indent, nodePath);
+				}
+			}
+		}
+		
+	}
+	
+	static TreeRoot createDataTreeRoot(DataTreeNode rootNode, String treeIDStr, boolean isRootVisible, boolean expandAllRows) {
+		return new TreeRoot(rootNode, isRootVisible, expandAllRows, new DataTreeNodeContextMenu(treeIDStr), ()->{
+			rootNode.doToAllNodesChildNodesAndFutureChildNodes(node->{
+				node.setInteresting(interestingNodes.get(treeIDStr, node));
+			});
+		});
+	}
+	
 	interface TreeNodeII extends TreeNode  {
 		Iterable<? extends TreeNode> getChildren();
 	}
@@ -304,6 +427,7 @@ class TreeNodes {
 			str += String.format("AccessCall : %s%n", getAccessCall());
 			return str;
 		}
+		void doToAllNodesChildNodesAndFutureChildNodes(Consumer<DataTreeNode> action);
 		String getName();
 		String getValueStr();
 		String getPath();
@@ -311,8 +435,7 @@ class TreeNodes {
 		boolean hasName();
 		boolean hasValue();
 
-		default void markInteresting() {} // TODO: markInteresting
-		default boolean isInteresting() { return false; }
+		void setInteresting(Boolean isInteresting);
 		
 		boolean areChildrenSortable();
 		void setChildrenOrder(ChildrenOrder order, DefaultTreeModel currentTreeModel);
@@ -337,8 +460,12 @@ class TreeNodes {
 		private final JMenuItem miAccessCall;
 		private final JMenuItem miFullInfo;
 		private final JMenuItem miCollapseChildren;
+		private final JMenuItem miExpandChildren;
+
 		private final SortChildrenMenu menuSortChildren;
-		private final JCheckBoxMenuItem miMarkInteresting;
+		private final JRadioButtonMenuItem miMarkInteresting;
+		private final JRadioButtonMenuItem miMarkUnInteresting;
+		private final JRadioButtonMenuItem miMarkUndefined;
 		
 		private DataTreeNode clickedTreeNode;
 		private TreePath clickedTreePath;
@@ -355,27 +482,47 @@ class TreeNodes {
 			add(miValue           = SteamInspector.createMenuItem("Copy Value"         , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getValueStr())));
 			add(miPath            = SteamInspector.createMenuItem("Copy Path"          , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getPath())));
 			add(miAccessCall      = SteamInspector.createMenuItem("Copy Access Call"   , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getAccessCall())));
-			add(miFullInfo        = SteamInspector.createMenuItem("Copy Full Info"     , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getFullInfo())));
+			add(miFullInfo        = SteamInspector.createMenuItem("Copy Full Info"     , true, e->ClipboardTools.copyToClipBoard(getFullInfo(clickedTreeNode))));
 			addSeparator();
-			add(miMarkInteresting = SteamInspector.createCheckBoxMenuItem("Interesting", false, true, b->{clickedTreeNode.markInteresting();}));
+			add(miMarkInteresting   = SteamInspector.createRadioButtonMenuItem("Interesting"  , false, true, b->setInteresting(b, true )));
+			add(miMarkUnInteresting = SteamInspector.createRadioButtonMenuItem("Uninteresting", false, true, b->setInteresting(b, false)));
+			add(miMarkUndefined     = SteamInspector.createRadioButtonMenuItem("<Undefined>"  , false, true, b->setInteresting(b, null )));
 			addSeparator();
 			add(SteamInspector.createMenuItem("Expand Full Tree", true, e->{
 				if (tree!=null)
 					for (int i=0; i<tree.getRowCount(); i++)
 						tree.expandRow(i);
 			}));
-			add(miCollapseChildren = SteamInspector.createMenuItem("Collapse Children", true, e->{
-				if (tree!=null && clickedTreeNode!=null && clickedTreePath!=null) {
-					Iterable<? extends TreeNode> children = clickedTreeNode.getChildren();
-					if (children!=null) {
-						tree.expandPath(clickedTreePath);
-						for (TreeNode child:children)
-							tree.collapsePath(clickedTreePath.pathByAddingChild(child));
-					}
-				}
-			}));
+			add(miCollapseChildren = SteamInspector.createMenuItem("Collapse Children", true, e->doCollapseExpandChildren(JTree::collapsePath)));
+			add(miExpandChildren   = SteamInspector.createMenuItem("Expand Children"  , true, e->doCollapseExpandChildren(JTree::expandPath  )));
 			add(menuSortChildren = new SortChildrenMenu("Sort Children"));
 			
+		}
+
+		private void doCollapseExpandChildren(BiConsumer<JTree,TreePath> childPathAction) {
+			if (tree!=null && clickedTreeNode!=null && clickedTreePath!=null) {
+				Iterable<? extends TreeNode> children = clickedTreeNode.getChildren();
+				if (children!=null) {
+					tree.expandPath(clickedTreePath);
+					for (TreeNode child:children)
+						childPathAction.accept(tree, clickedTreePath.pathByAddingChild(child));
+				}
+			}
+		}
+
+		private String getFullInfo(DataTreeNode node) {
+			String str = node.getFullInfo();
+			str += String.format("TreeID: %s%n", treeIDStr);
+			str += String.format("TreeNodeID: %s // %s%n", treeIDStr, node.getPath());
+			return str;
+		}
+
+		private void setInteresting(boolean b, Boolean value) {
+			if (b && treeIDStr!=null && clickedTreeNode!=null) {
+				interestingNodes.set(treeIDStr,clickedTreeNode, value );
+				clickedTreeNode.setInteresting(value);
+				currentTreeModel.nodeStructureChanged(clickedTreeNode);
+			}
 		}
 		
 		private void setChildrenOrder(DataTreeNode.ChildrenOrder order) {
@@ -398,14 +545,21 @@ class TreeNodes {
 			miAccessCall.setEnabled(this.clickedTreeNode!=null);
 			miFullInfo  .setEnabled(this.clickedTreeNode!=null);
 			miCollapseChildren.setEnabled(this.clickedTreeNode!=null);
-			miMarkInteresting .setEnabled(this.clickedTreeNode!=null && treeIDStr!=null);
-			miMarkInteresting .setSelected(this.clickedTreeNode!=null && this.clickedTreeNode.isInteresting());
+			miExpandChildren  .setEnabled(this.clickedTreeNode!=null);
+			
+			miMarkInteresting  .setEnabled(this.clickedTreeNode!=null && treeIDStr!=null);
+			miMarkUnInteresting.setEnabled(this.clickedTreeNode!=null && treeIDStr!=null);
+			miMarkUndefined    .setEnabled(this.clickedTreeNode!=null && treeIDStr!=null);
+			Boolean isInteresting = interestingNodes.get(treeIDStr,this.clickedTreeNode);
+			miMarkInteresting  .setSelected(this.clickedTreeNode!=null && isInteresting!=null && isInteresting==true );
+			miMarkUnInteresting.setSelected(this.clickedTreeNode!=null && isInteresting!=null && isInteresting==false);
+			miMarkUndefined    .setSelected(this.clickedTreeNode!=null && isInteresting==null );
 			
 			menuSortChildren.prepareMenuItems();
 			
 			show(tree, x, y);
 		}
-		
+
 		private class SortChildrenMenu extends JMenu {
 			private static final long serialVersionUID = -6772692062748277925L;
 			
@@ -818,33 +972,33 @@ class TreeNodes {
 	@SuppressWarnings("unused")
 	private static class RawJsonDataNode extends BaseTreeNode<TreeNode,TreeNode> implements TreeContentSource, FileBasedNode, ExternViewableNode {
 	
-		private final JSON_Data.Value<Data.NV,Data.V> rawValue;
+		private final JSON_Data.Value<NV,V> rawValue;
 		private final String treeIDStr;
 		private final File file;
 		private final ExternalViewerInfo viewerInfo;
 	
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, Class<?> rawDataHostClass) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, Class<?> rawDataHostClass) {
 			this(parent, title, rawValue, rawDataHostClass, null, null, null);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, String treeIDStr) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, String treeIDStr) {
 			this(parent, title, rawValue, treeIDStr       , null, null, null);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, Class<?> rawDataHostClass, Icon icon) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, Class<?> rawDataHostClass, Icon icon) {
 			this(parent, title, rawValue, rawDataHostClass, null, null, icon);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, String treeIDStr, Icon icon) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, String treeIDStr, Icon icon) {
 			this(parent, title, rawValue, treeIDStr       , null, null, icon);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, Class<?> rawDataHostClass, File file, ExternalViewerInfo viewerInfo) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, Class<?> rawDataHostClass, File file, ExternalViewerInfo viewerInfo) {
 			this(parent, title, rawValue, rawDataHostClass, file, viewerInfo, null);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, String treeIDStr, File file, ExternalViewerInfo viewerInfo) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, String treeIDStr, File file, ExternalViewerInfo viewerInfo) {
 			this(parent, title, rawValue, treeIDStr       , file, viewerInfo, null);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, Class<?> rawDataHostClass, File file, ExternalViewerInfo viewerInfo, Icon icon) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, Class<?> rawDataHostClass, File file, ExternalViewerInfo viewerInfo, Icon icon) {
 			this(parent, title, rawValue, getTreeIDStr(rawDataHostClass), file, viewerInfo, icon);
 		}
-		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<Data.NV,Data.V> rawValue, String treeIDStr, File file, ExternalViewerInfo viewerInfo, Icon icon) {
+		RawJsonDataNode(TreeNode parent, String title, JSON_Data.Value<NV,V> rawValue, String treeIDStr, File file, ExternalViewerInfo viewerInfo, Icon icon) {
 			super(parent, title, false, true, icon!=null ? icon : TreeIcons.JSONFile.getIcon());
 			this.rawValue = rawValue;
 			this.treeIDStr = treeIDStr;
@@ -1362,7 +1516,7 @@ class TreeNodes {
 			}
 			
 			@Override Color getTextColor() {
-				return JSONHelper.getTextColor_WarnNew(data.rawData);
+				return NodeColorizer.getTextColor_WarnNew(data.rawData);
 			}
 			
 			@Override
@@ -1443,7 +1597,7 @@ class TreeNodes {
 					children.add(groupingNode = GroupingNode.create(this, "All Data Blocks (unparsed)", data.blocks, null, BlockNode::new));
 					groupingNode.setExternViewable(data.file,ExternalViewerInfo.TextEditor);
 					if (data.rawData!=null) {
-						groupingNode.setTextColor(JSONHelper.getTextColor_WarnNew(data.rawData));
+						groupingNode.setTextColor(NodeColorizer.getTextColor_WarnNew(data.rawData));
 						groupingNode.setDataTree(JSONHelper.createRawDataTreeRoot(data.getClass(), data.rawData, false));
 					}
 				}
@@ -2019,7 +2173,7 @@ class TreeNodes {
 				}
 			
 				@Override Color getTextColor() {
-					return JSONHelper.getTextColor_WarnNew(block.dataValue);
+					return NodeColorizer.getTextColor_WarnNew(block.dataValue);
 				}
 
 				@Override ContentType getContentType() {
@@ -2554,7 +2708,7 @@ class TreeNodes {
 		
 		private static class JSON_File extends TextFile implements ParsedByteBasedTextFileSource {
 			
-			private JSON_Data.Value<Data.NV,Data.V> parseResult;
+			private JSON_Data.Value<NV,V> parseResult;
 			private final String treeIDStr;
 
 			JSON_File(TreeNode parent, File file, String treeIDStr) {
@@ -2640,7 +2794,7 @@ class TreeNodes {
 						return SimpleTextNode.createSingleTextLineTree("Parse Error: %s", e.getMessage());
 					}
 				}
-				return vdfData==null ? null : vdfData.getTreeRoot(isLarge(),new DataTreeNodeContextMenu(treeIDStr));
+				return vdfData==null ? null : vdfData.getTreeRoot(treeIDStr,isLarge());
 			}
 		}
 

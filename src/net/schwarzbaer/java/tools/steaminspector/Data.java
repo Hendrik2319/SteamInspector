@@ -266,12 +266,14 @@ class Data {
 		public JSON_Data.Value<NV,V> host;
 		public boolean wasProcessed;
 		public Boolean hasUnprocessedChildren;
+		public Boolean isInteresting;
 		
 		public V(JSON_Data.Value.Type type) {
 			this.type = type;
 			this.host = null; 
 			wasProcessed = false;
 			hasUnprocessedChildren = type!=null && type.isSimple ? false : null;
+			isInteresting = null;
 		}
 		void setHost(JSON_Data.Value<NV,V> host) {
 			this.host = host;

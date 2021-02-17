@@ -10,14 +10,15 @@ import java.nio.file.Files;
 import java.util.Comparator;
 import java.util.Locale;
 import java.util.Vector;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import javax.swing.Icon;
 import javax.swing.tree.DefaultTreeModel;
 
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContextMenuHandler;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.DataTreeNode;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.NodeColorizer.ColorizableNode;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.VdfTreeIcons;
 
 class VDFParser {
@@ -83,12 +84,14 @@ class VDFParser {
 		private final Block datablock;
 		private boolean wasProcessed;
 		private Boolean hasUnprocessedChildren;
+		private Boolean isInteresting;
 		
 		private ValuePair(Block label, Block datablock) {
 			this.label = label;
 			this.datablock = datablock;
 			this.wasProcessed = false;
 			this.hasUnprocessedChildren = null;
+			this.isInteresting = null;
 			if (this.label==null || this.datablock==null)
 				throw new IllegalArgumentException("Both Blocks in a ValuePair must be non-null");
 			if (this.label.isClosingBracketDummy() != this.datablock.isClosingBracketDummy())
@@ -326,9 +329,8 @@ class VDFParser {
 			rootPairs = new Vector<>();
 		}
 
-		TreeRoot getTreeRoot(boolean isLarge, TreeContextMenuHandler tcmh) {
-			return new TreeRoot(createVDFTreeNode(), false, !isLarge, tcmh);
-			//return new TreeRoot(VDFTreeNode.createRoot(rootPairs), false, !isLarge, tcmh);
+		TreeRoot getTreeRoot(String treeIDStr, boolean isLarge) {
+			return TreeNodes.createDataTreeRoot(createVDFTreeNode(), treeIDStr, false, !isLarge);
 		}
 
 		VDFTreeNode createVDFTreeNode() {
@@ -341,7 +343,7 @@ class VDFParser {
 
 	}
 	
-	static class VDFTreeNode extends SteamInspector.BaseTreeNode<VDFTreeNode,VDFTreeNode> implements DataTreeNode {
+	static class VDFTreeNode extends SteamInspector.BaseTreeNode<VDFTreeNode,VDFTreeNode> implements DataTreeNode, ColorizableNode {
 		
 		enum Type { Root, String, Array }
 		
@@ -351,21 +353,13 @@ class VDFParser {
 		private final String value;
 		private final Type type;
 		private ChildrenOrder childrenOrder;
+		private Consumer<DataTreeNode> childNodeAction;
 
-		VDFTreeNode(Vector<ValuePair> valuePairArray) { // Root
-			super(null,"VDF Tree Root",true,valuePairArray==null || valuePairArray.isEmpty());
-			this.base = null;
-			this.type = Type.Root;
-			this.valuePairArray = valuePairArray;
-			this.name = null;
-			this.value = null;
-			this.childrenOrder=null;
-		}
 		private static boolean isLeaf(ValuePair base) {
-			if (base==null) throw new IllegalArgumentException();
-			if (base.datablock==null) throw new IllegalStateException();
+			if (base                ==null) throw new IllegalArgumentException();
+			if (base.datablock      ==null) throw new IllegalStateException();
 			if (base.datablock.type!=Block.Type.Array) return true;
-			if (base.datablock.array==null)  throw new IllegalStateException();
+			if (base.datablock.array==null) throw new IllegalStateException();
 			return base.datablock.array.isEmpty();
 		}
 		private static boolean allowsChildren(ValuePair base) {
@@ -374,12 +368,12 @@ class VDFParser {
 			return base.datablock.type==Block.Type.Array;
 		}
 		private static String getTitle(ValuePair base) {
-			if (base==null) throw new IllegalArgumentException();
-			if (base.datablock==null) throw new IllegalStateException();
+			if (base               ==null) throw new IllegalArgumentException();
+			if (base.datablock     ==null) throw new IllegalStateException();
 			if (base.datablock.type==null) throw new IllegalStateException();
-			if (base.label==null) throw new IllegalStateException();
+			if (base.label         ==null) throw new IllegalStateException();
 			if (base.label.type!=Block.Type.String) throw new IllegalStateException();
-			if (base.label.str==null) throw new IllegalStateException();
+			if (base.label.str     ==null) throw new IllegalStateException();
 			switch (base.datablock.type) {
 			case Array:
 				return base.label.str;
@@ -389,15 +383,29 @@ class VDFParser {
 			}
 			throw new IllegalStateException();
 		}
+		VDFTreeNode(Vector<ValuePair> valuePairArray) { // Root
+			super(null,"VDF Tree Root",true,valuePairArray==null || valuePairArray.isEmpty());
+			this.base = null;
+			this.childrenOrder = null;
+			this.childNodeAction = null;
+			this.name = null;
+			this.type = Type.Root;
+			this.valuePairArray = valuePairArray;
+			this.value = null;
+		}
 		VDFTreeNode(VDFTreeNode parent, ValuePair base) {
 			super(parent, getTitle(base), allowsChildren(base), isLeaf(base));
+			if (base               ==null) throw new IllegalArgumentException();
+			if (base.datablock     ==null) throw new IllegalStateException();
+			if (base.datablock.type==null) throw new IllegalStateException();
+			if (base.label         ==null) throw new IllegalStateException();
+			if (base.label.type!=Block.Type.String) throw new IllegalStateException();
+			if (base.label.str     ==null) throw new IllegalStateException();
+			
 			this.base = base;
-			if (this.base==null) throw new IllegalArgumentException();
-			if (this.base.datablock==null) throw new IllegalStateException();
-			if (this.base.datablock.type==null) throw new IllegalStateException();
-			if (this.base.label==null) throw new IllegalStateException();
-			if (this.base.label.type!=Block.Type.String) throw new IllegalStateException();
-			if (this.base.label.str==null) throw new IllegalStateException();
+			this.childrenOrder=null;
+			this.childNodeAction = null;
+			this.name = this.base.label.str;
 			
 			switch (this.base.datablock.type) {
 			
@@ -420,58 +428,49 @@ class VDFParser {
 				throw new IllegalStateException();
 
 			}
-			this.name = this.base.label.str;
-			this.childrenOrder=null;
 		}
-		//VDFTreeNode(VDFTreeNode parent, ValuePair base, String name, String value) { // String Value
-		//	super(parent, String.format("%s : \"%s\"", name, value), false, true);
-		//	this.base = base;
-		//	this.type = Type.String;
-		//	this.valuePairArray = null;
-		//	this.name = name;
-		//	this.value = value;
-		//	this.base.hasUnprocessedChildren = false;
-		//	this.childrenOrder=null;
-		//	if (this.base==null) throw new IllegalArgumentException();
-		//	if (this.base.datablock.type!=type.blockType) throw new IllegalArgumentException();
-		//	if (this.value==null) throw new IllegalArgumentException();
-		//}
-		//VDFTreeNode(VDFTreeNode parent, ValuePair base, String name, Vector<ValuePair> valuePairArray) { // Array Value
-		//	super(parent, name, true,valuePairArray==null || valuePairArray.isEmpty());
-		//	this.base = base;
-		//	this.type = Type.Array;
-		//	this.valuePairArray = valuePairArray;
-		//	this.name = name;
-		//	this.value = null;
-		//	this.childrenOrder=null;
-		//	if (this.base==null) throw new IllegalArgumentException();
-		//	if (this.base.datablock.type!=type.blockType) throw new IllegalArgumentException();
-		//	if (this.valuePairArray==null) throw new IllegalArgumentException();
-		//}
+		
+		@Override public void doToAllNodesChildNodesAndFutureChildNodes(Consumer<DataTreeNode> childNodeAction) {
+			this.childNodeAction = childNodeAction;
+			if (this.childNodeAction!=null)
+				this.childNodeAction.accept(this);
+			if (children!=null)
+				for (VDFTreeNode childNode:children)
+					childNode.doToAllNodesChildNodesAndFutureChildNodes(this.childNodeAction);
+		}
 		
 		TreeRoot createRawDataTreeRoot(Class<?> rawDataHostClass) {
-			return createTreeRoot(new TreeNodes.DataTreeNodeContextMenu(rawDataHostClass.getCanonicalName()+"<RawData>"));
+			return createDataTreeRoot(rawDataHostClass.getCanonicalName()+"<RawData>");
 		}
 		TreeRoot createDataTreeRoot(String treeIDStr) {
-			return createTreeRoot(new TreeNodes.DataTreeNodeContextMenu(treeIDStr));
-		}
-		TreeRoot createTreeRoot(TreeContextMenuHandler tcmh) {
-			return new TreeRoot(this, type!=Type.Root, true, tcmh);
+			return TreeNodes.createDataTreeRoot(this, treeIDStr, type!=Type.Root, true);
 		}
 		
 		boolean is(Type type) { return this.type==type; }
 		
+		@Override public void setInteresting(Boolean isInteresting) {
+			if (base!=null)
+				base.isInteresting = isInteresting;
+		}
+		
+		@Override public Boolean isInteresting() {
+			Boolean value = base==null ? null : base.isInteresting;
+			if (value==null && parent!=null)
+				value = parent.isInteresting();
+			return value;
+		}
+		
 		void markAsProcessed() {
-			if (type!=Type.Root)
+			if (base!=null)
 				base.wasProcessed = true;
 		}
 		
-		private boolean wasProcessed() {
-			if (type==Type.Root) return true;
+		@Override public boolean wasProcessed() {
+			if (base==null) return true; // Root <--> base==null
 			return base.wasProcessed;
 		}
 		
-		boolean hasUnprocessedChildren() {
+		@Override public boolean hasUnprocessedChildren() {
 			if (type==Type.Root || base.hasUnprocessedChildren==null) {
 				if (base!=null) base.hasUnprocessedChildren=false;
 				checkChildren("hasUnprocessedChildren()");
@@ -486,8 +485,8 @@ class VDFParser {
 		}
 		
 		@Override public String getPath() {
-			if (parent==null) return "Root";
-			return parent.getPath()+"["+parent.getIndex(this)+"]."+name;
+			if (parent==null) return "<root>";
+			return parent.getPath()+/*"["+parent.getIndex(this)+"]"+*/"."+name;
 		}
 		
 		@Override public String getAccessCall() {
@@ -532,9 +531,9 @@ class VDFParser {
 			return null;
 		}
 		@Override Color getTextColor() {
-			return JSONHelper.getTextColor(wasProcessed(),hasUnprocessedChildren());
+			return TreeNodes.NodeColorizer.getTextColor(this);
 		}
-		
+
 		@Override public boolean areChildrenSortable() { return type == Type.Array; }
 		@Override public ChildrenOrder getChildrenOrder() { return childrenOrder; }
 		@Override public void setChildrenOrder(ChildrenOrder childrenOrder, DefaultTreeModel currentTreeModel) {
@@ -553,12 +552,11 @@ class VDFParser {
 						vector.sort(Comparator.<ValuePair,String>comparing(vp->vp.label.str,Data.createNumberStringOrder()));
 						break;
 					}
-				for (ValuePair valuePair:vector)
-					children.add(new VDFTreeNode(this, valuePair));
-					//switch (valuePair.datablock.type) {
-					//case String: children.add(new VDFTreeNode(this, valuePair, valuePair.label.str, valuePair.datablock.str  )); break;
-					//case Array : children.add(new VDFTreeNode(this, valuePair, valuePair.label.str, valuePair.datablock.array)); break;
-					//}
+				for (ValuePair valuePair:vector) {
+					VDFTreeNode childNode = new VDFTreeNode(this, valuePair);
+					childNode.doToAllNodesChildNodesAndFutureChildNodes(childNodeAction);
+					children.add(childNode);
+				}
 			}
 			return children;
 		}

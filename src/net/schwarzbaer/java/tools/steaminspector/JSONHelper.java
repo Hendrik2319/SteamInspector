@@ -4,6 +4,7 @@ import java.awt.Color;
 import java.io.File;
 import java.util.Comparator;
 import java.util.Vector;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import javax.swing.tree.DefaultTreeModel;
@@ -16,11 +17,10 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Parser.ParseException;
 import net.schwarzbaer.java.tools.steaminspector.Data.NV;
 import net.schwarzbaer.java.tools.steaminspector.Data.V;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
-import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContextMenuHandler;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.DataTreeNode;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.DataTreeNodeContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.JsonTreeIcons;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.NodeColorizer.ColorizableNode;
 
 class JSONHelper {
 
@@ -57,34 +57,10 @@ class JSONHelper {
 		return createDataTreeRoot(getTreeIDStr(hostClass,suffix), value, isLarge);
 	}
 	static TreeRoot createDataTreeRoot(String treeIDStr, Value<NV, V> value, boolean isLarge) {
-		return createTreeRoot(value, isLarge, new DataTreeNodeContextMenu(treeIDStr));
-	}
-	static TreeRoot createTreeRoot(Value<NV, V> value, boolean isLarge, TreeContextMenuHandler tcmh) {
-		return new TreeRoot(JSON_TreeNode.create(null,null,value),true,!isLarge,tcmh);
-	}
-	
-	private static final Color COLOR_WAS_NOT_PROCESSED       = new Color(0xFF0000);
-	private static final Color COLOR_WAS_PARTIALLY_PROCESSED = new Color(0xC000C0);
-	private static final Color COLOR_WAS_FULLY_PROCESSED     = new Color(0x00B000);
-
-	static Color getTextColor(Value<NV, V> value) {
-		if (value==null) return COLOR_WAS_FULLY_PROCESSED;
-		return getTextColor(value.extra.wasProcessed, value.extra.hasUnprocessedChildren());
+		return TreeNodes.createDataTreeRoot(JSON_TreeNode.create(null,null,value), treeIDStr, true,!isLarge);
 	}
 
-	static Color getTextColor_WarnNew(Value<NV, V> value) {
-		if (value==null) return null;
-		return getTextColor(value.extra.wasProcessed, value.extra.hasUnprocessedChildren(), COLOR_WAS_NOT_PROCESSED, COLOR_WAS_PARTIALLY_PROCESSED, null);
-	}
-
-	static Color getTextColor(boolean wasProcessed, boolean hasUnprocessedChildren) {
-		return getTextColor(wasProcessed, hasUnprocessedChildren, null, COLOR_WAS_PARTIALLY_PROCESSED, COLOR_WAS_FULLY_PROCESSED);
-	}
-	static Color getTextColor(boolean wasProcessed, boolean hasUnprocessedChildren, Color notProcessed, Color partiallyProcessed, Color fullyProcessed) {
-		return !wasProcessed ? notProcessed : hasUnprocessedChildren ? partiallyProcessed : fullyProcessed;
-	}
-
-	static class JSON_TreeNode<ChildValueType> extends BaseTreeNode<JSON_TreeNode<?>,JSON_TreeNode<?>> implements DataTreeNode {
+	static class JSON_TreeNode<ChildValueType> extends BaseTreeNode<JSON_TreeNode<?>,JSON_TreeNode<?>> implements DataTreeNode, ColorizableNode {
 
 		private final Vector<ChildValueType> childValues;
 		private final Function<ChildValueType, String> getChildName;
@@ -92,6 +68,7 @@ class JSONHelper {
 		final String name;
 		final Value<NV,V> value;
 		private ChildrenOrder childrenOrder;
+		private Consumer<DataTreeNode> childNodeAction;
 
 		private JSON_TreeNode(JSON_TreeNode<?> parent, String title, JsonTreeIcons icon, String name, Value<NV,V> value, Vector<ChildValueType> childValues, Function<ChildValueType,String> getChildName, Function<ChildValueType,Value<NV,V>> getChildValue) {
 			super(parent, title, childValues!=null, childValues==null || childValues.isEmpty(), icon==null ? null : icon.getIcon());
@@ -101,7 +78,17 @@ class JSONHelper {
 			this.getChildName = getChildName;
 			this.getChildValue = getChildValue;
 			this.childrenOrder = null;
+			childNodeAction = null;
 			if (this.value==null) throw new IllegalArgumentException("JSON_TreeNode( ... , value == null, ... ) is not allowed");
+		}
+
+		@Override public void doToAllNodesChildNodesAndFutureChildNodes(Consumer<DataTreeNode> childNodeAction) {
+			this.childNodeAction = childNodeAction;
+			if (this.childNodeAction!=null)
+				this.childNodeAction.accept(this);
+			if (children!=null)
+				for (JSON_TreeNode<?> childNode:children)
+					childNode.doToAllNodesChildNodesAndFutureChildNodes(this.childNodeAction);
 		}
 
 		@Override public String getPath() {
@@ -149,6 +136,23 @@ class JSONHelper {
 			return str;
 		}
 
+		@Override public void setInteresting(Boolean isInteresting) {
+			value.extra.isInteresting = isInteresting;
+		}
+		
+		@Override public Boolean isInteresting() {
+			Boolean value = this.value.extra.isInteresting;
+			if (value==null && parent!=null)
+				value = parent.isInteresting();
+			return value;
+		}
+		@Override public boolean wasProcessed() {
+			return value.extra.wasProcessed;
+		}
+		@Override public boolean hasUnprocessedChildren() {
+			return value.extra.hasUnprocessedChildren();
+		}
+
 		@Override public boolean areChildrenSortable() { return value.type==JSON_Data.Value.Type.Object; }
 		@Override public ChildrenOrder getChildrenOrder() { return childrenOrder; }
 		@Override public void setChildrenOrder(ChildrenOrder childrenOrder, DefaultTreeModel currentTreeModel) {
@@ -169,8 +173,11 @@ class JSONHelper {
 				}
 			
 			Vector<JSON_TreeNode<?>> childNodes = new Vector<>();
-			for (ChildValueType value:vector)
-				childNodes.add(create(this,getChildName.apply(value),getChildValue.apply(value)));
+			for (ChildValueType value:vector) {
+				JSON_TreeNode<?> childNode = create(this,getChildName.apply(value),getChildValue.apply(value));
+				childNode.doToAllNodesChildNodesAndFutureChildNodes(childNodeAction);
+				childNodes.add(childNode);
+			}
 			return childNodes;
 		}
 		
@@ -186,7 +193,7 @@ class JSONHelper {
 		
 		@Override
 		Color getTextColor() {
-			return JSONHelper.getTextColor(value);
+			return TreeNodes.NodeColorizer.getTextColor(this);
 		}
 
 		private static JsonTreeIcons getIcon(Value.Type type) {
