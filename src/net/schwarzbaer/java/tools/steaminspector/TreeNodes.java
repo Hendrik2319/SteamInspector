@@ -2,11 +2,18 @@ package net.schwarzbaer.java.tools.steaminspector;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileFilter;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.io.PrintStream;
+import java.io.PrintWriter;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
@@ -391,6 +398,7 @@ class TreeNodes {
 			treeIDStrs.sort(null);
 			for (String treeIDStr:treeIDStrs) {
 				out.printf("%s%s%n", indent, treeIDStr);
+				
 				HashMap<String, Boolean> treeMap = map.get(treeIDStr);
 				Vector<String> nodePaths = new Vector<>(treeMap.keySet());
 				nodePaths.sort(Comparator.comparing(String::toLowerCase));
@@ -399,6 +407,65 @@ class TreeNodes {
 					if (nodeValue!=null && nodeValue.booleanValue()==value)
 						out.printf("%s    %s%n", indent, nodePath);
 				}
+			}
+		}
+
+		void readfile() {
+			
+			map.clear();
+			
+			try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(SteamInspector.INTERESTING_NODES_INI), StandardCharsets.UTF_8))) {
+				
+				String line, valueStr;
+				HashMap<String, Boolean> treeMap = null;
+				while ( (line=in.readLine())!=null ) {
+					
+					if ( (valueStr=getValue(line,"TreeID: "))!=null )
+						map.put(valueStr, treeMap = new HashMap<>());
+					
+					if ( (valueStr=getValue(line,"Intersting: "))!=null && treeMap!=null)
+						treeMap.put(valueStr,true);
+					
+					if ( (valueStr=getValue(line,"NotIntersting: "))!=null && treeMap!=null )
+						treeMap.put(valueStr,false);
+					
+				}
+				
+			} catch (FileNotFoundException e) {
+			} catch (IOException e) { e.printStackTrace(); }
+		}
+		
+		private String getValue(String line, String prefix) {
+			if (line.startsWith(prefix))
+				return line.substring(prefix.length());
+			return null;
+		}
+
+		void writefile() {
+			
+			try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(SteamInspector.INTERESTING_NODES_INI), StandardCharsets.UTF_8))) {
+				
+				Vector<String> treeIDStrs = new Vector<>(map.keySet());
+				treeIDStrs.sort(null);
+				
+				for (String treeIDStr:treeIDStrs) {
+					out.printf("TreeID: %s%n", treeIDStr);
+					
+					HashMap<String, Boolean> treeMap = map.get(treeIDStr);
+					Vector<String> nodePaths = new Vector<>(treeMap.keySet());
+					nodePaths.sort(Comparator.comparing(String::toLowerCase));
+					
+					for (String nodePath:nodePaths) {
+						Boolean nodeValue = treeMap.get(nodePath);
+						if (nodeValue!=null)
+							out.printf("%s%s%n", nodeValue ? "Intersting: " : "NotIntersting: ", nodePath);
+					}
+					
+					out.printf("%n");
+				}
+				
+			} catch (FileNotFoundException e) {
+				e.printStackTrace();
 			}
 		}
 		
@@ -520,6 +587,7 @@ class TreeNodes {
 		private void setInteresting(boolean b, Boolean value) {
 			if (b && treeIDStr!=null && clickedTreeNode!=null) {
 				interestingNodes.set(treeIDStr,clickedTreeNode, value );
+				interestingNodes.writefile();
 				clickedTreeNode.setInteresting(value);
 				currentTreeModel.nodeStructureChanged(clickedTreeNode);
 			}
