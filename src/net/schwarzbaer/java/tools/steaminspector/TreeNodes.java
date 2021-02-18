@@ -71,6 +71,7 @@ import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos.Community
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos.GameInfosFilterOptions;
 import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShot;
 import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShotLists;
+import net.schwarzbaer.java.tools.steaminspector.Data.SteamId;
 import net.schwarzbaer.java.tools.steaminspector.Data.V;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
@@ -879,12 +880,15 @@ class TreeNodes {
 		return createUrlNode(parent, icon, "", url, isImageUrl, urlInTitle==null ? "%s" : "%s: \"%s\"", label, urlInTitle);
 	}
 	private static MultiPurposeNode createUrlNode(TreeNode parent, Icon icon, String urlLabel, String url, boolean isImageUrl, String format, Object...args) {
-		return createUrlNode(parent, icon, new LabeledUrl(urlLabel, url), isImageUrl, format, args);
+		return createUrlNode(parent, icon, url==null ? null : new LabeledUrl(urlLabel, url), isImageUrl, format, args);
 	}
 	private static MultiPurposeNode createUrlNode(TreeNode parent, Icon icon, LabeledUrl labeledUrl, boolean isImageUrl, String format, Object... args) {
-		return new SimpleLeafNode(parent, icon, format, args)
-				.setURL(labeledUrl, isImageUrl)
-				.setExternViewable(labeledUrl, ExternalViewerInfo.Browser);
+		SimpleLeafNode node = new SimpleLeafNode(parent, icon, format, args);
+		if (labeledUrl!=null) {
+			node.setURL(labeledUrl, isImageUrl);
+			node.setExternViewable(labeledUrl, ExternalViewerInfo.Browser);
+		}
+		return node;
 	}
 
 	static class SimpleLeafNode extends MultiPurposeNode {
@@ -1739,8 +1743,8 @@ class TreeNodes {
 						isEmpty(entry.url) &&
 						isEmpty(entry.preview_url) &&
 						isEmpty(entry.publishedfileid) &&
-						isEmpty(entry.banner) &&
-						isEmpty(entry.creator) &&
+						!isPlayerID(entry.banner) &&
+						!isPlayerID(entry.creator) &&
 						!isAppID(entry.creator_appid) &&
 						!isAppID(entry.consumer_appid)
 					)
@@ -1750,8 +1754,8 @@ class TreeNodes {
 							if (!isEmpty(entry.url            )) ch.add(createUrlNode(p, null, ""       ,entry.url                           , false, "%s: \"%s\"", "URL"          , entry.url        ));
 							if (!isEmpty(entry.preview_url    )) ch.add(createUrlNode(p, null, "Preview",entry.preview_url                   , true , "%s: \"%s\"", "Preview Image", entry.preview_url));
 							if (!isEmpty(entry.publishedfileid)) ch.add(createUrlNode(p, null, Data.getWorkshopItemURL(entry.publishedfileid), false, "%s: \"%s\"", "Workshop Item", entry.publishedfileid));
-							if (!isEmpty(entry.banner         )) ch.add(createUrlNode(p, null, Data.getSteamPlayerProfileURL(entry.banner )  , false, "%s: \"%s\"", "Banner"       , entry.banner));
-							if (!isEmpty(entry.creator        )) ch.add(createUrlNode(p, null, Data.getSteamPlayerProfileURL(entry.creator)  , false, "%s: \"%s\"", "Creator"      , entry.creator));
+							if ( isPlayerID(entry.banner      )) ch.add(createUrlNode(p, null, Data.getSteamPlayerProfileURL(entry.banner )  , false, "%s: \"%s\"", "Banner"       , entry.banner));
+							if ( isPlayerID(entry.creator     )) ch.add(createUrlNode(p, null, Data.getSteamPlayerProfileURL(entry.creator)  , false, "%s: \"%s\"", "Creator"      , entry.creator));
 							if ( isAppID(entry.creator_appid  )) ch.add(createUrlNode(p, null, Data.getShopURL(""+entry.creator_appid )      , false, "%s: %d"    , "Creator App"  , entry.creator_appid ));
 							if ( isAppID(entry.consumer_appid )) ch.add(createUrlNode(p, null, Data.getShopURL(""+entry.consumer_appid)      , false, "%s: %s"    , "Consumer App" , entry.consumer_appid));
 						});
@@ -1766,6 +1770,9 @@ class TreeNodes {
 				return null;
 			}
 			
+			private static boolean isPlayerID(String id) {
+				return SteamId.parse(id).isPlayer();
+			}
 			private static boolean isAppID(long appid) {
 				return 0<appid && appid<0xFFFFFFFFL;
 			}

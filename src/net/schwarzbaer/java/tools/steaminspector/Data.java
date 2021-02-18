@@ -694,7 +694,7 @@ class Data {
 		
 		boolean isPlayer() {
 			if (steamid==null) return false;
-			if (steamid>>32 != 0x01100001L) return false;
+			if (steamid>>32 != 0x01100001L && steamid>>32 != 0) return false;
 			if ((steamid & 0xFFFFFFFFL) == 0) return false;
 			return true;
 		}
