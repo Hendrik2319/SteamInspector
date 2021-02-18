@@ -2111,8 +2111,12 @@ class SteamInspector {
 		protected void checkChildren(String methodeLabel) {
 //			if (!allowsChildren) throw new IllegalStateException(String.format("TreeNode.%s from \"not allows children\" TreeNode", methodeLabel));
 			if (!allowsChildren) children=new Vector<>();
-			if (children==null) children=createChildren();
+			if (children==null) {
+				children=createChildren();
+				doAfterCreateChildren();
+			}
 		}
+		protected void doAfterCreateChildren() {}
 		
 		public void rebuildChildren(DefaultTreeModel currentTreeModel) {
 			if (currentTreeModel==null) throw new IllegalArgumentException("rebuildChildren( currentTreeModel == null ) is not allowed");

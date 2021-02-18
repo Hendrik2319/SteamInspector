@@ -34,10 +34,12 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Array;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.TraverseException;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FilterOption;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileNameNExt;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.ValueListOutput;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFParseException;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTraverseException;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;
@@ -646,6 +648,10 @@ class Data {
 		static long getFullSteamID(long playerID) {
 			return (playerID & 0xFFFFFFFFL) | 0x0110000100000000L;
 		}
+		
+		static String getSteamPlayerProfileURL(long playerID) {
+			return "https://steamcommunity.com/profiles/"+getFullSteamID(playerID)+"/";
+		}
 	}
 
 	static class Player {
@@ -659,7 +665,6 @@ class Data {
 		final LocalConfig localconfig;
 		final HashMap<Integer,GameInfos> gameInfos;
 		final AchievementProgress achievementProgress;
-		final FriendList friends;
 
 		Player(long playerID, File folder) {
 			this.playerID = playerID;
@@ -698,11 +703,6 @@ class Data {
 			
 			// localconfig
 			
-			if (localconfig!=null) {
-				friends = localconfig.friendList;
-			} else
-				friends = null;
-			
 			gameInfos = new HashMap<>();
 			AchievementProgress preAchievementProgress = null;
 			if (configFolder!=null) {
@@ -719,28 +719,26 @@ class Data {
 								JSON_Data.Value<NV, V> result = null;
 								try { result = JSONHelper.parseJsonFile(file); }
 								catch (JSON_Parser.ParseException e) { showException(e, file); }
-								if (result!=null) {
+								if (result!=null)
 									try {
 										preAchievementProgress = new AchievementProgress(file,result,"AchievementProgress");
 									} catch (TraverseException e) {
 										showException(e, file);
 										preAchievementProgress = new AchievementProgress(file,result);
 									}
-								}
 								
 							} else if ((gameID=parseNumber(fileNameNExt.name))!=null) {
 								// \config\librarycache\1465680.json
 								JSON_Data.Value<NV, V> result = null;
 								try { result = JSONHelper.parseJsonFile(file); }
 								catch (JSON_Parser.ParseException e) { showException(e, file); }
-								if (result!=null) {
+								if (result!=null)
 									try {
-										gameInfos.put(gameID, new GameInfos(playerID,gameID,file,result, "GameInfos"));
+										gameInfos.put(gameID, new GameInfos(playerID,gameID,file,result,"GameInfos"));
 									} catch (TraverseException e) {
 										showException(e, file);
 										gameInfos.put(gameID, new GameInfos(playerID,gameID,file,result));
 									}
-								}
 							}
 						}
 					}
@@ -892,16 +890,23 @@ class Data {
 				final VDFTreeNode rawData;
 				final boolean hasParsedData;
 				final long id;
+				final long id_lower;
+				final long id_upper;
+				final long playerID;
+				final boolean isPerson;
 				final String name;
 				final String tag;
 				final String avatar;
 				final HashMap<Integer, String> nameHistory;
 
-
 				public Friend(VDFTreeNode rawData) {
 					this.rawData = rawData;
 					hasParsedData = false;
 					id     = -1;
+					id_lower = -1;
+					id_upper = -1;
+					playerID = -1;
+					isPerson = false;
 					name   = null;
 					tag    = null;
 					avatar = null;
@@ -918,10 +923,14 @@ class Data {
 					if (parsedNodeName==null)
 						throw new VDFTraverseException("Name of node [%s] isn't a number.", node.getPath());
 						
-					id     = parsedNodeName;
-					name   = node.getString(true,"name"  );
-					tag    = node.getString(true,"tag"   );
-					avatar = node.getString(true,"avatar");
+					id       = parsedNodeName;
+					id_lower = id & 0xFFFFFFFFL;
+					id_upper = id>>32;
+					playerID = id_lower;
+					isPerson = id_upper==0;
+					name     = node.getString(true,"name"  );
+					tag      = node.getString(true,"tag"   );
+					avatar   = node.getString(true,"avatar");
 					VDFTreeNode arrayNode = node.getArray(true,"NameHistory");
 					if (arrayNode!=null) {
 						nameHistory = new HashMap<Integer,String>();
@@ -1066,6 +1075,7 @@ class Data {
 				switch (option) {
 				case RawData         : return !gameInfos.hasParsedData && gameInfos.rawData       !=null;
 				case Badge           : return  gameInfos.hasParsedData && !isEmpty(gameInfos.badge         );
+				case Workshop        : return  gameInfos.hasParsedData && !isEmpty(gameInfos.workshop      );
 				case Achievements    : return  gameInfos.hasParsedData && !isEmpty(gameInfos.achievements  );
 				case AchievementMap  : return  gameInfos.hasParsedData && !isEmpty(gameInfos.achievementMap);
 				case SocialMedia     : return  gameInfos.hasParsedData && !isEmpty(gameInfos.socialMedia   );
@@ -1089,6 +1099,7 @@ class Data {
 				RawData         ("is unparsed (Raw Data)"),
 				Descriptions    ("has Descriptions"),
 				Badge           ("has Badge Data"),
+				Workshop        ("has Workshop Data"),
 				Achievements    ("has Achievements Data"),
 				AchievementMap  ("has Achievement Map"),
 				CommunityItems  ("has Community Items"),
@@ -1139,6 +1150,7 @@ class Data {
 			final ReleaseData    releaseData;
 			final Friends        friends;
 			final CommunityItems communityItems;
+			final Workshop       workshop;
 
 			GameInfos(long playerID, int gameID, File file, JSON_Data.Value<NV, V> rawData) {
 				this.playerID = playerID;
@@ -1162,6 +1174,7 @@ class Data {
 				releaseData    = null;
 				friends        = null;
 				communityItems = null;
+				workshop       = null;
 			}
 			
 			GameInfos(long playerID, int gameID, File file, JSON_Data.Value<NV, V> fileContent, String debugOutputPrefixStr) throws TraverseException {
@@ -1198,10 +1211,11 @@ class Data {
 				ReleaseData    preReleaseData    = null;
 				Friends        preFriends        = null;
 				CommunityItems preCommunityItems = null;
+				Workshop       preWorkshop       = null;
 				
 				for (Block block:blocks)
 					if (block.hasParsedData) {
-						String dataValueStr = String.format("%s.Block[%d].dataValue", debugOutputPrefixStr, block.blockIndex);
+						String dataValueStr = String.format("%s.Block[%s].dataValue", debugOutputPrefixStr, block.label);
 						//DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
 						
 						switch (block.label) {
@@ -1217,6 +1231,7 @@ class Data {
 						case "releasedata"    : preReleaseData    = parseBlock( ReleaseData   ::new, ReleaseData   ::new, block.dataValue, block.version, dataValueStr, file ); break;
 						case "friends"        : preFriends        = parseBlock( Friends       ::new, Friends       ::new, block.dataValue, block.version, dataValueStr, file ); break;
 						case "community_items": preCommunityItems = parseBlock( CommunityItems::new, CommunityItems::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "workshop"       : preWorkshop       = parseBlock( Workshop      ::new, Workshop      ::new, block.dataValue, block.version, dataValueStr, file ); break;
 							
 						case "descriptions":
 							JSON_Object<NV, V> object = null;
@@ -1228,11 +1243,6 @@ class Data {
 								try { preShortDesc = JSON_Data.getStringValue(object, "strSnippet", dataValueStr); }
 								catch (TraverseException e) { showException(e, file); }
 							}
-							break;
-							
-						case "workshop":
-							// DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version),false);
-							// TODO: GameInfo.Block["workshop"]
 							break;
 							
 						default:
@@ -1252,6 +1262,7 @@ class Data {
 				releaseData    = preReleaseData   ;
 				friends        = preFriends       ;
 				communityItems = preCommunityItems;
+				workshop       = preWorkshop      ;
 			}
 			private static <ClassType> ClassType parseBlock(
 					BlockParseConstructor<ClassType> parseConstructor,
@@ -1284,6 +1295,372 @@ class Data {
 				
 				boolean isEmpty() {
 					return rawData==null;
+				}
+			}
+			static class Workshop extends ParsedBlock {
+				
+				final Vector<Entry> entries;
+
+				Workshop(JSON_Data.Value<NV, V> rawData, long version) {
+					super(rawData, version, false);
+					entries = null;
+				}
+				Workshop(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
+					super(null, version, true);
+					//DevHelper.scanJsonStructure(blockDataValue,"GameInfos.Workshop",true);
+					if (blockDataValue==null) entries = new Vector<>();
+					else entries = parseArray(Entry::new, Entry::new, blockDataValue, dataValueStr,file);
+				}
+				
+				@Override boolean isEmpty() {
+					return super.isEmpty() && (!hasParsedData || entries.isEmpty());
+				}
+				
+				static class Entry {
+
+					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+							.add("app_name"                    , JSON_Data.Value.Type.String )
+							.add("available_revisions"         , JSON_Data.Value.Type.Array  )  // empty
+							.add("ban_reason"                  , JSON_Data.Value.Type.String )
+							.add("banned"                      , JSON_Data.Value.Type.Bool   )
+							.add("banner"                      , JSON_Data.Value.Type.String )
+							.add("can_be_deleted"              , JSON_Data.Value.Type.Bool   )
+							.add("can_subscribe"               , JSON_Data.Value.Type.Bool   )
+							.add("children"                    , JSON_Data.Value.Type.Array  )  // empty
+							.add("consumer_appid"              , JSON_Data.Value.Type.Integer)
+							.add("consumer_shortcutid"         , JSON_Data.Value.Type.Integer)
+							.add("creator"                     , JSON_Data.Value.Type.String )
+							.add("creator_appid"               , JSON_Data.Value.Type.Integer)
+							.add("favorited"                   , JSON_Data.Value.Type.Integer)
+							.add("file_size"                   , JSON_Data.Value.Type.String )
+							.add("file_type"                   , JSON_Data.Value.Type.Integer)
+							.add("file_url"                    , JSON_Data.Value.Type.String )  // optional
+							.add("filename"                    , JSON_Data.Value.Type.String )
+							.add("flags"                       , JSON_Data.Value.Type.Integer)
+							.add("followers"                   , JSON_Data.Value.Type.Integer)
+							.add("hcontent_file"               , JSON_Data.Value.Type.String )
+							.add("hcontent_preview"            , JSON_Data.Value.Type.String )
+							.add("kvtags"                      , JSON_Data.Value.Type.Array  )  // empty
+							.add("language"                    , JSON_Data.Value.Type.Integer)
+							.add("lifetime_favorited"          , JSON_Data.Value.Type.Integer)
+							.add("lifetime_followers"          , JSON_Data.Value.Type.Integer)
+							.add("lifetime_playtime"           , JSON_Data.Value.Type.String )
+							.add("lifetime_playtime_sessions"  , JSON_Data.Value.Type.String )
+							.add("lifetime_subscriptions"      , JSON_Data.Value.Type.Integer)
+							.add("maybe_inappropriate_sex"     , JSON_Data.Value.Type.Bool   )  // optional
+							.add("maybe_inappropriate_violence", JSON_Data.Value.Type.Bool   )  // optional
+							.add("num_children"                , JSON_Data.Value.Type.Integer)
+							.add("num_comments_public"         , JSON_Data.Value.Type.Integer)
+							.add("num_reports"                 , JSON_Data.Value.Type.Integer)
+							.add("preview_file_size"           , JSON_Data.Value.Type.String )
+							.add("preview_url"                 , JSON_Data.Value.Type.String )
+							.add("previews"                    , JSON_Data.Value.Type.Array  )  // empty
+							.add("publishedfileid"             , JSON_Data.Value.Type.String )
+							.add("reactions"                   , JSON_Data.Value.Type.Array  )  // optional || empty
+							.add("result"                      , JSON_Data.Value.Type.Integer)
+							.add("revision"                    , JSON_Data.Value.Type.Integer)
+							.add("revision_change_number"      , JSON_Data.Value.Type.String )
+							.add("short_description"           , JSON_Data.Value.Type.String )
+							.add("show_subscribe_all"          , JSON_Data.Value.Type.Bool   )
+							.add("subscriptions"               , JSON_Data.Value.Type.Integer)
+							.add("tags"                        , JSON_Data.Value.Type.Array  )  // of Objects
+							.add("time_created"                , JSON_Data.Value.Type.Integer)
+							.add("time_updated"                , JSON_Data.Value.Type.Integer)
+							.add("title"                       , JSON_Data.Value.Type.String )
+							.add("url"                         , JSON_Data.Value.Type.String )
+							.add("views"                       , JSON_Data.Value.Type.Integer)
+							.add("visibility"                  , JSON_Data.Value.Type.Integer)
+							.add("vote_data"                   , JSON_Data.Value.Type.Object )
+							.add("workshop_accepted"           , JSON_Data.Value.Type.Bool   )
+							.add("workshop_file"               , JSON_Data.Value.Type.Bool   );
+					
+					final JSON_Data.Value<NV, V> rawData;
+					final boolean hasParsedData;
+
+					final String  app_name;
+					final String  ban_reason;
+					final boolean banned;
+					final String  banner;
+					final boolean can_be_deleted;
+					final boolean can_subscribe;
+					final long    consumer_appid;
+					final long    consumer_shortcutid;
+					final String  creator;
+					final long    creator_appid;
+					final long    favorited;
+					final String  file_size;
+					final long    file_type;
+					final String  file_url__OPT;
+					final String  filename;
+					final long    flags;
+					final long    followers;
+					final String  hcontent_file;
+					final String  hcontent_preview;
+					final long    language;
+					final long    lifetime_favorited;
+					final long    lifetime_followers;
+					final String  lifetime_playtime;
+					final String  lifetime_playtime_sessions;
+					final long    lifetime_subscriptions;
+					final Boolean maybe_inappropriate_sex__OPT;
+					final Boolean maybe_inappropriate_violence__OPT;
+					final long    num_children;
+					final long    num_comments_public;
+					final long    num_reports;
+					final String  preview_file_size;
+					final String  preview_url;
+					final String  publishedfileid;
+					final long    result;
+					final long    revision;
+					final String  revision_change_number;
+					final String  short_description;
+					final boolean show_subscribe_all;
+					final long    subscriptions;
+					final long    time_created;
+					final long    time_updated;
+					final String  title;
+					final String  url;
+					final long    views;
+					final long    visibility;
+					final boolean workshop_accepted;
+					final boolean workshop_file;
+					
+					final Vector<Tag> tags;
+					final double vote_score;
+					final long   votes_down;
+					final long   votes_up;
+
+					
+					Entry(JSON_Data.Value<NV, V> rawData) {
+						this.rawData = rawData;
+						hasParsedData = false;
+						
+						app_name                     = null;
+						ban_reason                   = null;
+						banned                       = false;
+						banner                       = null;
+						can_be_deleted               = false;
+						can_subscribe                = false;
+						consumer_appid               = -1;
+						consumer_shortcutid          = -1;
+						creator                      = null;
+						creator_appid                = -1;
+						favorited                    = -1;
+						file_size                    = null;
+						file_type                    = -1;
+						file_url__OPT                     = null;
+						filename                     = null;
+						flags                        = -1;
+						followers                    = -1;
+						hcontent_file                = null;
+						hcontent_preview             = null;
+						language                     = -1;
+						lifetime_favorited           = -1;
+						lifetime_followers           = -1;
+						lifetime_playtime            = null;
+						lifetime_playtime_sessions   = null;
+						lifetime_subscriptions       = -1;
+						maybe_inappropriate_sex__OPT      = null;
+						maybe_inappropriate_violence__OPT = null;
+						num_children                 = -1;
+						num_comments_public          = -1;
+						num_reports                  = -1;
+						preview_file_size            = null;
+						preview_url                  = null;
+						publishedfileid              = null;
+						result                       = -1;
+						revision                     = -1;
+						revision_change_number       = null;
+						short_description            = null;
+						show_subscribe_all           = false;
+						subscriptions                = -1;
+						time_created                 = -1;
+						time_updated                 = -1;
+						title                        = null;
+						url                          = null;
+						views                        = -1;
+						visibility                   = -1;
+						workshop_accepted            = false;
+						workshop_file                = false;
+						
+						tags       = null;
+						vote_score = Double.NaN;
+						votes_down = -1;
+						votes_up   = -1;
+					}
+					
+					Entry(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
+						this.rawData = null;
+						hasParsedData = true;
+						//DevHelper.scanJsonStructure(value,"GameInfos.Workshop.Entry",true);
+						
+						JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, debugOutputPrefixStr);
+						
+						JSON_Array<NV, V> available_revisions, children, kvtags, previews, reactions__OPT; // empty
+						JSON_Array<NV, V> tags; // of Objects
+						JSON_Object<NV, V> vote_data;
+						app_name                          = JSON_Data.getStringValue (object, "app_name"                    , debugOutputPrefixStr);
+						available_revisions               = JSON_Data.getArrayValue  (object, "available_revisions"         , debugOutputPrefixStr);
+						ban_reason                        = JSON_Data.getStringValue (object, "ban_reason"                  , debugOutputPrefixStr);
+						banned                            = JSON_Data.getBoolValue   (object, "banned"                      , debugOutputPrefixStr);
+						banner                            = JSON_Data.getStringValue (object, "banner"                      , debugOutputPrefixStr);
+						can_be_deleted                    = JSON_Data.getBoolValue   (object, "can_be_deleted"              , debugOutputPrefixStr);
+						can_subscribe                     = JSON_Data.getBoolValue   (object, "can_subscribe"               , debugOutputPrefixStr);
+						children                          = JSON_Data.getArrayValue  (object, "children"                    , debugOutputPrefixStr);
+						consumer_appid                    = JSON_Data.getIntegerValue(object, "consumer_appid"              , debugOutputPrefixStr);
+						consumer_shortcutid               = JSON_Data.getIntegerValue(object, "consumer_shortcutid"         , debugOutputPrefixStr);
+						creator                           = JSON_Data.getStringValue (object, "creator"                     , debugOutputPrefixStr);
+						creator_appid                     = JSON_Data.getIntegerValue(object, "creator_appid"               , debugOutputPrefixStr);
+						favorited                         = JSON_Data.getIntegerValue(object, "favorited"                   , debugOutputPrefixStr);
+						file_size                         = JSON_Data.getStringValue (object, "file_size"                   , debugOutputPrefixStr);
+						file_type                         = JSON_Data.getIntegerValue(object, "file_type"                   , debugOutputPrefixStr);
+						file_url__OPT                     = JSON_Data.getValue       (object, "file_url"                    , true, JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, false, debugOutputPrefixStr);
+						filename                          = JSON_Data.getStringValue (object, "filename"                    , debugOutputPrefixStr);
+						flags                             = JSON_Data.getIntegerValue(object, "flags"                       , debugOutputPrefixStr);
+						followers                         = JSON_Data.getIntegerValue(object, "followers"                   , debugOutputPrefixStr);
+						hcontent_file                     = JSON_Data.getStringValue (object, "hcontent_file"               , debugOutputPrefixStr);
+						hcontent_preview                  = JSON_Data.getStringValue (object, "hcontent_preview"            , debugOutputPrefixStr);
+						kvtags                            = JSON_Data.getArrayValue  (object, "kvtags"                      , debugOutputPrefixStr);
+						language                          = JSON_Data.getIntegerValue(object, "language"                    , debugOutputPrefixStr);
+						lifetime_favorited                = JSON_Data.getIntegerValue(object, "lifetime_favorited"          , debugOutputPrefixStr);
+						lifetime_followers                = JSON_Data.getIntegerValue(object, "lifetime_followers"          , debugOutputPrefixStr);
+						lifetime_playtime                 = JSON_Data.getStringValue (object, "lifetime_playtime"           , debugOutputPrefixStr);
+						lifetime_playtime_sessions        = JSON_Data.getStringValue (object, "lifetime_playtime_sessions"  , debugOutputPrefixStr);
+						lifetime_subscriptions            = JSON_Data.getIntegerValue(object, "lifetime_subscriptions"      , debugOutputPrefixStr);
+						maybe_inappropriate_sex__OPT      = JSON_Data.getValue       (object, "maybe_inappropriate_sex"     , true, JSON_Data.Value.Type.Bool, JSON_Data.Value::castToBoolValue, false, debugOutputPrefixStr);
+						maybe_inappropriate_violence__OPT = JSON_Data.getValue       (object, "maybe_inappropriate_violence", true, JSON_Data.Value.Type.Bool, JSON_Data.Value::castToBoolValue, false, debugOutputPrefixStr);
+						num_children                      = JSON_Data.getIntegerValue(object, "num_children"                , debugOutputPrefixStr);
+						num_comments_public               = JSON_Data.getIntegerValue(object, "num_comments_public"         , debugOutputPrefixStr);
+						num_reports                       = JSON_Data.getIntegerValue(object, "num_reports"                 , debugOutputPrefixStr);
+						preview_file_size                 = JSON_Data.getStringValue (object, "preview_file_size"           , debugOutputPrefixStr);
+						preview_url                       = JSON_Data.getStringValue (object, "preview_url"                 , debugOutputPrefixStr);
+						previews                          = JSON_Data.getArrayValue  (object, "previews"                    , debugOutputPrefixStr);
+						publishedfileid                   = JSON_Data.getStringValue (object, "publishedfileid"             , debugOutputPrefixStr);
+						reactions__OPT                    = JSON_Data.getValue       (object, "reactions"                   , true, JSON_Data.Value.Type.Array, JSON_Data.Value::castToArrayValue, false, debugOutputPrefixStr);
+						result                            = JSON_Data.getIntegerValue(object, "result"                      , debugOutputPrefixStr);
+						revision                          = JSON_Data.getIntegerValue(object, "revision"                    , debugOutputPrefixStr);
+						revision_change_number            = JSON_Data.getStringValue (object, "revision_change_number"      , debugOutputPrefixStr);
+						short_description                 = JSON_Data.getStringValue (object, "short_description"           , debugOutputPrefixStr);
+						show_subscribe_all                = JSON_Data.getBoolValue   (object, "show_subscribe_all"          , debugOutputPrefixStr);
+						subscriptions                     = JSON_Data.getIntegerValue(object, "subscriptions"               , debugOutputPrefixStr);
+						tags                              = JSON_Data.getArrayValue  (object, "tags"                        , debugOutputPrefixStr);
+						time_created                      = JSON_Data.getIntegerValue(object, "time_created"                , debugOutputPrefixStr);
+						time_updated                      = JSON_Data.getIntegerValue(object, "time_updated"                , debugOutputPrefixStr);
+						title                             = JSON_Data.getStringValue (object, "title"                       , debugOutputPrefixStr);
+						url                               = JSON_Data.getStringValue (object, "url"                         , debugOutputPrefixStr);
+						views                             = JSON_Data.getIntegerValue(object, "views"                       , debugOutputPrefixStr);
+						visibility                        = JSON_Data.getIntegerValue(object, "visibility"                  , debugOutputPrefixStr);
+						vote_data                         = JSON_Data.getObjectValue (object, "vote_data"                   , debugOutputPrefixStr);
+						workshop_accepted                 = JSON_Data.getBoolValue   (object, "workshop_accepted"           , debugOutputPrefixStr);
+						workshop_file                     = JSON_Data.getBoolValue   (object, "workshop_file"               , debugOutputPrefixStr);
+						
+						if (!available_revisions.isEmpty()) throw new TraverseException("%s.%s:Array is not empty", debugOutputPrefixStr, "available_revisions");
+						if (!children           .isEmpty()) throw new TraverseException("%s.%s:Array is not empty", debugOutputPrefixStr, "children" );
+						if (!kvtags             .isEmpty()) throw new TraverseException("%s.%s:Array is not empty", debugOutputPrefixStr, "kvtags"   );
+						if (!previews           .isEmpty()) throw new TraverseException("%s.%s:Array is not empty", debugOutputPrefixStr, "previews" );
+						if (reactions__OPT!=null && !reactions__OPT.isEmpty()) throw new TraverseException("%s.%s:Array is not empty", debugOutputPrefixStr, "reactions");
+						
+						this.tags = new Vector<>();
+						for (int i=0; i<tags.size(); i++)
+							this.tags.add(new Tag(tags.get(i), debugOutputPrefixStr+".tags["+i+"]"));
+						
+						//    Block "GameInfos.Workshop.Entry.vote_data" [3]
+						//       score:Integer
+						//       score:Float
+						//       votes_down:Integer
+						//       votes_up:Integer
+						vote_score = JSON_Data.getNumber      (vote_data, "score"     , debugOutputPrefixStr+".vote_data");
+						votes_down = JSON_Data.getIntegerValue(vote_data, "votes_down", debugOutputPrefixStr+".vote_data");
+						votes_up   = JSON_Data.getIntegerValue(vote_data, "votes_up"  , debugOutputPrefixStr+".vote_data");
+						
+						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "GameInfos.Workshop.Entry");
+					}
+					
+					static class Tag {
+						//    Block "GameInfos.Workshop.Entry.tags[]" [2]
+						//       adminonly:Bool
+						//       tag:String
+						final boolean adminonly;
+						final String tag;
+						Tag(Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
+							JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, debugOutputPrefixStr);
+							adminonly = JSON_Data.getBoolValue  (object, "adminonly", debugOutputPrefixStr);
+							tag       = JSON_Data.getStringValue(object, "tag"      , debugOutputPrefixStr);
+						}
+					}
+
+					String generateStringOutput() {
+						ValueListOutput out = new ValueListOutput();
+						out.add(0, "title                            ", title                            );
+						out.add(0, "short_description                ", short_description                );
+						out.add(0, "app_name                         ", app_name                         ); // TODO:  app_name --> known game titles
+						out.add(0, "favorited                        ", favorited                        );
+						out.addEmptyLine();
+						out.add(0, "preview_url                      ", preview_url                      ); // TODO: link if not empty
+						out.add(0, "preview_file_size                ", preview_file_size                );
+						out.add(0, "url                              ", url                              ); // TODO: link if not empty
+						out.add(0, "banner                           ", banner                           ); // TODO:  profile url
+						out.add(0, "language                         ", language                         );
+						out.add(0, "revision                         ", revision                         );
+						out.add(0, "revision_change_number           ", revision_change_number           );
+						out.addEmptyLine();
+						out.add(0, "views                            ", views                            );
+						out.add(0, "subscriptions                    ", subscriptions                    );
+						out.add(0, "followers                        ", followers                        );
+						out.addEmptyLine();
+						out.add(0, "time_created                     ", time_created                     ); // TODO:  time string
+						out.add(0, "time_updated                     ", time_updated                     ); // TODO:  time string
+						out.addEmptyLine();
+						out.add(0, "vote_score"                       , vote_score                       );
+						out.add(0, "votes_down"                       , votes_down                       );
+						out.add(0, "votes_up  "                       , votes_up                         );
+						out.addEmptyLine();
+						out.add(0, "consumer_appid                   ", consumer_appid                   );
+						out.add(0, "consumer_shortcutid              ", consumer_shortcutid              );
+						out.add(0, "creator                          ", creator                          ); // TODO:  profile url
+						out.add(0, "creator_appid                    ", creator_appid                    );
+						out.addEmptyLine();
+						out.add(0, "file_size                        ", file_size                        );
+						out.add(0, "file_type                        ", file_type                        );
+						if (file_url__OPT!=null)
+						out.add(0, "file_url__OPT                    ", file_url__OPT                    );
+						out.add(0, "filename                         ", filename                         );
+						out.add(0, "flags                            ", flags                            );
+						out.add(0, "hcontent_file                    ", hcontent_file                    );
+						out.add(0, "hcontent_preview                 ", hcontent_preview                 );
+						out.add(0, "lifetime_favorited               ", lifetime_favorited               );
+						out.add(0, "lifetime_followers               ", lifetime_followers               );
+						out.add(0, "lifetime_playtime                ", lifetime_playtime                );
+						out.add(0, "lifetime_playtime_sessions       ", lifetime_playtime_sessions       );
+						out.add(0, "lifetime_subscriptions           ", lifetime_subscriptions           );
+						if (maybe_inappropriate_sex__OPT!=null)
+						out.add(0, "maybe_inappropriate_sex__OPT     ", maybe_inappropriate_sex__OPT     );
+						if (maybe_inappropriate_violence__OPT!=null)
+						out.add(0, "maybe_inappropriate_violence__OPT", maybe_inappropriate_violence__OPT);
+						out.add(0, "num_children                     ", num_children                     );
+						out.add(0, "num_comments_public              ", num_comments_public              );
+						out.add(0, "num_reports                      ", num_reports                      );
+						out.add(0, "publishedfileid                  ", publishedfileid                  );
+						out.add(0, "result                           ", result                           );
+						out.add(0, "show_subscribe_all               ", show_subscribe_all               );
+						
+						out.add(0, "can_be_deleted                   ", can_be_deleted                   );
+						out.add(0, "can_subscribe                    ", can_subscribe                    );
+						
+						out.add(0, "visibility                       ", visibility                       );
+						
+						out.add(0, "banned                           ", banned                           );
+						out.add(1, "ban_reason                       ", ban_reason                       );
+						out.add(0, "workshop_accepted                ", workshop_accepted                );
+						out.add(0, "workshop_file                    ", workshop_file                    );
+						
+						if (!tags.isEmpty()) {
+							Iterable<String> it = ()->tags.stream().map(tag->String.format("%s\"%s\"", tag.adminonly ? "[A]" : "", tag.tag)).iterator();
+							out.add(0, "tags", "(%d tags)  %s", tags.size(), String.join(", ",it));
+						}
+						
+						return out.generateOutput();
+					}
 				}
 			}
 			// "GameInfo.Block["community_items",V1].dataValue:Array"

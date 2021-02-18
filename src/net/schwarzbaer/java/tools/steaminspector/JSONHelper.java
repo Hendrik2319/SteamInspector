@@ -173,14 +173,17 @@ class JSONHelper {
 				}
 			
 			Vector<JSON_TreeNode<?>> childNodes = new Vector<>();
-			for (ChildValueType value:vector) {
-				JSON_TreeNode<?> childNode = create(this,getChildName.apply(value),getChildValue.apply(value));
-				childNode.doToAllNodesChildNodesAndFutureChildNodes(childNodeAction);
-				childNodes.add(childNode);
-			}
+			for (ChildValueType value:vector)
+				childNodes.add(create(this,getChildName.apply(value),getChildValue.apply(value)));
 			return childNodes;
 		}
 		
+		@Override
+		protected void doAfterCreateChildren() {
+			for (JSON_TreeNode<?> child:children)
+				child.doToAllNodesChildNodesAndFutureChildNodes(childNodeAction);
+		}
+
 		private static JSON_TreeNode<?> create(JSON_TreeNode<?> parent, String name, Value<NV,V> value) {
 			String title = getTitle(name,value);
 			JsonTreeIcons icon = getIcon(value.type);

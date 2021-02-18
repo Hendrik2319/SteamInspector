@@ -552,13 +552,16 @@ class VDFParser {
 						vector.sort(Comparator.<ValuePair,String>comparing(vp->vp.label.str,Data.createNumberStringOrder()));
 						break;
 					}
-				for (ValuePair valuePair:vector) {
-					VDFTreeNode childNode = new VDFTreeNode(this, valuePair);
-					childNode.doToAllNodesChildNodesAndFutureChildNodes(childNodeAction);
-					children.add(childNode);
-				}
+				for (ValuePair valuePair:vector)
+					children.add(new VDFTreeNode(this, valuePair));
 			}
 			return children;
+		}
+		
+		@Override
+		protected void doAfterCreateChildren() {
+			for (VDFTreeNode child:children)
+				child.doToAllNodesChildNodesAndFutureChildNodes(childNodeAction);
 		}
 		
 		void forEach(ForEachAction action) {
