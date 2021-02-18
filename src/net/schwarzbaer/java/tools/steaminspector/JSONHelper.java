@@ -45,16 +45,12 @@ class JSONHelper {
 			throw new TraverseException("%s isn't a well formed JSON text: %s", (String)debugOutputPrefixStr, e.getMessage());
 		}
 	}
-
-	static String getTreeIDStr(Class<?> hostClass, String suffix) {
-		return String.format("%s<%s>", hostClass.getCanonicalName(), suffix);
-	}
 	
 	static TreeRoot createRawDataTreeRoot(Class<?> rawDataHostClass, Value<NV, V> value, boolean isLarge) {
-		return createDataTreeRoot(rawDataHostClass, "RawData", value, isLarge);
+		return createDataTreeRoot(TreeNodes.getRawDataTreeIDStr(rawDataHostClass), value, isLarge);
 	}
 	static TreeRoot createDataTreeRoot(Class<?> hostClass, String suffix, Value<NV, V> value, boolean isLarge) {
-		return createDataTreeRoot(getTreeIDStr(hostClass,suffix), value, isLarge);
+		return createDataTreeRoot(TreeNodes.getTreeIDStr(hostClass,suffix), value, isLarge);
 	}
 	static TreeRoot createDataTreeRoot(String treeIDStr, Value<NV, V> value, boolean isLarge) {
 		return TreeNodes.createDataTreeRoot(JSON_TreeNode.create(null,null,value), treeIDStr, true,!isLarge);

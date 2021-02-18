@@ -440,7 +440,7 @@ class VDFParser {
 		}
 		
 		TreeRoot createRawDataTreeRoot(Class<?> rawDataHostClass) {
-			return createDataTreeRoot(rawDataHostClass.getCanonicalName()+"<RawData>");
+			return createDataTreeRoot(TreeNodes.getRawDataTreeIDStr(rawDataHostClass));
 		}
 		TreeRoot createDataTreeRoot(String treeIDStr) {
 			return TreeNodes.createDataTreeRoot(this, treeIDStr, type!=Type.Root, true);

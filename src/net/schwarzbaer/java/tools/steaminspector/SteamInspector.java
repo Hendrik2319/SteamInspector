@@ -1703,7 +1703,7 @@ class SteamInspector {
 			showMessageFromThread("ParsedTreeOutput.setRoot finished");
 		}
 		@Override void showLoadingMsg() {
-			setRoot(TreeNodes.SimpleTextNode.createSingleTextLineTree("load content ..."));
+			setRoot(TreeNodes.SimpleLeafNode.createSingleTextLineTree("load content ..."));
 		}
 	}
 	
