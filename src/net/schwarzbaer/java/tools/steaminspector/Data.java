@@ -1651,7 +1651,7 @@ class Data {
 						ValueListOutput out = new ValueListOutput();
 						out.add(0, "title                            ", title                            );
 						out.add(0, "short_description                ", short_description                );
-						out.add(0, "app_name                         ", app_name                         ); // TODO:  app_name --> known game titles
+						out.add(0, "app_name                         ", app_name                         );
 						
 						if (!tags.isEmpty()) {
 							Iterable<String> it = ()->tags.stream().map(tag->String.format("%s\"%s\"", tag.adminonly ? "[A]" : "", tag.tag)).iterator();
