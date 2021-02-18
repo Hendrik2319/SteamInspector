@@ -67,12 +67,10 @@ import net.schwarzbaer.java.tools.steaminspector.Data.Player.AchievementProgress
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.AchievementProgress.AchievementProgressInGame;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.FriendList;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos;
-import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos.Block;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos.CommunityItems.CommunityItem;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos.GameInfosFilterOptions;
 import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShot;
 import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShotLists;
-import net.schwarzbaer.java.tools.steaminspector.Data.SteamId;
 import net.schwarzbaer.java.tools.steaminspector.Data.V;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeContextMenu;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
@@ -140,13 +138,13 @@ class TreeNodes {
 		return file.isFile() && fileNameEndsWith(file,".jpg",".jpeg",".png",".bmp",".ico",".tga");
 	}
 	
-	private static String getTimeStr(long millis) {
+	static String getTimeStr(long millis) {
 		Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("CET"), Locale.GERMANY);
 		cal.setTimeInMillis(millis);
 		return String.format(Locale.ENGLISH, "%1$tA, %1$te. %1$tb %1$tY, %1$tT [%1$tZ:%1$tz]", cal);
 	}
 	
-	private static String getSizeStr(File file) {
+	static String getSizeStr(File file) {
 		long length = file==null ? 0 : file.length();
 		return getSizeStr(length);
 	}
@@ -692,18 +690,13 @@ class TreeNodes {
 	}
 
 	@SuppressWarnings("unused")
-	private static class GroupingNode<ValueType> extends BaseTreeNode<TreeNode,TreeNode> implements FileBasedNode, ExternViewableNode, FilterableNode, TreeContentSource, TextContentSource {
+	private static class GroupingNode<ValueType> extends MultiPurposeNode implements FilterableNode {
 		
 		private final Collection<ValueType> values;
 		private final Comparator<ValueType> sortOrder;
 		private final NodeCreator1<ValueType> createChildNode;
 		private final BiConsumer<TreeNode, Vector<TreeNode>> createAllChildNodes;
-		private LabeledFile file = null;
 		private GroupingNodeFilter<ValueType,?> filter = null;
-		private TreeRoot dataTree = null;
-		private Supplier<String> textSource = null;
-		private ExternViewableItem viewableItem = null;
-		private Color textColor = null;
 		
 		private static <IT,VT> Comparator<Map.Entry<IT,VT>> createMapKeyOrder(Comparator<IT> keyOrder) {
 			return Comparator.comparing(Map.Entry<IT,VT>::getKey,keyOrder);
@@ -755,40 +748,6 @@ class TreeNodes {
 		interface NodeCreator2<IDType, ValueType> {
 			TreeNode create(TreeNode parent, IDType id, ValueType value);
 		}
-
-		GroupingNode<ValueType> setFile(File file) { return setFile(new LabeledFile(file)); }
-		GroupingNode<ValueType> setFile(LabeledFile file) { this.file = file; return this; }
-
-		GroupingNode<ValueType> setExternViewable(File file, ExternalViewerInfo externalViewerInfo) {
-			return setExternViewable(new LabeledFile(file), externalViewerInfo);
-		}
-		GroupingNode<ValueType> setExternViewable(LabeledFile file, ExternalViewerInfo viewerInfo) {
-			if (file==null) throw new IllegalArgumentException();
-			if (viewerInfo==null) throw new IllegalArgumentException();
-			viewableItem = new ExternViewableItem(file,viewerInfo);
-			return this;
-		}
-		GroupingNode<ValueType> setExternViewable(FilePromise filePromise, ExternalViewerInfo viewerInfo) {
-			if (filePromise==null) throw new IllegalArgumentException();
-			if (viewerInfo==null) throw new IllegalArgumentException();
-			viewableItem = new ExternViewableItem(filePromise,viewerInfo);
-			return this;
-		}
-		GroupingNode<ValueType> setExternViewable(LabeledUrl url, ExternalViewerInfo viewerInfo) {
-			if (url==null) throw new IllegalArgumentException();
-			if (viewerInfo==null) throw new IllegalArgumentException();
-			viewableItem = new ExternViewableItem(url,viewerInfo);
-			return this;
-		}
-		
-		@Override public LabeledFile getFile() { return file; }
-		@Override public ExternViewableItem getExternViewableItem() { return viewableItem; }
-		
-		GroupingNode<ValueType> setDataTree  (TreeRoot dataTree)           { this.dataTree   = dataTree  ; return this; }
-		GroupingNode<ValueType> setTextSource(Supplier<String> textSource) { this.textSource = textSource; return this; }
-		@Override public TreeRoot getContentAsTree() { return dataTree; }
-		@Override public String   getContentAsText() { return textSource!=null ? textSource.get() : null; }
-		@Override ContentType getContentType() { return dataTree!=null ? ContentType.DataTree : textSource!=null ? ContentType.PlainText : null; }
 		
 		@Override
 		protected Vector<? extends TreeNode> createChildren() {
@@ -808,9 +767,6 @@ class TreeNodes {
 			}
 			return children;
 		}
-
-		void setTextColor(Color textColor) { this.textColor = textColor; }
-		@Override Color getTextColor() { return textColor; }
 		
 		@Override public Filter getFilter() { return filter; }
 		GroupingNode<ValueType> setFilter(GroupingNodeFilter<ValueType,?> filter) {
@@ -916,53 +872,22 @@ class TreeNodes {
 		}
 	}
 	
-	private static SimpleLeafNode createUrlNode(TreeNode parent,            String label,                    String url) { return createUrlNode(parent, null, label, url,        url, false); }
-	private static SimpleLeafNode createUrlNode(TreeNode parent, Icon icon, String label,                    String url) { return createUrlNode(parent, icon, label, url,        url, false); }
-	private static SimpleLeafNode createUrlNode(TreeNode parent,            String label, String urlInTitle, String url) { return createUrlNode(parent, null, label, urlInTitle, url, false); }
-	@SuppressWarnings("unused")
-	private static SimpleLeafNode createUrlNode(TreeNode parent, Icon icon, String label, String urlInTitle, String url) { return createUrlNode(parent, icon, label, urlInTitle, url, false); }
-	private static SimpleLeafNode createUrlNode(TreeNode parent, Icon icon, String label, String urlInTitle, String url, boolean isImageUrl) {
-		return new SimpleLeafNode(parent, icon, urlInTitle==null ? "%s" : "%s: \"%s\"", label, urlInTitle)
-			.setURL(url, isImageUrl)
-			.setExternViewable(url, ExternalViewerInfo.Browser);
+	private static MultiPurposeNode createImageUrlNode(TreeNode parent, String label, String url) { return createUrlNode(parent, TreeIcons.ImageFile.getIcon(), label, url, url, true ); }
+	private static MultiPurposeNode createUrlNode(TreeNode parent,            String label,                    String url) { return createUrlNode(parent, null, label, url, url, false); }
+	private static MultiPurposeNode createUrlNode(TreeNode parent, Icon icon, String label,                    String url) { return createUrlNode(parent, icon, label, url, url, false); }
+	private static MultiPurposeNode createUrlNode(TreeNode parent, Icon icon, String label, String urlInTitle, String url, boolean isImageUrl) {
+		return createUrlNode(parent, icon, "", url, isImageUrl, urlInTitle==null ? "%s" : "%s: \"%s\"", label, urlInTitle);
 	}
-	private static SimpleLeafNode createImageUrlNode(TreeNode parent, String label,                    String url) { return createUrlNode(parent, TreeIcons.ImageFile.getIcon(), label, url,        url, true); }
-	private static SimpleLeafNode createImageUrlNode(TreeNode parent, String label, String urlInTitle, String url) { return createUrlNode(parent, TreeIcons.ImageFile.getIcon(), label, urlInTitle, url, true); }
-	
-	private static SimpleLeafNode createTextContentNode(TreeNode parent, String title, Supplier<String> source) { return createTextContentNode(parent, title, source, null); }
-	private static SimpleLeafNode createTextContentNode(TreeNode parent, String title, Supplier<String> source, Icon icon) {
-		return new SimpleLeafNode(parent, icon!=null ? icon : TreeIcons.TextFile.getIcon(), title)
-			.setTextSource(source);
+	private static MultiPurposeNode createUrlNode(TreeNode parent, Icon icon, String urlLabel, String url, boolean isImageUrl, String format, Object...args) {
+		return createUrlNode(parent, icon, new LabeledUrl(urlLabel, url), isImageUrl, format, args);
 	}
-	
-	private static SimpleLeafNode createBase64ValueNode(TreeNode parent, String title, Base64String value) {
-		return new SimpleLeafNode(parent, title)
-			.setTextSource(()->{
-				if (value==null) return "<null>";
-				
-				String str = "";
-				str += "Original Text:\r\n";
-				str += String.format("\"%s\"%n", value.string);
-				str += "\r\n";
-				str += "Decoded Bytes:\r\n";
-				if (value.bytes==null)
-					str += "   <Decode Error>\r\n";
-				else
-					str += SteamInspector.toHexTable(value.bytes,-1);
-				
-				
-				return str;
-			});
+	private static MultiPurposeNode createUrlNode(TreeNode parent, Icon icon, LabeledUrl labeledUrl, boolean isImageUrl, String format, Object... args) {
+		return new SimpleLeafNode(parent, icon, format, args)
+				.setURL(labeledUrl, isImageUrl)
+				.setExternViewable(labeledUrl, ExternalViewerInfo.Browser);
 	}
 
-	static class SimpleLeafNode extends BaseTreeNode<TreeNode,TreeNode> implements ExternViewableNode, FileBasedNode, URLBasedNode, TextContentSource, TreeContentSource, ImageContentSource {
-	
-		private LabeledFile file   = null;
-		private LabeledUrl url     = null;
-		private boolean isImageUrl = false;
-		private TreeRoot dataTree  = null;
-		private Supplier<String>   textSource   = null;
-		private ExternViewableItem viewableItem = null;
+	static class SimpleLeafNode extends MultiPurposeNode {
 		
 		SimpleLeafNode(TreeNode parent,                           String format, Object...args) { this(parent, null, Locale.ENGLISH, format, args); }
 		SimpleLeafNode(TreeNode parent,            Locale locale, String format, Object...args) { this(parent, null, locale, format, args); }
@@ -976,9 +901,28 @@ class TreeNodes {
 		static TreeRoot createSingleTextLineTree(String format, Object...args) {
 			return new TreeRoot( new SimpleLeafNode(null, format, args), true, true );
 		}
+	}
+
+	private static abstract class MultiPurposeNode extends BaseTreeNode<TreeNode,TreeNode> implements ExternViewableNode, FileBasedNode, URLBasedNode, TextContentSource, TreeContentSource, ImageContentSource {
 		
-		SimpleLeafNode setDataTree  (TreeRoot dataTree)           { this.dataTree   = dataTree  ; return this; }
-		SimpleLeafNode setTextSource(Supplier<String> textSource) { this.textSource = textSource; return this; }
+		private Color textColor    = null;
+		private LabeledFile file   = null;
+		private LabeledUrl url     = null;
+		private boolean isImageUrl = false;
+		private TreeRoot dataTree  = null;
+		private Supplier<String>   textSource   = null;
+		private ExternViewableItem viewableItem = null;
+		
+		private MultiPurposeNode(TreeNode parent, String title, boolean allowsChildren, boolean isLeaf, Icon icon) {
+			super(parent, title, allowsChildren, isLeaf, icon);
+		}
+
+		void setTextColor(Color textColor) { this.textColor = textColor; }
+		@Override Color getTextColor() { return textColor; }
+		
+		MultiPurposeNode setDataTree  (TreeRoot dataTree)           { this.dataTree   = dataTree  ; return this; }
+		MultiPurposeNode setTextSource(Supplier<String> textSource) { this.textSource = textSource; return this; }
+		MultiPurposeNode setTextSource(Base64String   base64String) { return setTextSource(()->Base64String.toString(base64String)); }
 		
 		@Override ContentType getContentType() {
 			if (url!=null && isImageUrl) return ContentType.Image;
@@ -991,39 +935,46 @@ class TreeNodes {
 		@Override public String        getContentAsText() { return textSource!=null ? textSource.get() : null; }
 		@Override public BufferedImage getContentAsImage() { return url!=null && isImageUrl ? readImageFromURL(url.url,"image") : null; }
 		
-		SimpleLeafNode setURL(String     url, boolean isImageUrl) { return setURL(new LabeledUrl(url),isImageUrl); }
-		SimpleLeafNode setURL(LabeledUrl url, boolean isImageUrl) { this.url = url; this.isImageUrl = isImageUrl; return this; }
+		
+		MultiPurposeNode setURL(LabeledUrl url, boolean isImageUrl, ExternalViewerInfo viewerInfo) {
+			setURL(url, isImageUrl);
+			setExternViewable(url, viewerInfo);
+			return this;
+		}
+		
+		MultiPurposeNode setURL(String     url, boolean isImageUrl) { return setURL(new LabeledUrl(url),isImageUrl); }
+		MultiPurposeNode setURL(LabeledUrl url, boolean isImageUrl) { this.url = url; this.isImageUrl = isImageUrl; return this; }
 		@Override 	public LabeledUrl getURL() { return url; }
 		
-		SimpleLeafNode setFile(File file, ExternalViewerInfo viewerInfo) {
+		MultiPurposeNode setFile(File file, ExternalViewerInfo viewerInfo) {
 			setFile(file);
 			setExternViewable(file, viewerInfo);
 			return this;
 		}
 		
-		SimpleLeafNode setFile(File        file) { return setFile(new LabeledFile(file)); }
-		SimpleLeafNode setFile(LabeledFile file) { this.file = file; return this; }
+		MultiPurposeNode setFile(File        file) { return setFile(new LabeledFile(file)); }
+		MultiPurposeNode setFile(LabeledFile file) { this.file = file; return this; }
 		@Override public LabeledFile getFile() { return file; }
 		
-		SimpleLeafNode setExternViewable(File file, ExternalViewerInfo viewerInfo) {
+		MultiPurposeNode setExternViewable(File file, ExternalViewerInfo viewerInfo) {
 			return setExternViewable(new LabeledFile(file), viewerInfo);
 		}
-		SimpleLeafNode setExternViewable(String url, ExternalViewerInfo viewerInfo) {
+		MultiPurposeNode setExternViewable(String url, ExternalViewerInfo viewerInfo) {
 			return setExternViewable(new LabeledUrl(url), viewerInfo);
 		}
-		SimpleLeafNode setExternViewable(LabeledFile file, ExternalViewerInfo viewerInfo) {
+		MultiPurposeNode setExternViewable(LabeledFile file, ExternalViewerInfo viewerInfo) {
 			if (file==null) throw new IllegalArgumentException();
 			if (viewerInfo==null) throw new IllegalArgumentException();
 			viewableItem = new ExternViewableItem(file,viewerInfo);
 			return this;
 		}
-		SimpleLeafNode setExternViewable(FilePromise filePromise, ExternalViewerInfo viewerInfo) {
+		MultiPurposeNode setExternViewable(FilePromise filePromise, ExternalViewerInfo viewerInfo) {
 			if (filePromise==null) throw new IllegalArgumentException();
 			if (viewerInfo==null) throw new IllegalArgumentException();
 			viewableItem = new ExternViewableItem(filePromise,viewerInfo);
 			return this;
 		}
-		SimpleLeafNode setExternViewable(LabeledUrl url, ExternalViewerInfo viewerInfo) {
+		MultiPurposeNode setExternViewable(LabeledUrl url, ExternalViewerInfo viewerInfo) {
 			if (url==null) throw new IllegalArgumentException();
 			if (viewerInfo==null) throw new IllegalArgumentException();
 			viewableItem = new ExternViewableItem(url,viewerInfo);
@@ -1145,14 +1096,14 @@ class TreeNodes {
 			return createGameScreenShotsNode(parent, "by "+Data.getPlayerName(id), screenShots, null);
 		}
 		private static TreeNode createGameScreenShotsNode(TreeNode parent, Integer gameID, ScreenShotLists.ScreenShotList screenShots) {
-			GroupingNode<ScreenShot> node = createGameScreenShotsNode(parent, Data.getGameTitle(gameID), screenShots, Data.getGameIcon(gameID,TreeIcons.ImageFile));
+			MultiPurposeNode node = createGameScreenShotsNode(parent, Data.getGameTitle(gameID), screenShots, Data.getGameIcon(gameID,TreeIcons.ImageFile));
 			gameChangeListeners.add(gameID, new GameChangeListener() {
 				@Override public TreeNode getTreeNode() { return node; }
 				@Override public void gameTitleWasChanged() { node.setTitle(Data.getGameTitle(gameID)); }
 			});
 			return node;
 		}
-		private static GroupingNode<ScreenShot> createGameScreenShotsNode(TreeNode parent, String title, ScreenShotLists.ScreenShotList screenShots, Icon icon) {
+		private static MultiPurposeNode createGameScreenShotsNode(TreeNode parent, String title, ScreenShotLists.ScreenShotList screenShots, Icon icon) {
 			return GroupingNode.create(parent, title, screenShots, Comparator.naturalOrder(), icon, ScreenShotNode::new)
 					.setFile(screenShots.imagesFolder);
 		}
@@ -1184,7 +1135,7 @@ class TreeNodes {
 					});
 			}
 
-			@Override public LabeledUrl getURL() { return new LabeledUrl("Shop Page", "https://store.steampowered.com/app/"+game.appID+"/"); }
+			@Override public LabeledUrl getURL() { return Data.getShopURL(game.appID); }
 			@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.Browser.createItem(getURL()); }
 
 			@Override
@@ -1254,7 +1205,7 @@ class TreeNodes {
 			}
 
 			@Override public LabeledFile getFile() { return new LabeledFile(player.folder); }
-			@Override public LabeledUrl getURL() { return new LabeledUrl("Steam Player Profile", SteamId.getSteamPlayerProfileURL(player.playerID)); }
+			@Override public LabeledUrl getURL() { return Data.getSteamPlayerProfileURL(player.playerID); }
 			@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.Browser.createItem(getURL()); }
 
 			@Override
@@ -1396,7 +1347,7 @@ class TreeNodes {
 					return str;
 				}
 
-				@Override public LabeledUrl getURL() { return !friend.isPerson ? null : new LabeledUrl("Steam Player Profile", SteamId.getSteamPlayerProfileURL(friend.playerID)); }
+				@Override public LabeledUrl getURL() { return !friend.isPerson ? null : Data.getSteamPlayerProfileURL(friend.playerID); }
 				@Override public ExternViewableItem getExternViewableItem() { return !friend.isPerson ? null : ExternalViewerInfo.Browser.createItem(getURL()); }
 
 				@Override Color getTextColor() {
@@ -1606,10 +1557,10 @@ class TreeNodes {
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
 				if (data.fullDesc!=null) {
-					children.add(createTextContentNode(this, "Full Game Description", ()->data.fullDesc));
+					children.add(new SimpleLeafNode(this, TreeIcons.TextFile.getIcon(), "Full Game Description").setTextSource(()->data.fullDesc));
 				}
 				if (data.shortDesc!=null) {
-					children.add(createTextContentNode(this, "Short Game Description", ()->data.shortDesc));
+					children.add(new SimpleLeafNode(this, TreeIcons.TextFile.getIcon(), "Short Game Description").setTextSource(()->data.shortDesc));
 				}
 				if (data.badge!=null) {
 					children.add(new BadgeNode(this, data.badge));
@@ -1689,14 +1640,14 @@ class TreeNodes {
 							children.add(new RawJsonDataNode(this, "Workshop", data.workshop.rawData, data.workshop.getClass()));
 				}
 				if (data.blocks!=null) {
-					GroupingNode<Block> groupingNode = GroupingNode
+					MultiPurposeNode node = GroupingNode
 							.create(this, "All Data Blocks (unparsed)", data.blocks, null, BlockNode::new)
 							.setExternViewable(data.file,ExternalViewerInfo.TextEditor);
 					if (data.rawData!=null) {
-						groupingNode.setTextColor(NodeColorizer.getTextColor_WarnNew(data.rawData));
-						groupingNode.setDataTree(JSONHelper.createRawDataTreeRoot(data.getClass(), data.rawData, false));
+						node.setTextColor(NodeColorizer.getTextColor_WarnNew(data.rawData));
+						node.setDataTree(JSONHelper.createRawDataTreeRoot(data.getClass(), data.rawData, false));
 					}
-					children.add(groupingNode);
+					children.add(node);
 				}
 				
 				return children;
@@ -1783,16 +1734,44 @@ class TreeNodes {
 			
 			private static TreeNode createWorkshopEntryNode(TreeNode parent, GameInfos.Workshop.Entry entry) {
 				if (entry.hasParsedData) {
-					SimpleLeafNode node = new SimpleLeafNode(parent, "Workshop Item \"%s\"", entry.title)
-							.setTextSource(()->entry.generateStringOutput());
-					if      (entry.url        !=null && !entry.url        .isEmpty()) node.setURL(entry.url        , false);
-					else if (entry.preview_url!=null && !entry.preview_url.isEmpty()) node.setURL(entry.preview_url, false);
+					MultiPurposeNode node;
+					if (
+						isEmpty(entry.url) &&
+						isEmpty(entry.preview_url) &&
+						isEmpty(entry.publishedfileid) &&
+						isEmpty(entry.banner) &&
+						isEmpty(entry.creator) &&
+						!isAppID(entry.creator_appid) &&
+						!isAppID(entry.consumer_appid)
+					)
+						node = new SimpleLeafNode(parent, "Workshop Item \"%s\"", entry.title);
+					else
+						node = GroupingNode.create(parent, "Workshop Item \""+entry.title+"\"", (p,ch)->{
+							if (!isEmpty(entry.url            )) ch.add(createUrlNode(p, null, ""       ,entry.url                           , false, "%s: \"%s\"", "URL"          , entry.url        ));
+							if (!isEmpty(entry.preview_url    )) ch.add(createUrlNode(p, null, "Preview",entry.preview_url                   , true , "%s: \"%s\"", "Preview Image", entry.preview_url));
+							if (!isEmpty(entry.publishedfileid)) ch.add(createUrlNode(p, null, Data.getWorkshopItemURL(entry.publishedfileid), false, "%s: \"%s\"", "Workshop Item", entry.publishedfileid));
+							if (!isEmpty(entry.banner         )) ch.add(createUrlNode(p, null, Data.getSteamPlayerProfileURL(entry.banner )  , false, "%s: \"%s\"", "Banner"       , entry.banner));
+							if (!isEmpty(entry.creator        )) ch.add(createUrlNode(p, null, Data.getSteamPlayerProfileURL(entry.creator)  , false, "%s: \"%s\"", "Creator"      , entry.creator));
+							if ( isAppID(entry.creator_appid  )) ch.add(createUrlNode(p, null, Data.getShopURL(""+entry.creator_appid )      , false, "%s: %d"    , "Creator App"  , entry.creator_appid ));
+							if ( isAppID(entry.consumer_appid )) ch.add(createUrlNode(p, null, Data.getShopURL(""+entry.consumer_appid)      , false, "%s: %s"    , "Consumer App" , entry.consumer_appid));
+						});
+					
+					node.setTextSource(()->entry.generateStringOutput());
+					if      (!isEmpty(entry.publishedfileid)) node.setURL(Data.getWorkshopItemURL(entry.publishedfileid), false, ExternalViewerInfo.Browser);
+					else if (!isEmpty(entry.url            )) node.setURL(new LabeledUrl(          entry.url        )   , false, ExternalViewerInfo.Browser);
+					else if (!isEmpty(entry.preview_url    )) node.setURL(new LabeledUrl("Preview",entry.preview_url)   , false, ExternalViewerInfo.Browser);
 					return node;
 				}
 				if (entry.rawData!=null) return new RawJsonDataNode(parent, "Workshop Item", entry.rawData, entry.getClass());
 				return null;
 			}
 			
+			private static boolean isAppID(long appid) {
+				return 0<appid && appid<0xFFFFFFFFL;
+			}
+			private static boolean isEmpty(String str) {
+				return str==null || str.isEmpty();
+			}
 			private static void addNodesTo(TreeNode parent, Vector<TreeNode> ch, String nodeLabel, Vector<GameInfos.Associations.Association> array) {
 				if (array==null) return;
 				array.forEach(v->{
@@ -1825,21 +1804,21 @@ class TreeNodes {
 					Vector<TreeNode> children = new Vector<>();
 					if (appActivity!=null) {
 						if (appActivity.hasParsedData)
-							children.add(createBase64ValueNode(this, "App Activity", appActivity.value));
+							children.add(new SimpleLeafNode(this, "App Activity").setTextSource(appActivity.value));
 						else if (appActivity.rawData!=null)
 							children.add(new RawJsonDataNode(this, "App Activity [Raw Data]", appActivity.rawData, appActivity.getClass()));
 					}
 					if (gameActivity!=null) {
 						if (gameActivity.hasParsedData)
 							for (int i=0; i<gameActivity.values.size(); i++)
-								children.add(createBase64ValueNode(this, "Game Activity ["+(i+1)+"]", gameActivity.values.get(i)));
+								children.add(new SimpleLeafNode(this, "Game Activity ["+(i+1)+"]").setTextSource(gameActivity.values.get(i)));
 						else if (gameActivity.rawData!=null)
 							children.add(new RawJsonDataNode(this, "Game Activity [Raw Data]", gameActivity.rawData, gameActivity.getClass()));
 					}
 					if (userNews!=null) {
 						if (userNews.hasParsedData)
 							for (int i=0; i<userNews.values.size(); i++)
-								children.add(createBase64ValueNode(this, "User News ["+(i+1)+"]", userNews.values.get(i)));
+								children.add(new SimpleLeafNode(this, "User News ["+(i+1)+"]").setTextSource(userNews.values.get(i)));
 						else if (userNews.rawData!=null)
 							children.add(new RawJsonDataNode(this, "User News [Raw Data]", userNews.rawData, userNews.getClass()));
 					}
@@ -1993,18 +1972,30 @@ class TreeNodes {
 				}
 
 				private static void addImageUrlNode(TreeNode parent, Vector<TreeNode> children, CommunityItem data, String shortUrl, String label) {
-					if (shortUrl!=null && !shortUrl.isEmpty())
-						children.add(createImageUrlNode(parent, label, shortUrl, data.getURL(shortUrl)));
+					if (shortUrl!=null && !shortUrl.isEmpty()) {
+						String url = data.getURL(shortUrl);
+						children.add(
+							new SimpleLeafNode(parent, TreeIcons.ImageFile.getIcon(), "%s: \"%s\"", label, shortUrl)
+								.setURL(url, true)
+								.setExternViewable(url, ExternalViewerInfo.Browser)
+						);
+					}
 				}
 
 				private static void addUrlNode(TreeNode parent, Vector<TreeNode> children, CommunityItem data, String shortUrl, String label) {
-					if (shortUrl!=null && !shortUrl.isEmpty())
-						children.add(createUrlNode(parent, label, shortUrl, data.getURL(shortUrl)));
+					if (shortUrl!=null && !shortUrl.isEmpty()) {
+						String url = data.getURL(shortUrl);
+						children.add(
+							new SimpleLeafNode(parent, "%s: \"%s\"", label, shortUrl)
+								.setURL(url, false)
+								.setExternViewable(url, ExternalViewerInfo.Browser)
+						);
+					}
 				}
 
 				private static void addBase64ImageNode(TreeNode parent, Vector<TreeNode> children, String base64Data, String label) {
 					if (base64Data!=null && !base64Data.isEmpty())
-						children.add(createBase64ValueNode(parent, label, Base64String.parse(base64Data.replace('_','/').replace('-','+'), null)));
+						children.add(new SimpleLeafNode(parent, label).setTextSource(Base64String.parse(base64Data.replace('_','/').replace('-','+'), null)));
 				}
 			}
 

@@ -36,6 +36,7 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.TraverseException;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.LabeledUrl;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FilterOption;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileNameNExt;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
@@ -413,6 +414,23 @@ class Data {
 		if (gameImages!=null) idSet.addAll(gameImages.getGameIDs());
 		players.forEach((playerID,player)->player.forEachGameIDSet(idSet::addAll));
 		
+		players.forEach((Long playerID,Player player)->{
+			player.gameInfos.forEach((gameID,gameInfos)->{
+				if (gameInfos.workshop!=null && gameInfos.workshop.entries!=null) {
+					gameInfos.workshop.entries.forEach(entry->{
+						long appID_L = entry.consumer_appid;
+						String appName = entry.app_name;
+						if (0<appID_L && appID_L<0x7FFFFFFFL && appName!=null && !appName.isEmpty()) {
+							int appID = (int)appID_L;
+							if (!knownGameTitles.containsKey(appID)) {
+								knownGameTitles.put(appID, appName);
+							}
+						}
+					});
+				}
+			});
+		});
+		knownGameTitles.writeToFile();
 		
 		games.clear();
 		for (Integer appID:idSet) {
@@ -471,19 +489,19 @@ class Data {
 		return Comparator.comparing(Map.Entry<Long,ValueType>::getKey);
 	}
 	
-	static Integer parseNumber(String name) {
+	static Integer parseNumber(String str) {
 		try {
-			int n = Integer.parseInt(name);
-			if (name.equals(Integer.toString(n))) return n;
+			int n = Integer.parseInt(str);
+			if (str.equals(Integer.toString(n))) return n;
 		}
 		catch (NumberFormatException e) {}
 		return null;
 	}
 	
-	static Long parseLongNumber(String name) {
+	static Long parseLongNumber(String str) {
 		try {
-			long n = Long.parseLong(name);
-			if (name.equals(Long.toString(n))) return n;
+			long n = Long.parseLong(str);
+			if (str.equals(Long.toString(n))) return n;
 		}
 		catch (NumberFormatException e) {}
 		return null;
@@ -512,6 +530,23 @@ class Data {
 
 		boolean isEmpty() {
 			return (string==null || string.isEmpty()) && (bytes==null || bytes.length==0);
+		}
+
+		static String toString(Base64String value) {
+			if (value==null) return "<null>";
+			
+			String str = "";
+			str += "Original Text:\r\n";
+			str += String.format("\"%s\"%n", value.string);
+			str += "\r\n";
+			str += "Decoded Bytes:\r\n";
+			if (value.bytes==null)
+				str += "   <Decode Error>\r\n";
+			else
+				str += SteamInspector.toHexTable(value.bytes,-1);
+			
+			
+			return str;
 		}
 	}
 	
@@ -627,6 +662,21 @@ class Data {
 		ClassType parse(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr, File file) throws TraverseException;
 	}
 	
+	static LabeledUrl getShopURL(int appID) { return getShopURL(""+appID); }
+	static LabeledUrl getShopURL(String appID) {
+		return new LabeledUrl("Shop Page", "https://store.steampowered.com/app/"+appID+"/");
+	}
+	
+	static LabeledUrl getWorkshopItemURL(String id) {
+		return new LabeledUrl("Workshop Item", "https://steamcommunity.com/sharedfiles/filedetails/?id="+id);
+	}
+	static LabeledUrl getSteamPlayerProfileURL(long playerID) {
+		return getSteamPlayerProfileURL(""+SteamId.getFullSteamID(playerID));
+	}
+	static LabeledUrl getSteamPlayerProfileURL(String fullSteamID) {
+		return new LabeledUrl("Steam Player Profile", "https://steamcommunity.com/profiles/"+fullSteamID+"/");
+	}
+	
 	static class SteamId {
 		
 		final String str;
@@ -635,8 +685,20 @@ class Data {
 		private SteamId(String str, Long steamid) {
 			this.str = str;
 			this.steamid = steamid;
+			
 		}
 		
+		static SteamId parse(String steamidStr) {
+			return new SteamId(steamidStr,parseLongNumber(steamidStr));
+		}
+		
+		boolean isPlayer() {
+			if (steamid==null) return false;
+			if (steamid>>32 != 0x01100001L) return false;
+			if ((steamid & 0xFFFFFFFFL) == 0) return false;
+			return true;
+		}
+
 		String getPlayerName() {
 			if (steamid==null)
 				return String.format("Player [%s]", str);
@@ -647,10 +709,6 @@ class Data {
 
 		static long getFullSteamID(long playerID) {
 			return (playerID & 0xFFFFFFFFL) | 0x0110000100000000L;
-		}
-		
-		static String getSteamPlayerProfileURL(long playerID) {
-			return "https://steamcommunity.com/profiles/"+getFullSteamID(playerID)+"/";
 		}
 	}
 
@@ -1594,31 +1652,43 @@ class Data {
 						out.add(0, "title                            ", title                            );
 						out.add(0, "short_description                ", short_description                );
 						out.add(0, "app_name                         ", app_name                         ); // TODO:  app_name --> known game titles
-						out.add(0, "favorited                        ", favorited                        );
+						
+						if (!tags.isEmpty()) {
+							Iterable<String> it = ()->tags.stream().map(tag->String.format("%s\"%s\"", tag.adminonly ? "[A]" : "", tag.tag)).iterator();
+							out.add(0, "tags", "(%d tags)  %s", tags.size(), String.join(", ",it));
+						}
+						
 						out.addEmptyLine();
-						out.add(0, "preview_url                      ", preview_url                      ); // TODO: link if not empty
+						out.add(0, "url                              ", url                              );
+						out.add(0, "preview_url                      ", preview_url                      );
 						out.add(0, "preview_file_size                ", preview_file_size                );
-						out.add(0, "url                              ", url                              ); // TODO: link if not empty
-						out.add(0, "banner                           ", banner                           ); // TODO:  profile url
+						out.add(0, "banner                           ", banner                           );
 						out.add(0, "language                         ", language                         );
 						out.add(0, "revision                         ", revision                         );
 						out.add(0, "revision_change_number           ", revision_change_number           );
 						out.addEmptyLine();
-						out.add(0, "views                            ", views                            );
-						out.add(0, "subscriptions                    ", subscriptions                    );
-						out.add(0, "followers                        ", followers                        );
-						out.addEmptyLine();
-						out.add(0, "time_created                     ", time_created                     ); // TODO:  time string
-						out.add(0, "time_updated                     ", time_updated                     ); // TODO:  time string
+						out.add(0, "time_created                     ", "%d  (%s)", time_created, TreeNodes.getTimeStr(time_created*1000));
+						out.add(0, "time_updated                     ", "%d  (%s)", time_updated, TreeNodes.getTimeStr(time_updated*1000));
 						out.addEmptyLine();
 						out.add(0, "vote_score"                       , vote_score                       );
 						out.add(0, "votes_down"                       , votes_down                       );
 						out.add(0, "votes_up  "                       , votes_up                         );
 						out.addEmptyLine();
+						out.add(0, "publishedfileid                  ", publishedfileid                  );
 						out.add(0, "consumer_appid                   ", consumer_appid                   );
 						out.add(0, "consumer_shortcutid              ", consumer_shortcutid              );
-						out.add(0, "creator                          ", creator                          ); // TODO:  profile url
+						out.add(0, "creator                          ", creator                          );
 						out.add(0, "creator_appid                    ", creator_appid                    );
+						out.addEmptyLine();
+						out.add(0, "views                            ", views                            );
+						out.add(0, "favorited                        ", favorited                        );
+						out.add(0, "subscriptions                    ", subscriptions                    );
+						out.add(0, "followers                        ", followers                        );
+						out.add(0, "lifetime_favorited               ", lifetime_favorited               );
+						out.add(0, "lifetime_followers               ", lifetime_followers               );
+						out.add(0, "lifetime_playtime                ", lifetime_playtime                );
+						out.add(0, "lifetime_playtime_sessions       ", lifetime_playtime_sessions       );
+						out.add(0, "lifetime_subscriptions           ", lifetime_subscriptions           );
 						out.addEmptyLine();
 						out.add(0, "file_size                        ", file_size                        );
 						out.add(0, "file_type                        ", file_type                        );
@@ -1628,11 +1698,6 @@ class Data {
 						out.add(0, "flags                            ", flags                            );
 						out.add(0, "hcontent_file                    ", hcontent_file                    );
 						out.add(0, "hcontent_preview                 ", hcontent_preview                 );
-						out.add(0, "lifetime_favorited               ", lifetime_favorited               );
-						out.add(0, "lifetime_followers               ", lifetime_followers               );
-						out.add(0, "lifetime_playtime                ", lifetime_playtime                );
-						out.add(0, "lifetime_playtime_sessions       ", lifetime_playtime_sessions       );
-						out.add(0, "lifetime_subscriptions           ", lifetime_subscriptions           );
 						if (maybe_inappropriate_sex__OPT!=null)
 						out.add(0, "maybe_inappropriate_sex__OPT     ", maybe_inappropriate_sex__OPT     );
 						if (maybe_inappropriate_violence__OPT!=null)
@@ -1640,7 +1705,6 @@ class Data {
 						out.add(0, "num_children                     ", num_children                     );
 						out.add(0, "num_comments_public              ", num_comments_public              );
 						out.add(0, "num_reports                      ", num_reports                      );
-						out.add(0, "publishedfileid                  ", publishedfileid                  );
 						out.add(0, "result                           ", result                           );
 						out.add(0, "show_subscribe_all               ", show_subscribe_all               );
 						
@@ -1653,11 +1717,6 @@ class Data {
 						out.add(1, "ban_reason                       ", ban_reason                       );
 						out.add(0, "workshop_accepted                ", workshop_accepted                );
 						out.add(0, "workshop_file                    ", workshop_file                    );
-						
-						if (!tags.isEmpty()) {
-							Iterable<String> it = ()->tags.stream().map(tag->String.format("%s\"%s\"", tag.adminonly ? "[A]" : "", tag.tag)).iterator();
-							out.add(0, "tags", "(%d tags)  %s", tags.size(), String.join(", ",it));
-						}
 						
 						return out.generateOutput();
 					}
@@ -2094,7 +2153,7 @@ class Data {
 						steamidStr             = JSON_Data.getValue(object, "steamid"               , true, JSON_Data.Value.Type.String , JSON_Data.Value::castToStringValue , false, dataValueStr);
 						if (steamidStr==null) steamid = null;
 						else {
-							steamid = new SteamId(steamidStr, parseLongNumber(steamidStr));
+							steamid = SteamId.parse(steamidStr);
 							if (steamid.steamid==null)  DevHelper.unknownValues.add(baseValueLabel+".steamid:String can't be parsed as a number");
 						}
 						
