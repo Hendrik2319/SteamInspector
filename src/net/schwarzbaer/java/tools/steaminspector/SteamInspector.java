@@ -110,7 +110,7 @@ class SteamInspector {
 
 	static final String INTERESTING_NODES_INI = "SteamInspector.InterestingNodes.ini";
 	static final String KNOWN_GAME_TITLES_INI = "SteamInspector.KnownGameTitles.ini";
-	static final File FOLDER_TEST_FILES                  = new File("./test");
+	static final File   FOLDER_TEST_FILES = new File("./test");
 //	private static final File FOLDER_STEAMLIBRARY_STEAMAPPS      = new File("C:\\__Games\\SteamLibrary\\steamapps\\");
 //	private static final File FOLDER_STEAM_USERDATA              = new File("C:\\Program Files (x86)\\Steam\\userdata");
 //	private static final File FOLDER_STEAM_APPCACHE              = new File("C:\\Program Files (x86)\\Steam\\appcache");

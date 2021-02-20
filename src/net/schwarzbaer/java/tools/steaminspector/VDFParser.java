@@ -87,15 +87,13 @@ class VDFParser {
 		private Boolean isInteresting;
 		
 		private ValuePair(Block label, Block datablock) {
+			if (label==null || datablock==null) throw new IllegalArgumentException("Both Blocks in a ValuePair must be non-null");
+			if (label.isClosingBracketDummy() != datablock.isClosingBracketDummy()) throw new IllegalArgumentException();
 			this.label = label;
 			this.datablock = datablock;
 			this.wasProcessed = false;
-			this.hasUnprocessedChildren = null;
+			this.hasUnprocessedChildren = this.datablock.type==Block.Type.String ? false : null;
 			this.isInteresting = null;
-			if (this.label==null || this.datablock==null)
-				throw new IllegalArgumentException("Both Blocks in a ValuePair must be non-null");
-			if (this.label.isClosingBracketDummy() != this.datablock.isClosingBracketDummy())
-				throw new IllegalArgumentException();
 		}
 		
 		public static ValuePair createClosingBracketDummy() {
@@ -421,7 +419,6 @@ class VDFParser {
 				this.type = Type.String;
 				this.valuePairArray = null;
 				this.value = this.base.datablock.str;
-				this.base.hasUnprocessedChildren = false;
 				break;
 				
 			default:
@@ -447,6 +444,11 @@ class VDFParser {
 		}
 		
 		boolean is(Type type) { return this.type==type; }
+		Type getType() { return type; }
+		
+		boolean isEmptyArray() {
+			return valuePairArray==null || valuePairArray.isEmpty();
+		}
 		
 		@Override public void setInteresting(Boolean isInteresting) {
 			if (base!=null)
@@ -471,7 +473,7 @@ class VDFParser {
 		}
 		
 		@Override public boolean hasUnprocessedChildren() {
-			if (type==Type.Root || base.hasUnprocessedChildren==null) {
+			if (base==null || base.hasUnprocessedChildren==null) {
 				if (base!=null) base.hasUnprocessedChildren=false;
 				checkChildren("hasUnprocessedChildren()");
 				for (VDFTreeNode child:children) {
@@ -481,7 +483,7 @@ class VDFParser {
 					}
 				}
 			}
-			return false;
+			return base==null ? false : base.hasUnprocessedChildren;
 		}
 		
 		@Override public String getPath() {
@@ -573,6 +575,14 @@ class VDFParser {
 		}
 		interface ForEachAction {
 			boolean applyTo(VDFTreeNode subNode, Type type, String name, String value);
+		}
+		
+		boolean containsValue(String name) {
+			checkChildren("containsValue(...)");
+			for (VDFTreeNode child:children)
+				if (name.equals(child.name))
+					return true;
+			return false;
 		}
 		
 		VDFTreeNode getSubNode(String... path) throws VDFTraverseException { return getSubNode_intern("getSubNode()", false, path); }

@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Vector;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -52,7 +53,7 @@ class Data {
 		
 		static class ExtHashMap<TypeType> extends HashMap<String,HashSet<TypeType>> {
 			private static final long serialVersionUID = -3042424737957471534L;
-			DevHelper.ExtHashMap<TypeType> add(String name, TypeType type) {
+			ExtHashMap<TypeType> add(String name, TypeType type) {
 				HashSet<TypeType> hashSet = get(name);
 				if (hashSet==null) put(name,hashSet = new HashSet<>());
 				hashSet.add(type);
@@ -63,19 +64,343 @@ class Data {
 				return hashSet!=null && hashSet.contains(type);
 			}
 		}
-		static class KnownJsonValues extends DevHelper.ExtHashMap<JSON_Data.Value.Type> {
+		static class KnownJsonValues extends ExtHashMap<JSON_Data.Value.Type> {
 			private static final long serialVersionUID = 875837641187739890L;
-			@Override DevHelper.KnownJsonValues add(String name, JSON_Data.Value.Type type) { super.add(name, type); return this; }
+			@Override KnownJsonValues add(String name, JSON_Data.Value.Type type) { super.add(name, type); return this; }
 		}
-		static class KnownVdfValues extends DevHelper.ExtHashMap<VDFTreeNode.Type> {
+		static class KnownVdfValues extends ExtHashMap<VDFTreeNode.Type> {
 			private static final long serialVersionUID = -8137083046811709725L;
-			@Override DevHelper.KnownVdfValues add(String name, VDFTreeNode.Type type) { super.add(name, type); return this; }
+			@Override KnownVdfValues add(String name, VDFTreeNode.Type type) { super.add(name, type); return this; }
 		}
 		
-		static final DevHelper.OptionalValues optionalValues = new OptionalValues();
-		static class OptionalValues extends HashMap<String,HashMap<String,HashSet<JSON_Data.Value.Type>>> {
+		static OptionalValues optional = new OptionalValues();
+		static class OptionalValues {
+			final OptionalVdfValues      vdfValues      = new OptionalVdfValues();
+			final OptionalJsonValues     jsonValues     = new OptionalJsonValues();
+			final OptionalJsonValues_Old jsonValues_old = new OptionalJsonValues_Old();
+			void clear() {
+				vdfValues     .clear();
+				jsonValues    .clear();
+				jsonValues_old.clear();
+			}
+			void show(PrintStream out) {
+				vdfValues     .show(out);
+				jsonValues    .show(out);
+				jsonValues_old.show(out);
+			}
+		}
+		
+		static class OptionalVdfValues extends HashMap<String,OptionalVdfValues.NodeTypes> {
+			private static final long serialVersionUID = 4079411257348652398L;
+			
+			void scan(VDFTreeNode node, String id) {
+				NodeTypes nodeTypes = get(id);
+				boolean nodeTypesNotNew;
+				if (nodeTypes != null)
+					nodeTypesNotNew = true;
+				else {
+					nodeTypesNotNew = false;
+					put(id, nodeTypes = new NodeTypes());
+				}
+				scanNode(node,nodeTypes,nodeTypesNotNew);
+			}
+
+			private void scanNode(final VDFTreeNode node, final NodeTypes nodeTypes, final boolean nodeTypesNotNew) {
+				if (node==null)
+					nodeTypes.types.add(null);
+				else {
+					VDFTreeNode.Type type = node.getType();
+					nodeTypes.types.add(type);
+					if (type==null) throw new IllegalStateException("VDFTreeNode.type == <null>");
+					switch(type) {
+					case String: break;
+					case Root:
+					case Array:
+						if (nodeTypes.arrayValues==null)
+							nodeTypes.arrayValues = new HashMap<>();
+						if (node.isEmptyArray())
+							nodeTypes.isEmptyArrayPossible = true;
+						nodeTypes.arrayValues.forEach((name,subNodeTypes)->{
+							if (!node.containsValue(name))
+								subNodeTypes.types.add(null);
+						});
+						node.forEach((subNode,t,name,v)->{
+							NodeTypes subNodeTypes = nodeTypes.arrayValues.get(name);
+							boolean subNodeTypesNotNew;
+							if (subNodeTypes != null)
+								subNodeTypesNotNew = true;
+							else {
+								subNodeTypesNotNew = false;
+								nodeTypes.arrayValues.put(name, subNodeTypes = new NodeTypes());
+								if (nodeTypesNotNew) subNodeTypes.types.add(null); // Block already exists, but this subNode is new --> subNode is optional 
+							}
+							scanNode(subNode,subNodeTypes,subNodeTypesNotNew);
+							return false;
+						});
+						break;
+					}
+				}
+			}
+
+			void show(PrintStream out) {
+				if (isEmpty()) return;
+				out.printf("Optional VDF Values: %d blocks%n", size());
+				String indent = "    ";
+				String indent2 = indent+indent;
+				forEach_keySorted(this,(id,nodeTypes)->{
+					out.printf("%sBlock \"%s\"%n", indent, id);
+					nodeTypes.show(out,indent2,"<Base>");
+				});
+			}
+
+			@Override public String toString() {
+				StringBuilder sb = new StringBuilder();
+				sb.append(String.format("%s {%n",getClass().getSimpleName()));
+				forEach_keySorted(this,(id,nodeTypes)->{
+					nodeTypes.toString(sb, "    ", id);
+				});
+				sb.append("}\r\n");
+				return sb.toString();
+			}
+			
+			static class NodeTypes {
+				final HashSet<VDFTreeNode.Type> types = new HashSet<>();
+				HashMap<String,NodeTypes> arrayValues = null;
+				boolean isEmptyArrayPossible = false;
+				
+				void show(PrintStream out, String indent, String name) {
+					out.printf("%s%s:%s%s%n", indent, name, types, isEmptyArrayPossible ? " or empty array" : "");
+					if (arrayValues!=null) {
+						forEach_keySorted(arrayValues,(subName,subNodeTypes)->{
+							String name2 = name+"."+subName;
+							subNodeTypes.show(out,indent,name2);
+						});
+					}
+				}
+
+				void toString(StringBuilder sb, String indent, String name) {
+					sb.append(String.format("%s%s:%s%s", indent, name, types, isEmptyArrayPossible ? " | empty array" : ""));
+					if (arrayValues == null)
+						sb.append(String.format("%n"));
+					else {
+						sb.append(String.format(" {%n"));
+						String indent2 = indent+"    ";
+						forEach_keySorted(arrayValues,(subName,subNodeTypes)->{
+							subNodeTypes.toString(sb,indent2,subName);
+						});
+						sb.append(String.format("%s}%n", indent));
+					}
+				}
+
+				@Override public String toString() {
+					StringBuilder sb = new StringBuilder();
+					toString(sb, "", String.format("<%s>", getClass().getSimpleName()));
+					return sb.toString();
+				}
+				
+			}
+		}
+		
+		static class OptionalJsonValues extends HashMap<String,OptionalJsonValues.BlockTypes> {
+			private static final long serialVersionUID = -8194747876262097702L;
+			
+			void scan(JSON_Data.Value<NV, V> value, String prefixStr) {
+				
+				BlockTypes blockTypes = get(prefixStr);
+				boolean blockIsNew = false;
+				if (blockTypes==null) {
+					blockIsNew = true;
+					put(prefixStr, blockTypes=new BlockTypes());
+				}
+				
+				if (blockTypes.baseValue == null)
+					blockTypes.baseValue = new Types();
+				
+				if (value==null)
+					blockTypes.baseValue.types.add(null);
+				else {
+					blockTypes.baseValue.types.add(value.type);
+					scanSubValues(blockTypes.baseValue, value, "<Base>", prefixStr);
+				}
+			}
+			
+			void scan(JSON_Array<NV,V> array, String prefixStr) {
+				
+				BlockTypes blockTypes = get(prefixStr);
+				boolean blockIsNew = false;
+				if (blockTypes==null) {
+					blockIsNew = true;
+					put(prefixStr, blockTypes=new BlockTypes());
+				}
+				
+				if (blockTypes.baseValue == null)
+					blockTypes.baseValue = new Types();
+				
+				blockTypes.baseValue.types.add(JSON_Data.Value.Type.Array);
+				if (array==null)
+					blockTypes.baseValue.types.add(null);
+				else
+					scanArray(blockTypes.baseValue, array, "<Base>", prefixStr);
+			}
+			
+			void scan(JSON_Object<NV,V> object, String prefixStr) {
+				
+				BlockTypes blockTypes = get(prefixStr);
+				boolean blockIsNew = false;
+				if (blockTypes==null) {
+					blockIsNew = true;
+					put(prefixStr, blockTypes=new BlockTypes());
+				}
+				
+				scanObject(blockTypes, blockIsNew, object, prefixStr);
+			}
+
+			private void scanObject(BlockTypes blockTypes, boolean blockIsNew, JSON_Object<NV, V> object, String prefixStr) {
+				blockTypes.objectValues.forEach((name,types)->{
+					JSON_Data.Value<NV, V> value = object.getValue(name);
+					if (value==null) types.types.add(null);
+				});
+				
+				for (JSON_Data.NamedValue<NV,V> nvalue:object) {
+					Types types = blockTypes.objectValues.get(nvalue.name);
+					if (types==null) {
+						blockTypes.objectValues.put(nvalue.name, types=new Types());
+						if (!blockIsNew) types.types.add(null);
+					}
+					types.types.add(nvalue.value.type);
+					scanSubValues(types, nvalue.value, nvalue.name, prefixStr);
+				}
+			}
+
+			private void scanSubValues(Types types, JSON_Data.Value<NV, V> value, String name, String prefixStr) {
+				switch (value.type) {
+				case Bool: case Float: case Integer: case Null: case String: break;
+				case Array: {
+					JSON_Data.ArrayValue<NV, V> arrayValue = value.castToArrayValue();
+					if (arrayValue==null || arrayValue.value==null) throw new IllegalStateException();
+					scanArray(types, arrayValue.value, name, prefixStr);
+				} break;
+				case Object:
+					JSON_Data.ObjectValue<NV, V> objectValue = value.castToObjectValue();
+					if (objectValue==null || objectValue.value==null) throw new IllegalStateException();
+					String prefixStr2 = prefixStr+"."+name;
+					scan(objectValue.value, prefixStr2);
+					break;
+				}
+			}
+
+			private void scanArray(Types types, JSON_Array<NV, V> array, String name, String prefixStr) {
+				Types types2 = types.arrayValueTypes;
+				if (types2==null) types.arrayValueTypes = (types2=new Types());
+				if (array.isEmpty())
+					types.isEmptyArrayPossible = true;
+				else
+					for (JSON_Data.Value<NV, V> value:array) {
+						if (value==null || value.type==null) throw new IllegalStateException();
+						types2.types.add(value.type);
+						scanSubValues(types2, value, name+"[]", prefixStr);
+					}
+			}
+
+			@Override public String toString() {
+				StringBuilder sb = new StringBuilder();
+				sb.append(String.format("%s {%n",getClass().getSimpleName()));
+				String indent = "    ";
+				forEach((blockName,valueMap)->{
+					valueMap.toString(sb, indent, blockName);
+				});
+				sb.append("}\r\n");
+				return sb.toString();
+			}
+
+			void show(PrintStream out) {
+				if (isEmpty()) return;
+				String indent = "    ";
+				Vector<String> prefixStrs = new Vector<>(keySet());
+				prefixStrs.sort(null);
+				out.printf("Optional JSON Values: [%d blocks]%n", prefixStrs.size());
+				for (String prefixStr:prefixStrs) {
+					BlockTypes valueMap = get(prefixStr);
+					valueMap.show(out, indent, prefixStr);
+				}
+					
+			}
+			
+			static class BlockTypes {
+				HashMap<String,Types> objectValues = new HashMap<>();
+				Types baseValue = null;
+
+				void toString(StringBuilder sb, String indent, String blockName) {
+					String indent2 = indent+"    ";
+					sb.append(String.format("%s%s {%n", indent, blockName));
+					if (baseValue!=null) baseValue.toString(sb,indent2,"<Base>");
+					objectValues.forEach((valueName,types)->types.toString(sb, indent2, valueName));
+					sb.append(String.format("%s}%n", indent));
+				}
+
+				void show(PrintStream out, String indent, String prefixStr) {
+					Vector<String> names = new Vector<>(objectValues.keySet());
+					names.sort(null);
+					out.printf("%sBlock \"%s\" [%d]%n", indent, prefixStr, names.size());
+					String indent2 = indent+"    ";
+					if (baseValue!=null)
+						baseValue.show(out,indent2,"<Base>");
+					for (String name:names)
+						objectValues.get(name).show(out,indent2,name);
+				}
+			}
+
+			static class Types {
+				
+				HashSet<JSON_Data.Value.Type> types = new HashSet<>();
+				Types arrayValueTypes = null;
+				boolean isEmptyArrayPossible = false;
+				
+				void toString(StringBuilder sb, String indent, String valueName) {
+					toString(sb, indent, valueName, false);
+				}
+				void toString(StringBuilder sb, String indent, String valueName, boolean isEmptyArrayPossible) {
+					sb.append(String.format("%s%s = %s%s%n", indent, valueName, types.toString(), isEmptyArrayPossible ? " | EmptyArray" : ""));
+					if (arrayValueTypes!=null)
+						arrayValueTypes.toString(sb, indent, valueName+"[]", this.isEmptyArrayPossible);
+				}
+				
+				void show(PrintStream out, String indent, String name) {
+					show(out, indent, name, false);
+				}
+				void show(PrintStream out, String indent, String name, boolean isEmptyArrayPossible) {
+					Vector<JSON_Data.Value.Type> types = new Vector<>(this.types);
+					types.sort(Comparator.nullsLast(Comparator.naturalOrder()));
+					StringBuilder sb = new StringBuilder();
+					if      (types.size()==1) sb.append(types.firstElement());
+					else if (types.size()> 1) sb.append(types.toString());
+					if (isEmptyArrayPossible) {
+						if (sb.length()>0) sb.append(" or ");
+						sb.append("empty array");
+					}
+					out.printf("%s%s:%s%n", indent, name, sb.toString());
+					if (arrayValueTypes!=null)
+						arrayValueTypes.show(out, indent, name+"[]", this.isEmptyArrayPossible);
+					
+//					for (JSON_Data.Value.Type type:types) {
+//						String comment = ":"+type;
+//						if (type==null ) {
+//							if (name.endsWith("[]"))
+//								comment = " is empty"; // array was empty
+//							else if (name.isEmpty())
+//								comment = " == <null>"; // base value of this block was NULL
+//							else
+//								comment = " is optional"; // sub value of an object was optional
+//						}
+//						out.printf("      %s%s%n", name, comment);
+//					}
+				}
+			}
+		}
+		
+		static class OptionalJsonValues_Old extends HashMap<String,HashMap<String,HashSet<JSON_Data.Value.Type>>> {
 			private static final long serialVersionUID = 3844179176678445499L;
-	
+
 			void scan(JSON_Object<NV,V> object, String prefixStr) {
 				
 				HashMap<String, HashSet<JSON_Data.Value.Type>> valueMap = get(prefixStr);
@@ -100,11 +425,26 @@ class Data {
 				}
 			}
 			
+			@Override public String toString() {
+				StringBuilder sb = new StringBuilder();
+				sb.append(String.format("%s {%n",getClass().getSimpleName()));
+				String indent = "    ";
+				forEach((blockName,valueMap)->{
+					sb.append(String.format("%s%s {%n", indent, blockName));
+					valueMap.forEach((valueName,types)->{
+						sb.append(String.format("%s%s = %s%n", indent+indent, valueName, types));
+					});
+					sb.append(String.format("%s}%n", indent));
+				});
+				sb.append("}\r\n");
+				return sb.toString();
+			}
+
 			void show(PrintStream out) {
 				if (isEmpty()) return;
 				Vector<String> prefixStrs = new Vector<>(keySet());
 				prefixStrs.sort(null);
-				out.printf("Optional Values: [%d blocks]%n", prefixStrs.size());
+				out.printf("Optional JSON Values [OLD]: [%d blocks]%n", prefixStrs.size());
 				for (String prefixStr:prefixStrs) {
 					HashMap<String, HashSet<JSON_Data.Value.Type>> valueMap = get(prefixStr);
 					Vector<String> names = new Vector<>(valueMap.keySet());
@@ -114,21 +454,31 @@ class Data {
 						HashSet<JSON_Data.Value.Type> typeSet = valueMap.get(name);
 						Vector<JSON_Data.Value.Type> types = new Vector<>(typeSet);
 						types.sort(Comparator.nullsLast(Comparator.naturalOrder()));
-						for (JSON_Data.Value.Type type:types)
-							out.printf("      %s%s%n", name, type==null ? " == <null>" : ":"+type);
+						for (JSON_Data.Value.Type type:types) {
+							String comment = ":"+type;
+							if (type==null ) {
+								if (name.endsWith("[]"))
+									comment = " is empty"; // array was empty
+								else if (name.isEmpty())
+									comment = " == <null>"; // base value of this block was NULL
+								else
+									comment = " is optional"; // sub value of an object was optional
+							}
+							out.printf("      %s%s%n", name, comment);
+						}
 					}
 				}
 					
 			}
 		}
 		
-		static void scanUnexpectedValues(JSON_Object<NV,V> object, DevHelper.KnownJsonValues knownValues, String prefixStr) {
+		static void scanUnexpectedValues(JSON_Object<NV,V> object, KnownJsonValues knownValues, String prefixStr) {
 			for (JSON_Data.NamedValue<NV,V> nvalue:object)
 				if (!knownValues.contains(nvalue.name, nvalue.value.type))
 					//DevHelper.unknownValues.add(prefixStr+"."+nvalue.name+" = "+nvalue.value.type+"...");
 					unknownValues.add(prefixStr,nvalue.name,nvalue.value.type);
 		}
-		static void scanUnexpectedValues(VDFTreeNode node, DevHelper.KnownVdfValues knownValues, String prefixStr) {
+		static void scanUnexpectedValues(VDFTreeNode node, KnownVdfValues knownValues, String prefixStr) {
 			node.forEach((subNode,t,n,v) -> {
 				if (!knownValues.contains(n,t))
 					unknownValues.add(prefixStr, n, t);
@@ -136,7 +486,7 @@ class Data {
 			});
 		}
 	
-		static final DevHelper.UnknownValues unknownValues = new UnknownValues();
+		static final UnknownValues unknownValues = new UnknownValues();
 		static class UnknownValues extends HashSet<String> {
 			private static final long serialVersionUID = 7229990445347378652L;
 			
@@ -200,7 +550,7 @@ class Data {
 				unknownValues.add(valueLabel+" (JSON_Object == <null>)");
 			else {
 				if (scanOptionalValues)
-					optionalValues.scan(object, valueLabel);
+					optional.jsonValues_old.scan(object, valueLabel);
 				for (JSON_Data.NamedValue<NV, V> nval:object)
 					scanJsonStructure(nval.value, valueLabel+"."+(nval.name==null?"<null>":nval.name), scanOptionalValues);
 			}
@@ -378,8 +728,35 @@ class Data {
 	static final HashMap<Long,Player> players = new HashMap<>();
 	static void loadData() {
 		DevHelper.unknownValues.clear();
-		DevHelper.optionalValues.clear();
+		DevHelper.optional.clear();
 		knownGameTitles.readFromFile();
+		
+		/*
+		File scanTestFile = new File(SteamInspector.FOLDER_TEST_FILES,"scanTest.json");
+		if (scanTestFile.isFile()) {
+			JSON_Data.Value<NV, V> result;
+			try { result = JSONHelper.parseJsonFile(scanTestFile); }
+			catch (JSON_Parser.ParseException e) { showException(e, scanTestFile); result=null; }
+			
+			if (result!=null) {
+				// TO-DO: ScanTest
+				DevHelper.optionalValuesRe.scan(result, "<BaseValue>ScanTest");
+				JSON_Data.ObjectValue<NV, V> objectValue = result.castToObjectValue();
+				if (objectValue!=null && objectValue.value!=null) {
+					JSON_Object<NV, V> object = objectValue.value;
+					DevHelper.optionalValuesRe.scan(object, "<Object>ScanTest");
+					try {
+						JSON_Array<NV, V> array = JSON_Data.getArrayValue(object, "array", "ScanTest");
+						DevHelper.optionalValuesRe.scan(array, "<Array>ScanTest.array");
+					} catch (TraverseException e) {
+						showException(e, scanTestFile);
+					}
+					DevHelper.optionalValues.scan(object, "[OLD]ScanTest<Object>[OLD]");
+				}
+				DevHelper.scanJsonStructure(result, "[OLD]ScanTest<Value>[OLD]", true);
+			}
+		}
+		*/
 		
 		File folder = SteamInspector.KnownFolders.getSteamClientSubFolder(SteamInspector.KnownFolders.SteamClientSubFolders.APPCACHE_LIBRARYCACHE);
 		GameImages gameImages = null;
@@ -445,7 +822,7 @@ class Data {
 		knownGameTitles.writeToFile();
 		
 		DevHelper.unknownValues.show(System.err);
-		DevHelper.optionalValues.show(System.err);
+		DevHelper.optional.show(System.err);
 	}
 	static String getPlayerName(Long playerID) {
 		if (playerID==null) return "Player ???";
@@ -487,6 +864,14 @@ class Data {
 	}
 	static <ValueType> Comparator<Map.Entry<Long,ValueType>> createPlayerIdKeyOrder() {
 		return Comparator.comparing(Map.Entry<Long,ValueType>::getKey);
+	}
+	
+	static <ValueType> void forEach_keySorted(Map<String,ValueType> map, BiConsumer<String,ValueType> action) {
+		if (map==null || action==null) throw new IllegalArgumentException();
+		Vector<String> keys = new Vector<>(map.keySet());
+		keys.sort(Comparator.comparing(String::toLowerCase));
+		for (String key:keys)
+			action.accept(key, map.get(key));
 	}
 	
 	static Integer parseNumber(String str) {
@@ -826,9 +1211,8 @@ class Data {
 		}
 		
 		public String getName(boolean addPlayerID) {
-			if (localconfig != null) {
-				String name = localconfig.playerName;
-				if (name!=null) return name + (addPlayerID? "  ["+playerID+"]" : "");
+			if (localconfig!=null && localconfig.friendList!=null && localconfig.friendList.personaName!=null) {
+				return localconfig.friendList.personaName + (addPlayerID? "  ["+playerID+"]" : "");
 			}
 			return "Player "+playerID;
 		}
@@ -839,8 +1223,8 @@ class Data {
 			final File file;
 			final VDFParser.Result vdfData;
 			final VDFTreeNode vdfTreeNode;
-			final String playerName;
 			final FriendList friendList;
+			final SoftwareValveSteamApps softwareValveSteamApps;
 		
 			public LocalConfig(File file, long playerID) {
 				if (file==null || !file.isFile())
@@ -859,158 +1243,303 @@ class Data {
 					vdfTreeNode = null;
 				
 				if (vdfTreeNode == null) {
-					playerName = null;
 					friendList = null;
+					softwareValveSteamApps = null;
+					
 				} else {
-					
-					String str = null;
-					try { str = vdfTreeNode.getString("UserLocalConfigStore","friends","PersonaName"); }
-					catch (VDFTraverseException e) { showException(e, this.file); }
-					playerName = str;
-					
-					VDFTreeNode friendsNode;
-					try {
-						friendsNode = vdfTreeNode.getSubNode("UserLocalConfigStore","friends");
-					} catch (VDFTraverseException e) {
-						showException(e, file);
-						friendsNode = null;
-					}
-					
-					FriendList parsedFriendList = null;
-					if (friendsNode!=null)
-						try {
-							parsedFriendList = FriendList.parse(friendsNode,playerID,file);
-						} catch (VDFTraverseException e) {
-							showException(e, file);
-							parsedFriendList = new FriendList(friendsNode);
-						}
-					friendList = parsedFriendList;
+					friendList = parseSubNode(
+							FriendList::new,FriendList::new,
+							"LocalConfig[Player "+playerID+"].FriendList",
+							file,vdfTreeNode,
+							"UserLocalConfigStore","friends"
+					);
+					softwareValveSteamApps = parseSubNode(
+							SoftwareValveSteamApps::new,SoftwareValveSteamApps::new,
+							"LocalConfig[Player "+playerID+"].SoftwareValveSteamApps",
+							file,vdfTreeNode,
+							"UserLocalConfigStore","Software","Valve","Steam"
+					);
 				}
 			}
-		}
-
-		static class FriendList {
 			
-			//static final HashSet<String> unknownValueNames = new HashSet<>();
-			
-			final VDFTreeNode rawData;
-			final Vector<FriendList.Friend> friends;
-			final HashMap<String,String> values;
-			
-			FriendList() {
-				rawData = null;
-				friends = new Vector<>();
-				values = new HashMap<>();
+			interface VDFParseConstructor<BlockClass> {
+				BlockClass parse(VDFTreeNode blockNode, String debugOutputPrefixStr, File file) throws VDFTraverseException;
 			}
 			
-			FriendList(VDFTreeNode rawData) {
-				this.rawData = rawData;
-				friends = null;
-				values = null;
+			static <BlockClass> BlockClass parseSubNode(VDFParseConstructor<BlockClass> parseFunction, Function<VDFTreeNode,BlockClass> rawDataConstructor, String debugOutputPrefixStr, File file, VDFTreeNode baseTreeNode, String... path) {
+				VDFTreeNode blockNode;
+				try {
+					blockNode = baseTreeNode.getSubNode(path);
+				} catch (VDFTraverseException e) {
+					showException(e, file);
+					blockNode = null;
+				}
+				
+				if (blockNode == null)
+					return null;
+				
+				try {
+					return parseFunction.parse(blockNode,debugOutputPrefixStr,file);
+				} catch (VDFTraverseException e) {
+					showException(e, file);
+					return rawDataConstructor.apply(blockNode);
+				}
+			}
+			
+			private static class ValueContainer<ValueType> {
+				ValueType value = null;
 			}
 
-			public static FriendList parse(VDFTreeNode friendsNode, long playerID, File file) throws VDFTraverseException {
-				if ( friendsNode==null) throw new VDFTraverseException("FriendList[Player %d]: base VDFTreeNode is NULL", playerID);
-				if (!friendsNode.is(VDFTreeNode.Type.Array)) throw new VDFTraverseException("FriendList[Player %d]: base VDFTreeNode is not an Array", playerID);
-				FriendList friendList = new FriendList();
-				friendsNode.forEach((subNode, type, name, value)->{
-					switch (type) {
-					
-					case Root:
-						System.err.printf("FriendList[Player %d]: Root node as sub node of base VDFTreeNode%n", playerID);
-						break;
-
-					case Array: // Friend
-						try {
-							friendList.friends.add(new Friend(name,subNode));
-						} catch (VDFTraverseException e) {
-							showException(e, file);
-							friendList.friends.add(new Friend(subNode));
-						}
-						return true;
-						
-					case String: // simple value
-						friendList.values.put(name, value);
-						return true;
-					}
-					return false;
-				});
-				return friendList;
-			}
-
-			static class Friend {
-				private static final DevHelper.KnownVdfValues KNOWN_VDF_VALUES = new DevHelper.KnownVdfValues()
-						.add("name"  , VDFTreeNode.Type.String)
-						.add("tag"   , VDFTreeNode.Type.String)
-						.add("avatar", VDFTreeNode.Type.String)
-						.add("NameHistory", VDFTreeNode.Type.Array);
+			static class SoftwareValveSteamApps {
 				
 				final VDFTreeNode rawData;
-				final boolean hasParsedData;
-				final long id;
-				final long id_lower;
-				final long id_upper;
-				final long playerID;
-				final boolean isPerson;
-				final String name;
-				final String tag;
-				final String avatar;
-				final HashMap<Integer, String> nameHistory;
+				final Vector<App> apps;
+				final String playerLevel;
+				final String lastPlayedTimesSyncTime;
 
-				public Friend(VDFTreeNode rawData) {
+				SoftwareValveSteamApps(VDFTreeNode rawData) {
 					this.rawData = rawData;
-					hasParsedData = false;
-					id     = -1;
-					id_lower = -1;
-					id_upper = -1;
-					playerID = -1;
-					isPerson = false;
-					name   = null;
-					tag    = null;
-					avatar = null;
-					nameHistory = null;
+					apps = null;
+					playerLevel = null;
+					lastPlayedTimesSyncTime = null;
+				}
+				
+				SoftwareValveSteamApps(VDFTreeNode blockNode, String debugOutputPrefixStr, File file) throws VDFTraverseException {
+					this.rawData = null;
+					if ( blockNode==null) throw new VDFTraverseException("%s: base VDFTreeNode is NULL", debugOutputPrefixStr);
+					if (!blockNode.is(VDFTreeNode.Type.Array)) throw new VDFTraverseException("%s: base VDFTreeNode is not an Array", debugOutputPrefixStr);
+					blockNode.markAsProcessed();
+					
+					ValueContainer<String> playerLevel = new ValueContainer<>();
+					ValueContainer<String> lastPlayedTimesSyncTime = new ValueContainer<>();
+					
+					apps = new Vector<SoftwareValveSteamApps.App>();
+					blockNode.forEach((subNode, type, name, value)->{
+						switch (type) {
+						
+						case Root:
+							System.err.printf("%s: contains a Root node%n", debugOutputPrefixStr);
+							DevHelper.unknownValues.add("SoftwareValveSteamApps", name, type);
+							break;
+			
+						case Array: // Friend
+							switch (name) {
+							case "Apps":
+								subNode.forEach((subNode1, type1, name1, value1)->{
+									switch (type) {
+									case Root:
+										System.err.printf("%s.Apps: contains a Root node%n", debugOutputPrefixStr);
+										DevHelper.unknownValues.add("SoftwareValveSteamApps.Apps", name1, type1);
+										break;
+										
+									case Array:
+										try {
+											apps.add(App.parse(name1,subNode1,debugOutputPrefixStr+".Apps"));
+											return true;
+										} catch (VDFTraverseException e) {
+											showException(e, file);
+											apps.add(new App(name1, subNode1));
+										}
+										
+									case String:
+										DevHelper.unknownValues.add("SoftwareValveSteamApps.Apps", name1, type1);
+										break;
+									}
+									
+									
+									return false;
+								});
+								return true;
+								
+							case "ShaderCacheManager": break;
+							default: DevHelper.unknownValues.add("SoftwareValveSteamApps", name, type); break;
+							}
+							return true;
+							
+						case String: // simple value
+							switch (name) {
+							case "PlayerLevel": playerLevel.value = value; return true;
+							case "LastPlayedTimesSyncTime": lastPlayedTimesSyncTime.value = value; return true;
+							default: DevHelper.unknownValues.add("SoftwareValveSteamApps", name, type); break;
+							}
+						}
+						return false;
+					});
+					
+					this.playerLevel = playerLevel.value;
+					this.lastPlayedTimesSyncTime = lastPlayedTimesSyncTime.value;
 				}
 
-				public Friend(String nodeName, VDFTreeNode node) throws VDFTraverseException {
-					this.rawData = null;
-					hasParsedData = true;
+				static class App {
+				
+					static App parse(String nodeName, VDFTreeNode node, String debugOutputPrefixStr) throws VDFTraverseException {
+						return new App(nodeName, node, debugOutputPrefixStr);
+					}
+
+					final VDFTreeNode rawData;
+					final String nodeName;
+					final Integer appID;
+
+					App(String nodeName, VDFTreeNode rawData) {
+						this.rawData = rawData;
+						this.nodeName = nodeName;
+						appID = parseNumber(this.nodeName);
+					}
 					
-					//DevHelper.scanVdfStructure(node,"Friend");
-					
-					Long parsedNodeName = parseLongNumber(nodeName);
-					if (parsedNodeName==null)
-						throw new VDFTraverseException("Name of node [%s] isn't a number.", node.getPath());
+					App(String nodeName, VDFTreeNode node, String debugOutputPrefixStr) throws VDFTraverseException {
+						if (node==null) throw new IllegalArgumentException("node == null");
+						if (nodeName==null) throw new IllegalArgumentException("nodeName == null");
+						if (!node.is(VDFTreeNode.Type.Array)) throw new VDFTraverseException("SoftwareValveSteamApps.Apps: node.type != Array");
 						
-					id       = parsedNodeName;
-					id_lower = id & 0xFFFFFFFFL;
-					id_upper = id>>32;
-					playerID = id_lower;
-					isPerson = id_upper==0;
-					name     = node.getString(true,"name"  );
-					tag      = node.getString(true,"tag"   );
-					avatar   = node.getString(true,"avatar");
-					VDFTreeNode arrayNode = node.getArray(true,"NameHistory");
-					if (arrayNode!=null) {
-						nameHistory = new HashMap<Integer,String>();
-						arrayNode.forEach((subNode,t,n,v) -> {
-							if (t==VDFTreeNode.Type.String) {
-								Integer index = parseNumber(n);
-								if (index!=null && v!=null) {
-									nameHistory.put(index,v);
-									return true;
-								}
+						this.rawData = null;
+						this.nodeName = nodeName;
+						appID = parseNumber(this.nodeName);
+						
+						DevHelper.optional.vdfValues.scan(node, "SoftwareValveSteamApps.Apps[]");
+						node.forEach((subNode, type, name, value)->{
+							switch (name) {
+							case "1161580_eula_0":
+							case "eula_47870":
+							case "News":
+							case "ViewedLaunchEULA": {
+								DevHelper.unknownValues.add(String.format("SoftwareValveSteamApps.Apps[].%s = \"%s\"", name, value));
+							} break;
 							}
-							DevHelper.unknownValues.add("Friend.NameHistory", n, t);
 							return false;
 						});
-					} else
-						nameHistory = null;
+						
+						// TODO Auto-generated constructor stub
+					}
+				
+				}
+			}
+
+			static class FriendList {
+				
+				//static final HashSet<String> unknownValueNames = new HashSet<>();
+				
+				final VDFTreeNode rawData;
+				final Vector<FriendList.Friend> friends;
+				final HashMap<String,String> values;
+				final String personaName;
+				
+				FriendList(VDFTreeNode rawData) {
+					this.rawData = rawData;
+					friends = null;
+					values = null;
+					personaName = null;
+				}
+				
+				FriendList(VDFTreeNode blockNode, String debugOutputPrefixStr, File file) throws VDFTraverseException {
+					if ( blockNode==null) throw new VDFTraverseException("%s: base VDFTreeNode is NULL", debugOutputPrefixStr);
+					if (!blockNode.is(VDFTreeNode.Type.Array)) throw new VDFTraverseException("%s: base VDFTreeNode is not an Array", debugOutputPrefixStr);
+					blockNode.markAsProcessed();
 					
-					DevHelper.scanUnexpectedValues(node, KNOWN_VDF_VALUES, "TreeNodes.Player.FriendList.Friend");
+					rawData = null;
+					friends = new Vector<>();
+					values = new HashMap<>();
+					
+					blockNode.forEach((subNode, type, name, value)->{
+						switch (type) {
+						
+						case Root:
+							System.err.printf("%s: base VDFTreeNode contains a Root node%n", debugOutputPrefixStr);
+							DevHelper.unknownValues.add("FriendList", name, type);
+							break;
+			
+						case Array: // Friend
+							try {
+								friends.add(new Friend(name,subNode));
+								return true;
+							} catch (VDFTraverseException e) {
+								showException(e, file);
+								friends.add(new Friend(subNode));
+							}
+							
+						case String: // simple value
+							values.put(name, value);
+							return true;
+						}
+						return false;
+					});
+					
+					personaName = values.get("PersonaName");
+				}
+			
+				static class Friend {
+					private static final DevHelper.KnownVdfValues KNOWN_VDF_VALUES = new DevHelper.KnownVdfValues()
+							.add("name"  , VDFTreeNode.Type.String)
+							.add("tag"   , VDFTreeNode.Type.String)
+							.add("avatar", VDFTreeNode.Type.String)
+							.add("NameHistory", VDFTreeNode.Type.Array);
+					
+					final VDFTreeNode rawData;
+					final boolean hasParsedData;
+					final long id;
+					final long id_lower;
+					final long id_upper;
+					final long playerID;
+					final boolean isPerson;
+					final String name;
+					final String tag;
+					final String avatar;
+					final HashMap<Integer, String> nameHistory;
+			
+					public Friend(VDFTreeNode rawData) {
+						this.rawData = rawData;
+						hasParsedData = false;
+						id     = -1;
+						id_lower = -1;
+						id_upper = -1;
+						playerID = -1;
+						isPerson = false;
+						name   = null;
+						tag    = null;
+						avatar = null;
+						nameHistory = null;
+					}
+			
+					public Friend(String nodeName, VDFTreeNode node) throws VDFTraverseException {
+						this.rawData = null;
+						hasParsedData = true;
+						
+						//DevHelper.scanVdfStructure(node,"Friend");
+						
+						Long parsedNodeName = parseLongNumber(nodeName);
+						if (parsedNodeName==null)
+							throw new VDFTraverseException("Name of node [%s] isn't a number.", node.getPath());
+							
+						id       = parsedNodeName;
+						id_lower = id & 0xFFFFFFFFL;
+						id_upper = id>>32;
+						playerID = id_lower;
+						isPerson = id_upper==0;
+						name     = node.getString(true,"name"  );
+						tag      = node.getString(true,"tag"   );
+						avatar   = node.getString(true,"avatar");
+						VDFTreeNode arrayNode = node.getArray(true,"NameHistory");
+						if (arrayNode!=null) {
+							nameHistory = new HashMap<Integer,String>();
+							arrayNode.forEach((subNode,t,n,v) -> {
+								if (t==VDFTreeNode.Type.String) {
+									Integer index = parseNumber(n);
+									if (index!=null && v!=null) {
+										nameHistory.put(index,v);
+										return true;
+									}
+								}
+								DevHelper.unknownValues.add("Friend.NameHistory", n, t);
+								return false;
+							});
+						} else
+							nameHistory = null;
+						
+						DevHelper.scanUnexpectedValues(node, KNOWN_VDF_VALUES, "TreeNodes.Player.FriendList.Friend");
+					}
 				}
 			}
 		}
-		
+
 		static class AchievementProgress {
 			private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues()
 					.add("nVersion", JSON_Data.Value.Type.Integer)
@@ -1365,7 +1894,7 @@ class Data {
 				}
 				Workshop(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 					super(null, version, true);
-					//DevHelper.scanJsonStructure(blockDataValue,"GameInfos.Workshop",true);
+					//DevHelper.optionalJsonValues.scan(blockDataValue, "GameInfos.Workshop(V"+version+")");
 					if (blockDataValue==null) entries = new Vector<>();
 					else entries = parseArray(Entry::new, Entry::new, blockDataValue, dataValueStr,file);
 				}
@@ -2328,7 +2857,7 @@ class Data {
 				}
 				ReleaseData(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 					super(null, version, true);
-					//DevHelper.scanJsonStructure(blockDataValue, "GameInfos.ReleaseData(V"+version+")", true);
+					//DevHelper.optionalJsonValues.scan(blockDataValue, "GameInfos.ReleaseData(V"+version+")");
 					if (blockDataValue!=null) throw new TraverseException("%s != <null>. I have not expected any value.", dataValueStr);
 				}
 			}
@@ -2675,6 +3204,8 @@ class Data {
 
 				Badge(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 					super(null, version, true);
+					
+					// DevHelper.optionalJsonValues.scan(blockDataValue, "GameInfos.Badge(V"+version+")");
 					
 					JSON_Object<NV, V> object = JSON_Data.getObjectValue (blockDataValue, dataValueStr);
 					name          = JSON_Data.getStringValue (object, "strName"         , dataValueStr);
