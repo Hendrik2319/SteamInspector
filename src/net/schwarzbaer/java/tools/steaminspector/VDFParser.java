@@ -585,16 +585,30 @@ class VDFParser {
 			return false;
 		}
 		
-		VDFTreeNode getSubNode(String... path) throws VDFTraverseException { return getSubNode_intern("getSubNode()", false, path); }
-		String      getString (String... path) throws VDFTraverseException { return getString (false, path); }
-		VDFTreeNode getArray  (String... path) throws VDFTraverseException { return getArray  (false, path); }
-		String      getString (boolean optionalValue, String... path) throws VDFTraverseException { return getValue(Type.String, optionalValue, node->node.value, "getString", path); }
-		VDFTreeNode getArray  (boolean optionalValue, String... path) throws VDFTraverseException { return getValue(Type.Array , optionalValue, node->node      , "getArray" , path); }
+		enum OptionalType {
+			NoValueIsOptional(true,false,false), LastValueIsOptional(false,true,false), AnyPathValueIsOptional(false,true,true);
+			final boolean isNoValueOptional;
+			final boolean isLastValueOptional;
+			final boolean isAnyPathValueOptional;
+			OptionalType(boolean isNoValueOptional, boolean isLastValueOptional, boolean isAnyPathValueOptional) {
+				this.isNoValueOptional = isNoValueOptional;
+				this.isLastValueOptional = isLastValueOptional;
+				this.isAnyPathValueOptional = isAnyPathValueOptional;
+			}
+		}
 		
-		private <ValueType> ValueType getValue(Type type, boolean optionalValue, Function<VDFTreeNode,ValueType> getValue, String functionName, String... path) throws VDFTraverseException {
-			VDFTreeNode node = getSubNode_intern(functionName, optionalValue, path);
+		VDFTreeNode getSubNode(String... path) throws VDFTraverseException { return getSubNode_intern("getSubNode()", OptionalType.NoValueIsOptional, path); }
+		String      getString (String... path) throws VDFTraverseException { return getString (OptionalType.NoValueIsOptional, path); }
+		VDFTreeNode getArray  (String... path) throws VDFTraverseException { return getArray  (OptionalType.NoValueIsOptional, path); }
+		String      getString_optional(String... path) { try { return getString (OptionalType.AnyPathValueIsOptional, path); } catch (VDFTraverseException e) {} return null; }
+		VDFTreeNode getArray_optional (String... path) { try { return getArray  (OptionalType.AnyPathValueIsOptional, path); } catch (VDFTraverseException e) {} return null; }
+		String      getString (OptionalType optional, String... path) throws VDFTraverseException { return getValue(Type.String, optional, node->node.value, "getString", path); }
+		VDFTreeNode getArray  (OptionalType optional, String... path) throws VDFTraverseException { return getValue(Type.Array , optional, node->node      , "getArray" , path); }
+		
+		private <ValueType> ValueType getValue(Type type, OptionalType optional, Function<VDFTreeNode,ValueType> getValue, String functionName, String... path) throws VDFTraverseException {
+			VDFTreeNode node = getSubNode_intern(functionName, optional, path);
 			if (node==null) {
-				if (optionalValue) return null;
+				if (optional.isLastValueOptional || optional.isAnyPathValueOptional) return null;
 				throw new IllegalStateException();
 			}
 			if (node.type != type)
@@ -604,12 +618,14 @@ class VDFParser {
 			return getValue.apply(node);
 		}
 		
-		private VDFTreeNode getSubNode_intern(String functionName, boolean lastValueIsOptional, String... path) throws VDFTraverseException {
+		private VDFTreeNode getSubNode_intern(String functionName, OptionalType optional, String... path) throws VDFTraverseException {
 			VDFTreeNode node = this;
 			int i = 0;
 			while (path!=null && i<path.length) {
-				if ((node.type!=Type.Array && node.type!=Type.Root) || node.valuePairArray==null)
+				if ((node.type!=Type.Array && node.type!=Type.Root) || node.valuePairArray==null) {
+					if (optional.isAnyPathValueOptional) return null;
 					throw new VDFTraverseException("Node at path [%s] isn't either a Root node or an Array node.", node.getAccessPath());
+				}
 				
 				node.markAsProcessed();
 				
@@ -626,7 +642,8 @@ class VDFParser {
 						break;
 					}
 				if (!subNodeFound) {
-					if (i==path.length-1 && lastValueIsOptional) return null;
+					if (optional.isAnyPathValueOptional) return null;
+					if (i==path.length-1 && optional.isLastValueOptional) return null;
 					throw new VDFTraverseException("Can't find subnode \"%s\" in node at path [%s].", subNodeName, node.getAccessPath());
 				}
 			}

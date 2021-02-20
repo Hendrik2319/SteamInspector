@@ -51,28 +51,6 @@ class Data {
 	@SuppressWarnings("unused")
 	private static class DevHelper {
 		
-		static class ExtHashMap<TypeType> extends HashMap<String,HashSet<TypeType>> {
-			private static final long serialVersionUID = -3042424737957471534L;
-			ExtHashMap<TypeType> add(String name, TypeType type) {
-				HashSet<TypeType> hashSet = get(name);
-				if (hashSet==null) put(name,hashSet = new HashSet<>());
-				hashSet.add(type);
-				return this;
-			}
-			boolean contains(String name, TypeType type) {
-				HashSet<TypeType> hashSet = get(name);
-				return hashSet!=null && hashSet.contains(type);
-			}
-		}
-		static class KnownJsonValues extends ExtHashMap<JSON_Data.Value.Type> {
-			private static final long serialVersionUID = 875837641187739890L;
-			@Override KnownJsonValues add(String name, JSON_Data.Value.Type type) { super.add(name, type); return this; }
-		}
-		static class KnownVdfValues extends ExtHashMap<VDFTreeNode.Type> {
-			private static final long serialVersionUID = -8137083046811709725L;
-			@Override KnownVdfValues add(String name, VDFTreeNode.Type type) { super.add(name, type); return this; }
-		}
-		
 		static OptionalValues optional = new OptionalValues();
 		static class OptionalValues {
 			final OptionalVdfValues      vdfValues      = new OptionalVdfValues();
@@ -472,20 +450,44 @@ class Data {
 			}
 		}
 		
-		static void scanUnexpectedValues(JSON_Object<NV,V> object, KnownJsonValues knownValues, String prefixStr) {
-			for (JSON_Data.NamedValue<NV,V> nvalue:object)
-				if (!knownValues.contains(nvalue.name, nvalue.value.type))
-					//DevHelper.unknownValues.add(prefixStr+"."+nvalue.name+" = "+nvalue.value.type+"...");
-					unknownValues.add(prefixStr,nvalue.name,nvalue.value.type);
+		static class ExtHashMap<TypeType> extends HashMap<String,HashSet<TypeType>> {
+			private static final long serialVersionUID = -3042424737957471534L;
+			ExtHashMap<TypeType> add(String name, TypeType type) {
+				HashSet<TypeType> hashSet = get(name);
+				if (hashSet==null) put(name,hashSet = new HashSet<>());
+				hashSet.add(type);
+				return this;
+			}
+			boolean contains(String name, TypeType type) {
+				HashSet<TypeType> hashSet = get(name);
+				return hashSet!=null && hashSet.contains(type);
+			}
 		}
-		static void scanUnexpectedValues(VDFTreeNode node, KnownVdfValues knownValues, String prefixStr) {
-			node.forEach((subNode,t,n,v) -> {
-				if (!knownValues.contains(n,t))
-					unknownValues.add(prefixStr, n, t);
-				return false;
-			});
+
+		static class KnownJsonValues extends ExtHashMap<JSON_Data.Value.Type> {
+			private static final long serialVersionUID = 875837641187739890L;
+			@Override KnownJsonValues add(String name, JSON_Data.Value.Type type) { super.add(name, type); return this; }
+			void scanUnexpectedValues(JSON_Object<NV, V> object, String prefixStr) {
+				for (JSON_Data.NamedValue<NV,V> nvalue:object)
+					if (!contains(nvalue.name, nvalue.value.type))
+						unknownValues.add(prefixStr,nvalue.name,nvalue.value.type);
+			}
 		}
-	
+
+		static class KnownVdfValues extends ExtHashMap<VDFTreeNode.Type> {
+			private static final long serialVersionUID = -8137083046811709725L;
+			@Override KnownVdfValues add(String name, VDFTreeNode.Type type) { super.add(name, type); return this; }
+			void scanUnexpectedValues(VDFTreeNode node, String prefixStr) {
+				node.forEach((subNode,t,n,v) -> {
+					if (!contains(n,t))
+						unknownValues.add(prefixStr, n, t);
+					return false;
+				});
+			}
+		}
+		
+		// TODO: add scanUnexpectedValues [VDF, recursive]
+		
 		static final UnknownValues unknownValues = new UnknownValues();
 		static class UnknownValues extends HashSet<String> {
 			private static final long serialVersionUID = 7229990445347378652L;
@@ -1334,7 +1336,7 @@ class Data {
 										
 									case Array:
 										try {
-											apps.add(App.parse(name1,subNode1,debugOutputPrefixStr+".Apps"));
+											apps.add(new App(name1, subNode1, debugOutputPrefixStr+".Apps"));
 											return true;
 										} catch (VDFTraverseException e) {
 											showException(e, file);
@@ -1371,19 +1373,49 @@ class Data {
 				}
 
 				static class App {
+					// Block "SoftwareValveSteamApps.Apps[]"
+					//     <Base>:[Array]
+					//     <Base>.autocloud:[null, Array]
+					//     <Base>.autocloud.lastexit:[null, String]
+					//     <Base>.autocloud.lastlaunch:[String]
+					//     <Base>.BadgeData:[null, String]
+					//     <Base>.LastPlayed:[String]
+					//     <Base>.Playtime:[null, String]
+					//     <Base>.Playtime2wks:[null, String]
+					//     <Base>.ViewedLaunchEULA:[null, String]
+					//     <Base>.1161580_eula_0:[null, String]
+					//     <Base>.eula_47870:[null, String]
+					//     <Base>.News:[null, String]
 				
-					static App parse(String nodeName, VDFTreeNode node, String debugOutputPrefixStr) throws VDFTraverseException {
-						return new App(nodeName, node, debugOutputPrefixStr);
-					}
-
 					final VDFTreeNode rawData;
 					final String nodeName;
 					final Integer appID;
+					
+					final String autocloud_lastexit;
+					final String autocloud_lastlaunch;
+					final String badgeData;
+					final String lastPlayed;
+					final String playtime;
+					final String playtime_2wks;
+					final String viewedLaunchEULA;
+					final String _1161580_eula_0;
+					final String eula_47870;
+					final String news;
 
 					App(String nodeName, VDFTreeNode rawData) {
 						this.rawData = rawData;
 						this.nodeName = nodeName;
 						appID = parseNumber(this.nodeName);
+						autocloud_lastexit   = null;
+						autocloud_lastlaunch = null;
+						badgeData            = null;
+						lastPlayed           = null;
+						playtime             = null;
+						playtime_2wks        = null;
+						viewedLaunchEULA     = null;
+						_1161580_eula_0      = null;
+						eula_47870           = null;
+						news                 = null;
 					}
 					
 					App(String nodeName, VDFTreeNode node, String debugOutputPrefixStr) throws VDFTraverseException {
@@ -1408,7 +1440,18 @@ class Data {
 							return false;
 						});
 						
-						// TODO Auto-generated constructor stub
+						autocloud_lastexit   = node.getString_optional("autocloud","lastexit");
+						autocloud_lastlaunch = node.getString_optional("autocloud","lastlaunch");
+						badgeData            = node.getString_optional("BadgeData");
+						lastPlayed           = node.getString         ("LastPlayed");
+						playtime             = node.getString_optional("Playtime");
+						playtime_2wks        = node.getString_optional("Playtime2wks");
+						viewedLaunchEULA     = node.getString_optional("ViewedLaunchEULA");
+						_1161580_eula_0      = node.getString_optional("1161580_eula_0");
+						eula_47870           = node.getString_optional("eula_47870");
+						news                 = node.getString_optional("News");
+						
+						// TODO: scanUnexpectedValues
 					}
 				
 				}
@@ -1514,10 +1557,10 @@ class Data {
 						id_upper = id>>32;
 						playerID = id_lower;
 						isPerson = id_upper==0;
-						name     = node.getString(true,"name"  );
-						tag      = node.getString(true,"tag"   );
-						avatar   = node.getString(true,"avatar");
-						VDFTreeNode arrayNode = node.getArray(true,"NameHistory");
+						name     = node.getString(VDFTreeNode.OptionalType.LastValueIsOptional, "name"  );
+						tag      = node.getString(VDFTreeNode.OptionalType.LastValueIsOptional, "tag"   );
+						avatar   = node.getString(VDFTreeNode.OptionalType.LastValueIsOptional, "avatar");
+						VDFTreeNode arrayNode = node.getArray(VDFTreeNode.OptionalType.LastValueIsOptional, "NameHistory");
 						if (arrayNode!=null) {
 							nameHistory = new HashMap<Integer,String>();
 							arrayNode.forEach((subNode,t,n,v) -> {
@@ -1534,7 +1577,7 @@ class Data {
 						} else
 							nameHistory = null;
 						
-						DevHelper.scanUnexpectedValues(node, KNOWN_VDF_VALUES, "TreeNodes.Player.FriendList.Friend");
+						KNOWN_VDF_VALUES.scanUnexpectedValues(node, "TreeNodes.Player.FriendList.Friend");
 					}
 				}
 			}
@@ -1590,7 +1633,7 @@ class Data {
 					else
 						gameStates_withoutID.add(progress);
 				}
-				DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"TreeNodes.Player.AchievementProgress");
+				KNOWN_JSON_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.AchievementProgress");
 			}
 			
 			static class AchievementProgressInGame {
@@ -1647,7 +1690,7 @@ class Data {
 					total       = JSON_Data.getIntegerValue(object, "total"       , prefixStr);
 					unlocked    = JSON_Data.getIntegerValue(object, "unlocked"    , prefixStr);
 					percentage  = JSON_Data.getNumber(object, "percentage"  , prefixStr);
-					DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"TreeNodes.Player.AchievementProgress.AchievementProgressInGame");
+					KNOWN_JSON_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.AchievementProgress.AchievementProgressInGame");
 				}
 
 				int getGameID() { return (int) appID; }
@@ -2160,7 +2203,7 @@ class Data {
 						votes_down = JSON_Data.getIntegerValue(vote_data, "votes_down", debugOutputPrefixStr+".vote_data");
 						votes_up   = JSON_Data.getIntegerValue(vote_data, "votes_up"  , debugOutputPrefixStr+".vote_data");
 						
-						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "GameInfos.Workshop.Entry");
+						KNOWN_VALUES.scanUnexpectedValues(object, "GameInfos.Workshop.Entry");
 					}
 					
 					static class Tag {
@@ -2381,7 +2424,7 @@ class Data {
 						//DevHelper.unknownValues.add("CommunityItem.itemMovieMp4Small  = "+(itemMovieMp4Small ==null ? "<null>" : "\""+itemMovieMp4Small +"\""));
 						//DevHelper.unknownValues.add("CommunityItem.itemMovieWebm      = "+(itemMovieWebm     ==null ? "<null>" : "\""+itemMovieWebm     +"\""));
 						//DevHelper.unknownValues.add("CommunityItem.itemMovieWebmSmall = "+(itemMovieWebmSmall==null ? "<null>" : "\""+itemMovieWebmSmall+"\""));
-						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Player.GameInfos.CommunityItems.CommunityItem");
+						KNOWN_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.CommunityItems.CommunityItem");
 					}
 					
 					String getURL(String urlPart) {
@@ -2492,9 +2535,11 @@ class Data {
 								levels = null;
 							
 							String path = "TreeNodes.Player.GameInfos.CommunityItems.CommunityItem";
-							if (level_images!=null) DevHelper.scanUnexpectedValues(level_images, KNOWN_LEVEL_VALUES, path+".KeyValues.level_images");
-							if (level_names !=null) DevHelper.scanUnexpectedValues(level_names , KNOWN_LEVEL_VALUES, path+".KeyValues.level_names" );
-							DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, path);
+							if (level_images!=null)
+								KNOWN_LEVEL_VALUES.scanUnexpectedValues(level_images, path+".KeyValues.level_images");
+							if (level_names !=null)
+								KNOWN_LEVEL_VALUES.scanUnexpectedValues(level_names, path+".KeyValues.level_names");
+							KNOWN_VALUES.scanUnexpectedValues(object, path);
 						}
 						
 						static class Level {
@@ -2591,13 +2636,13 @@ class Data {
 					in_wishlist = new SteamId[raw_in_wishlist.size()];
 					traverseArray(raw_in_wishlist, "in_wishlist", baseValueLabel, debugOutputPrefixStr, (i,obj,objectLabel,debugPrefixStr)->{
 						in_wishlist[i] = parseSteamId(obj, objectLabel, debugPrefixStr);
-						DevHelper.scanUnexpectedValues(obj, KNOWN_VALUES_STEAMID_ONLY, objectLabel);
+						KNOWN_VALUES_STEAMID_ONLY.scanUnexpectedValues(obj, objectLabel);
 					});
 					
 					owns = new SteamId[raw_owns.size()];
 					traverseArray(raw_owns, "owns", baseValueLabel, debugOutputPrefixStr, (i,obj,objectLabel,debugPrefixStr)->{
 						owns[i] = parseSteamId(obj, objectLabel, debugPrefixStr);
-						DevHelper.scanUnexpectedValues(obj, KNOWN_VALUES_STEAMID_ONLY, objectLabel);
+						KNOWN_VALUES_STEAMID_ONLY.scanUnexpectedValues(obj, objectLabel);
 					});
 					
 					played_ever     = parseArray(Entry::new, Entry::new, raw_played_ever    , debugOutputPrefixStr+".played_ever"    , file);
@@ -2606,7 +2651,7 @@ class Data {
 					if (raw_your_info==null) your_info = null;
 					else your_info = parse(Entry::new, Entry::new, raw_your_info, debugOutputPrefixStr+".your_info", file);
 					
-					DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, baseValueLabel);
+					KNOWN_VALUES.scanUnexpectedValues(object, baseValueLabel);
 				}
 				
 				private interface ArrayElementTask {
@@ -2686,7 +2731,7 @@ class Data {
 							if (steamid.steamid==null)  DevHelper.unknownValues.add(baseValueLabel+".steamid:String can't be parsed as a number");
 						}
 						
-						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, baseValueLabel);
+						KNOWN_VALUES.scanUnexpectedValues(object, baseValueLabel);
 					}
 					
 				}
@@ -2733,7 +2778,7 @@ class Data {
 					developers = parseArray(Association::new, Association::new, object, "rgDevelopers", dataValueStr, file);
 					franchises = parseArray(Association::new, Association::new, object, "rgFranchises", dataValueStr, file);
 					publishers = parseArray(Association::new, Association::new, object, "rgPublishers", dataValueStr, file);
-					DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Player.GameInfos.Associations");
+					KNOWN_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.Associations");
 				}
 				
 				@Override boolean isEmpty() {
@@ -2772,7 +2817,7 @@ class Data {
 						name = JSON_Data.getValue(object, "strName", false, JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, true, dataValueStr);
 						url  = JSON_Data.getValue(object, "strURL" , false, JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, true, dataValueStr);
 						
-						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Player.GameInfos.Associations.Association");
+						KNOWN_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.Associations.Association");
 					}
 					
 				}
@@ -2843,7 +2888,7 @@ class Data {
 						url   = JSON_Data.getStringValue (object, "strURL" , dataValueStr);
 						type  = Type.getType(typeN);
 						if (type==null) DevHelper.unknownValues.add("GameInfos.SocialMedia.SocialMediaEntry.type = "+type+"  <New Emum Value>");
-						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "GameInfos.SocialMedia.SocialMediaEntry");
+						KNOWN_VALUES.scanUnexpectedValues(object, "GameInfos.SocialMedia.SocialMediaEntry");
 					}
 				}
 			}
@@ -2989,7 +3034,7 @@ class Data {
 						description   = JSON_Data.getStringValue (object,"strDescription",debugOutputPrefixStr+"[1]");
 						image         = JSON_Data.getStringValue (object,"strImage"      ,debugOutputPrefixStr+"[1]");
 						name          = JSON_Data.getStringValue (object,"strName"       ,debugOutputPrefixStr+"[1]");
-						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "GameInfos.AchievementMap.Entry(array[1])");
+						KNOWN_VALUES.scanUnexpectedValues(object, "GameInfos.AchievementMap.Entry(array[1])");
 					}
 				}
 			}
@@ -3095,7 +3140,7 @@ class Data {
 					this.unachieved     = parseArray(Achievement::new, Achievement::new, unachieved    , dataValueStr+"."+"vecUnachieved"    , file);
 					this.highlight      = parseArray(Achievement::new, Achievement::new, highlight     , dataValueStr+"."+"vecHighlight"     , file);
 					
-					DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Player.GameInfos.Achievements");
+					KNOWN_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.Achievements");
 				}
 				
 				@Override boolean isEmpty() {
@@ -3157,7 +3202,7 @@ class Data {
 						name          = JSON_Data.getStringValue (object, "strName"       , debugOutputPrefixStr);
 						achievedRatio = JSON_Data.getNumber(object, "flAchieved", true, debugOutputPrefixStr);
 						
-						DevHelper.scanUnexpectedValues(object, KNOWN_VALUES, "TreeNodes.Player.GameInfos.Achievements.Achievement");
+						KNOWN_VALUES.scanUnexpectedValues(object, "Data.Player.GameInfos.Achievements.Achievement");
 					}
 					
 				}
@@ -3220,7 +3265,7 @@ class Data {
 					
 					tradingCards = parseArray(TradingCard::new, TradingCard::new, object, "rgCards", dataValueStr, file);
 					
-					DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"TreeNodes.Player.GameInfos.Badge");
+					KNOWN_JSON_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.Badge");
 				}
 				
 				@Override boolean isEmpty() {
@@ -3328,7 +3373,7 @@ class Data {
 						imageURL   = JSON_Data.getStringValue (object, "strImgURL"    , debugOutputPrefixStr);
 						marketHash = JSON_Data.getStringValue (object, "strMarketHash", debugOutputPrefixStr);
 						
-						DevHelper.scanUnexpectedValues(object, KNOWN_JSON_VALUES,"TreeNodes.Player.GameInfos.Badge.TradingCard");
+						KNOWN_JSON_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.Badge.TradingCard");
 					}
 				}
 			}
