@@ -1247,12 +1247,12 @@ class SteamInspector {
 				TreeNode treeNode = (TreeNode) clickedNode;
 				Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
 				Data.Game game = Data.games.get(gameID);
-				miSetTitle.setEnabled(gameID!=null && (game==null || !game.hasATitle()));
+				miSetTitle.setEnabled(gameID!=null && (game==null || !game.hasAFixedTitle()));
 				if (gameID!=null) {
 					String currentTitle = Data.knownGameTitles.get(gameID);
 					String miTitle;
 					if (currentTitle==null) miTitle = String.format("Set Title of Game %d", gameID);
-					else miTitle = String.format("Change Title of Game %d (\"%s\")%s", gameID, currentTitle, game!=null && game.hasATitle() ? " <fixed by AppManifest>" : "");
+					else miTitle = String.format("Change Title of Game %d (\"%s\")%s", gameID, currentTitle, game!=null && game.hasAFixedTitle() ? " <fixed by AppManifest>" : "");
 					miSetTitle.setText(miTitle);
 				} else
 					miSetTitle.setText("Set Title of Game");

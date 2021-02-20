@@ -450,23 +450,26 @@ class Data {
 			}
 		}
 		
-		static class ExtHashMap<TypeType> extends HashMap<String,HashSet<TypeType>> {
+		static abstract class ExtHashMap<SelfType,TypeType> extends HashMap<String,HashSet<TypeType>> {
 			private static final long serialVersionUID = -3042424737957471534L;
-			ExtHashMap<TypeType> add(String name, TypeType type) {
+			SelfType add(String name, TypeType type) {
 				HashSet<TypeType> hashSet = get(name);
 				if (hashSet==null) put(name,hashSet = new HashSet<>());
 				hashSet.add(type);
-				return this;
+				return getThis();
 			}
 			boolean contains(String name, TypeType type) {
 				HashSet<TypeType> hashSet = get(name);
 				return hashSet!=null && hashSet.contains(type);
 			}
+			protected abstract SelfType getThis();
 		}
 
-		static class KnownJsonValues extends ExtHashMap<JSON_Data.Value.Type> {
+		static class KnownJsonValues extends ExtHashMap<KnownJsonValues,JSON_Data.Value.Type> {
 			private static final long serialVersionUID = 875837641187739890L;
-			@Override KnownJsonValues add(String name, JSON_Data.Value.Type type) { super.add(name, type); return this; }
+			
+			@Override protected KnownJsonValues getThis() { return this; }
+			
 			void scanUnexpectedValues(JSON_Object<NV, V> object, String prefixStr) {
 				for (JSON_Data.NamedValue<NV,V> nvalue:object)
 					if (!contains(nvalue.name, nvalue.value.type))
@@ -474,9 +477,11 @@ class Data {
 			}
 		}
 
-		static class KnownVdfValues extends ExtHashMap<VDFTreeNode.Type> {
+		static class KnownVdfValues extends ExtHashMap<KnownVdfValues,VDFTreeNode.Type> {
 			private static final long serialVersionUID = -8137083046811709725L;
-			@Override KnownVdfValues add(String name, VDFTreeNode.Type type) { super.add(name, type); return this; }
+			
+			@Override protected KnownVdfValues getThis() { return this; }
+			
 			void scanUnexpectedValues(VDFTreeNode node, String prefixStr) {
 				node.forEach((subNode,t,n,v) -> {
 					if (!contains(n,t))
@@ -485,8 +490,42 @@ class Data {
 				});
 			}
 		}
+
+		static class KnownVdfValuesRecursive extends HashSet<String>{
+			private static final long serialVersionUID = 7831756644369424798L;
+			
+			KnownVdfValuesRecursive add(VDFTreeNode.Type type, String... path) {
+				add(String.join(".",path)+":"+type);
+				return this;
+			}
+			
+			void scanUnexpectedValues(VDFTreeNode node, String blockPrefix) {
+				check(blockPrefix, "", "", node.getType());
+				scanUnexpectedValues(node, "", blockPrefix);
+			}
+
+			private void scanUnexpectedValues(VDFTreeNode node, String path, String blockPrefix) {
+				String pathPrefix = path + ( path.isEmpty() ? "" : "." );
+				node.forEach((subNode,t,n,v) -> {
+					check(blockPrefix, pathPrefix, n, t);
+					switch (t) {
+					case String: break;
+					case Root: case Array:
+						scanUnexpectedValues(subNode, pathPrefix+n, blockPrefix);
+						break;
+					}
+					return false;
+				});
+				
+			}
+
+			private void check(String blockPrefix, String pathPrefix, String name, VDFTreeNode.Type type) {
+				String entry = pathPrefix+name+":"+type;
+				if (!contains(entry))
+					unknownValues.add(String.format("%s > %s", blockPrefix, entry));
+			}
+		}
 		
-		// TODO: add scanUnexpectedValues [VDF, recursive]
 		
 		static final UnknownValues unknownValues = new UnknownValues();
 		static class UnknownValues extends HashSet<String> {
@@ -504,7 +543,7 @@ class Data {
 				if (isEmpty()) return;
 				Vector<String> vec = new Vector<>(this);
 				out.printf("Unknown Labels: [%d]%n", vec.size());
-				vec.sort(null);
+				vec.sort(Comparator.<String,String>comparing(String::toLowerCase).thenComparing(Comparator.naturalOrder()));
 				for (String str:vec)
 					out.printf("   \"%s\"%n", str);
 			}
@@ -718,7 +757,7 @@ class Data {
 				gameIDs.sort(null);
 				for (Integer gameID:gameIDs) {
 					String title = get(gameID);
-					if (gameID!=null && title!=null)
+					if (gameID!=null && title!=null && !title.isEmpty())
 						out.printf("%s=%s%n", gameID, title);
 				}
 				
@@ -839,16 +878,17 @@ class Data {
 		return game.getIcon();
 	}
 	static String getGameTitle(Integer gameID) {
-		if (gameID==null) return "Game ???";
-		Game game = games.get(gameID);
-		if (game==null) return "Game "+gameID;
-		return game.getTitle();
+		return Game.getTitle(gameID);
 	}
 	static boolean hasGameATitle(Integer gameID) {
 		if (gameID==null) return false;
 		Game game = games.get(gameID);
-		if (game==null) return false;
-		return game.hasATitle();
+		boolean hasATitle = game==null ? false : game.hasAFixedTitle();
+		if (!hasATitle) {
+			String storedTitle = knownGameTitles.get(gameID);
+			hasATitle = storedTitle!=null && !storedTitle.isEmpty();
+		}
+		return hasATitle;
 	}
 	static Comparator<String> createNumberStringOrder() {
 		return Comparator.<String,Long>comparing(str->parseLongNumber(str), Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
@@ -877,6 +917,7 @@ class Data {
 	}
 	
 	static Integer parseNumber(String str) {
+		if (str==null) return null;
 		try {
 			int n = Integer.parseInt(str);
 			if (str.equals(Integer.toString(n))) return n;
@@ -886,6 +927,7 @@ class Data {
 	}
 	
 	static Long parseLongNumber(String str) {
+		if (str==null) return null;
 		try {
 			long n = Long.parseLong(str);
 			if (str.equals(Long.toString(n))) return n;
@@ -1295,19 +1337,29 @@ class Data {
 			static class SoftwareValveSteamApps {
 				
 				final VDFTreeNode rawData;
+				final boolean hasParsedData;
+				
 				final Vector<App> apps;
-				final String playerLevel;
-				final String lastPlayedTimesSyncTime;
+				final String  str_playerLevel;
+				final String  str_lastPlayedTimes_SyncTime;
+				final Integer playerLevel;
+				final Long    lastPlayedTimes_SyncTime_Ts;
 
 				SoftwareValveSteamApps(VDFTreeNode rawData) {
 					this.rawData = rawData;
+					hasParsedData = false;
+					
 					apps = null;
-					playerLevel = null;
-					lastPlayedTimesSyncTime = null;
+					str_playerLevel              = null;
+					str_lastPlayedTimes_SyncTime = null;
+					playerLevel                  = null;
+					lastPlayedTimes_SyncTime_Ts  = null;
 				}
 				
 				SoftwareValveSteamApps(VDFTreeNode blockNode, String debugOutputPrefixStr, File file) throws VDFTraverseException {
 					this.rawData = null;
+					hasParsedData = true;
+					
 					if ( blockNode==null) throw new VDFTraverseException("%s: base VDFTreeNode is NULL", debugOutputPrefixStr);
 					if (!blockNode.is(VDFTreeNode.Type.Array)) throw new VDFTraverseException("%s: base VDFTreeNode is not an Array", debugOutputPrefixStr);
 					blockNode.markAsProcessed();
@@ -1327,16 +1379,17 @@ class Data {
 						case Array: // Friend
 							switch (name) {
 							case "Apps":
+								String subPrefixStr = debugOutputPrefixStr+".Apps";
 								subNode.forEach((subNode1, type1, name1, value1)->{
 									switch (type) {
 									case Root:
-										System.err.printf("%s.Apps: contains a Root node%n", debugOutputPrefixStr);
+										System.err.printf("%s: contains a Root node%n", subPrefixStr);
 										DevHelper.unknownValues.add("SoftwareValveSteamApps.Apps", name1, type1);
 										break;
 										
 									case Array:
 										try {
-											apps.add(new App(name1, subNode1, debugOutputPrefixStr+".Apps"));
+											apps.add(new App(name1, subNode1, subPrefixStr));
 											return true;
 										} catch (VDFTraverseException e) {
 											showException(e, file);
@@ -1368,8 +1421,8 @@ class Data {
 						return false;
 					});
 					
-					this.playerLevel = playerLevel.value;
-					this.lastPlayedTimesSyncTime = lastPlayedTimesSyncTime.value;
+					this.playerLevel                 = parseNumber    (str_playerLevel              = playerLevel            .value);
+					this.lastPlayedTimes_SyncTime_Ts = parseLongNumber(str_lastPlayedTimes_SyncTime = lastPlayedTimesSyncTime.value);
 				}
 
 				static class App {
@@ -1386,17 +1439,39 @@ class Data {
 					//     <Base>.1161580_eula_0:[null, String]
 					//     <Base>.eula_47870:[null, String]
 					//     <Base>.News:[null, String]
-				
+					
+					private static final DevHelper.KnownVdfValuesRecursive KNOWN_VDF_VALUES = new DevHelper.KnownVdfValuesRecursive()
+							.add(VDFTreeNode.Type.Array )
+							.add(VDFTreeNode.Type.Array , "autocloud")
+							.add(VDFTreeNode.Type.String, "autocloud", "lastexit")
+							.add(VDFTreeNode.Type.String, "autocloud", "lastlaunch")
+							.add(VDFTreeNode.Type.String, "BadgeData")
+							.add(VDFTreeNode.Type.String, "LastPlayed")
+							.add(VDFTreeNode.Type.String, "Playtime")
+							.add(VDFTreeNode.Type.String, "Playtime2wks")
+							.add(VDFTreeNode.Type.String, "ViewedLaunchEULA")
+							.add(VDFTreeNode.Type.String, "1161580_eula_0")
+							.add(VDFTreeNode.Type.String, "eula_47870")
+							.add(VDFTreeNode.Type.String, "News");
+					
 					final VDFTreeNode rawData;
 					final String nodeName;
 					final Integer appID;
+					final boolean hasParsedData;
 					
-					final String autocloud_lastexit;
-					final String autocloud_lastlaunch;
+					final String str_lastPlayed;
+					final String str_playtime;
+					final String str_playtime_2wks;
+					final String str_autocloud_lastexit;
+					final String str_autocloud_lastlaunch;
+
+					final Long lastPlayed_Ts;
+					final Integer playtime_min;
+					final Integer playtime_min_2weeks;
+					final Long autocloud_lastexit_Ts;
+					final Long autocloud_lastlaunch_Ts;
+					
 					final String badgeData;
-					final String lastPlayed;
-					final String playtime;
-					final String playtime_2wks;
 					final String viewedLaunchEULA;
 					final String _1161580_eula_0;
 					final String eula_47870;
@@ -1404,14 +1479,22 @@ class Data {
 
 					App(String nodeName, VDFTreeNode rawData) {
 						this.rawData = rawData;
-						this.nodeName = nodeName;
-						appID = parseNumber(this.nodeName);
-						autocloud_lastexit   = null;
-						autocloud_lastlaunch = null;
+						appID = parseNumber(this.nodeName = nodeName);
+						hasParsedData = false;
+
+						str_lastPlayed           = null;
+						str_playtime             = null;
+						str_playtime_2wks        = null;
+						str_autocloud_lastexit   = null;
+						str_autocloud_lastlaunch = null;
+						
+						lastPlayed_Ts           = null;
+						playtime_min            = null;
+						playtime_min_2weeks     = null;
+						autocloud_lastexit_Ts   = null;
+						autocloud_lastlaunch_Ts = null;
+						
 						badgeData            = null;
-						lastPlayed           = null;
-						playtime             = null;
-						playtime_2wks        = null;
 						viewedLaunchEULA     = null;
 						_1161580_eula_0      = null;
 						eula_47870           = null;
@@ -1421,37 +1504,39 @@ class Data {
 					App(String nodeName, VDFTreeNode node, String debugOutputPrefixStr) throws VDFTraverseException {
 						if (node==null) throw new IllegalArgumentException("node == null");
 						if (nodeName==null) throw new IllegalArgumentException("nodeName == null");
-						if (!node.is(VDFTreeNode.Type.Array)) throw new VDFTraverseException("SoftwareValveSteamApps.Apps: node.type != Array");
+						if (!node.is(VDFTreeNode.Type.Array)) throw new VDFTraverseException("%s: node.type != Array", debugOutputPrefixStr);
 						
 						this.rawData = null;
-						this.nodeName = nodeName;
-						appID = parseNumber(this.nodeName);
+						appID = parseNumber(this.nodeName = nodeName);
+						hasParsedData = true;
 						
-						DevHelper.optional.vdfValues.scan(node, "SoftwareValveSteamApps.Apps[]");
-						node.forEach((subNode, type, name, value)->{
-							switch (name) {
-							case "1161580_eula_0":
-							case "eula_47870":
-							case "News":
-							case "ViewedLaunchEULA": {
-								DevHelper.unknownValues.add(String.format("SoftwareValveSteamApps.Apps[].%s = \"%s\"", name, value));
-							} break;
-							}
-							return false;
-						});
+						//DevHelper.optional.vdfValues.scan(node, "SoftwareValveSteamApps.Apps[]");
 						
-						autocloud_lastexit   = node.getString_optional("autocloud","lastexit");
-						autocloud_lastlaunch = node.getString_optional("autocloud","lastlaunch");
-						badgeData            = node.getString_optional("BadgeData");
-						lastPlayed           = node.getString         ("LastPlayed");
-						playtime             = node.getString_optional("Playtime");
-						playtime_2wks        = node.getString_optional("Playtime2wks");
-						viewedLaunchEULA     = node.getString_optional("ViewedLaunchEULA");
-						_1161580_eula_0      = node.getString_optional("1161580_eula_0");
-						eula_47870           = node.getString_optional("eula_47870");
-						news                 = node.getString_optional("News");
+						lastPlayed_Ts           = parseLongNumber(str_lastPlayed           = node.getString         ("LastPlayed"            ));
+						playtime_min            = parseNumber    (str_playtime             = node.getString_optional("Playtime"              ));
+						playtime_min_2weeks     = parseNumber    (str_playtime_2wks        = node.getString_optional("Playtime2wks"          ));
+						autocloud_lastexit_Ts   = parseLongNumber(str_autocloud_lastexit   = node.getString_optional("autocloud","lastexit"  ));
+						autocloud_lastlaunch_Ts = parseLongNumber(str_autocloud_lastlaunch = node.getString_optional("autocloud","lastlaunch"));
 						
-						// TODO: scanUnexpectedValues
+						badgeData            = node.getString_optional("BadgeData"             );
+						viewedLaunchEULA     = node.getString_optional("ViewedLaunchEULA"      );
+						_1161580_eula_0      = node.getString_optional("1161580_eula_0"        );
+						eula_47870           = node.getString_optional("eula_47870"            );
+						news                 = node.getString_optional("News"                  );
+						
+						//showValue("BadgeData"       , badgeData       );
+						//showValue("ViewedLaunchEULA", viewedLaunchEULA);
+						//showValue("1161580_eula_0"  , _1161580_eula_0 );
+						//showValue("eula_47870"      , eula_47870      );
+						//showValue("News"            , news            );
+						
+						KNOWN_VDF_VALUES.scanUnexpectedValues(node, "SoftwareValveSteamApps.Apps[]");
+					}
+
+					@SuppressWarnings("unused")
+					private void showValue(String label, String value) {
+						if (value==null) return;
+						DevHelper.unknownValues.add(String.format("%s.%s = \"%s\"", "SoftwareValveSteamApps.Apps[]", label, value));
 					}
 				
 				}
@@ -3519,8 +3604,17 @@ class Data {
 			});
 		}
 
-		boolean hasATitle() {
+		boolean hasAFixedTitle() {
 			return title!=null;
+		}
+
+		static String getTitle(Integer gameID) {
+			if (gameID==null) return "Game ???";
+			Game game = games.get(gameID);
+			if (game!=null && game.title!=null) return game.title+" ["+game.appID+"]";
+			String storedTitle = knownGameTitles.get(gameID);
+			if (storedTitle!=null && !storedTitle.isEmpty()) return storedTitle+" ["+gameID+"]";
+			return "Game "+gameID;
 		}
 
 		String getTitle() {

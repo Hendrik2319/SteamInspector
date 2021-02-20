@@ -69,6 +69,7 @@ import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos.CommunityItems.CommunityItem;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos.GameInfosFilterOptions;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.LocalConfig.FriendList;
+import net.schwarzbaer.java.tools.steaminspector.Data.Player.LocalConfig.SoftwareValveSteamApps;
 import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShot;
 import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShotLists;
 import net.schwarzbaer.java.tools.steaminspector.Data.SteamId;
@@ -1009,6 +1010,7 @@ class TreeNodes {
 		PrimitiveValueNode(TreeNode parent, String label, String  value) { super(parent, "%s: "+"\"%s\"", label, value); }
 	}
 	
+	@SuppressWarnings("unused")
 	private static class RawVDFDataNode extends SimpleLeafNode {
 		
 		RawVDFDataNode(TreeNode parent, String title, VDFTreeNode rawData, Class<?> rawDataHostClass) {
@@ -1222,7 +1224,7 @@ class TreeNodes {
 							this, "SteamCloud Shared Data",
 							player.steamCloudFolders,
 							Data.createGameIdKeyOrder(),
-							this::createSteamCloudFolderNode
+							PlayerNode::createSteamCloudFolderNode
 						).setFile(player.folder)
 					);
 				}
@@ -1241,20 +1243,24 @@ class TreeNodes {
 					children.add(new FileSystem.FolderNode(this, "Config Folder", player.configFolder));
 				}
 				if (player.localconfig!=null) {
+					
 					if (player.localconfig.vdfTreeNode!=null)
 						children.add(new RawVDFDataNode(
 							this, "LocalConfig",
 							player.localconfig.vdfTreeNode,
-							player.localconfig.getClass().getCanonicalName()
+							player.localconfig.getClass()
 						).setFile(
 							player.localconfig.file,
 							ExternalViewerInfo.TextEditor
 						));
 					else
-						children.add(new FileSystem.VDF_File(this, "LocalConfig", player.localconfig.file,"LocalConfig<VDF>"));
-					if (player.localconfig.friendList!=null) {
+						children.add(new FileSystem.VDF_File(this, "LocalConfig (File)", player.localconfig.file,"LocalConfig<VDF>"));
+					
+					if (player.localconfig.softwareValveSteamApps!=null)
+						children.add(createSoftwareValveSteamAppsNode(this,player.localconfig.softwareValveSteamApps));
+					
+					if (player.localconfig.friendList!=null)
 						children.add(new FriendListNode(this, player.localconfig.friendList));
-				}
 				}
 				if (player.achievementProgress!=null) {
 					children.add(new AchievementProgressNode(this, player.achievementProgress));
@@ -1279,13 +1285,98 @@ class TreeNodes {
 				return children;
 			}
 
-			private FolderNode createSteamCloudFolderNode(TreeNode parent, Integer gameID, File file) {
+			private static FolderNode createSteamCloudFolderNode(TreeNode parent, Integer gameID, File file) {
 				FileSystem.FolderNode node = new FileSystem.FolderNode(parent, Data.getGameTitle(gameID), file, Data.getGameIcon(gameID, TreeIcons.Folder));
 				gameChangeListeners.add(gameID, new GameChangeListener() {
 					@Override public TreeNode getTreeNode() { return node; }
 					@Override public void gameTitleWasChanged() { node.setTitle(Data.getGameTitle(gameID)); }
 				});
 				return node;
+			}
+
+			private static TreeNode createSoftwareValveSteamAppsNode(TreeNode parent, SoftwareValveSteamApps apps) {
+				String baseNodeTitle = "LocalConfig > Software > Valve > Steam > Apps";
+				MultiPurposeNode baseNode;
+				if (apps.hasParsedData) {
+//					Comparator<SoftwareValveSteamApps.App> sortOrder = Comparator.comparing(app->app.appID,Comparator.nullsLast(Data.createGameIdOrder()));
+//					sortOrder = sortOrder.thenComparing(app->app.nodeName);
+					Comparator<SoftwareValveSteamApps.App> sortOrder = Comparator.comparing(app->app.lastPlayed_Ts,Comparator.nullsLast(Comparator.reverseOrder()));
+					sortOrder = sortOrder.thenComparing(app->app.nodeName);
+					
+					baseNode = GroupingNode.create(parent, baseNodeTitle, apps.apps, sortOrder, (p,app)->{
+						String title = "Game \""+app.nodeName+"\"";
+						Icon icon = null;
+						if (app.appID!=null) {
+							title = Data.getGameTitle(app.appID);
+							icon  = Data.getGameIcon (app.appID,TreeIcons.Folder);
+						}
+						SimpleLeafNode node = new SimpleLeafNode(p, icon, title);
+						if (app.hasParsedData)
+							node.setTextSource(()->{
+								ValueListOutput out = new ValueListOutput();
+								if (app.appID               !=null) out.add(0, "App ID   ", "%d%s", app.appID, Data.hasGameATitle(app.appID) ? "  ->  "+Data.getGameTitle(app.appID) : "");
+								else                                out.add(0, "Node Name", app.nodeName);
+								addDateLine_s  (out, 0, app.lastPlayed_Ts          , app.str_lastPlayed          , "Last Time Played"       );
+								addTimeLine_min(out, 0, app.playtime_min           , app.str_playtime            , "Playtime"               );
+								addTimeLine_min(out, 0, app.playtime_min_2weeks    , app.str_playtime_2wks       , "Playtime (last 2 Weeks)");
+								addDateLine_s  (out, 0, app.autocloud_lastlaunch_Ts, app.str_autocloud_lastlaunch, "Autocloud > Last Launch");
+								addDateLine_s  (out, 0, app.autocloud_lastexit_Ts  , app.str_autocloud_lastexit  , "Autocloud > Last Exit  ");
+								if (app.badgeData           !=null) out.add(0, "Badge Data          ", app.badgeData       );
+								if (app.news                !=null) out.add(0, "News                ", app.news            );
+								if (app._1161580_eula_0     !=null) out.add(0, "\"1161580_eula_0\"  ", app._1161580_eula_0 );
+								if (app.eula_47870          !=null) out.add(0, "\"eula_47870\"      ", app.eula_47870      );
+								if (app.viewedLaunchEULA    !=null) out.add(0, "\"viewedLaunchEULA\"", app.viewedLaunchEULA);
+								
+								// TODO: createSoftwareValveSteamAppsNode
+								return out.generateOutput();
+							});
+						
+						else if (app.rawData!=null) 
+							node.setDataTree(app.rawData.createRawDataTreeRoot(app.getClass()));
+						
+						if (app.appID!=null) {
+							node.setURL(Data.getShopURL(app.appID), false, ExternalViewerInfo.Browser);
+							gameChangeListeners.add(app.appID, new GameChangeListener() {
+								@Override public TreeNode getTreeNode() { return node; }
+								@Override public void gameTitleWasChanged() { node.setTitle(Data.getGameTitle(app.appID)); }
+							});
+						}
+						
+						return node;
+						
+					}).setTextSource(()->{
+						ValueListOutput out = new ValueListOutput();
+						addLine      (out,0,apps.playerLevel                , apps.str_playerLevel             , "Player Level", "%d");
+						addDateLine_s(out,0,apps.lastPlayedTimes_SyncTime_Ts, apps.str_lastPlayedTimes_SyncTime, "Last Sync Time of \"Played Times\"");
+						return out.generateOutput();
+					});
+					
+				} else {
+					baseNode = new SimpleLeafNode(parent, baseNodeTitle);
+					if (apps.rawData!=null)
+						baseNode.setDataTree(apps.rawData.createRawDataTreeRoot(apps.getClass()));
+				}
+				
+				return baseNode;
+			}
+
+			private static void addLine(ValueListOutput out, int indentLevel, Integer parsedValue, String rawStr, String label, String format) {
+				if (parsedValue != null)
+					out.add(indentLevel, label, format, parsedValue);
+				else if (rawStr != null)
+					out.add(indentLevel, label, rawStr);
+			}
+			private static void addTimeLine_min(ValueListOutput out, int indentLevel, Integer parsedValue_min, String rawStr, String label) {
+				if (parsedValue_min != null)
+					out.add(indentLevel, label, "%d min  (%d:%02dh))", parsedValue_min, parsedValue_min / 60, parsedValue_min % 60);
+				else if (rawStr != null)
+					out.add(indentLevel, label, rawStr);
+			}
+			private static void addDateLine_s(ValueListOutput out, int indentLevel, Long parsedValue_s, String rawStr, String label) {
+				if (parsedValue_s != null)
+					out.add(indentLevel, label, "%d  ( %s )", parsedValue_s, getTimeStr(parsedValue_s*1000));
+				else if (rawStr != null)
+					out.add(indentLevel, label, rawStr);
 			}
 		}
 		
