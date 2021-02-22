@@ -1327,7 +1327,6 @@ class TreeNodes {
 								if (app.eula_47870          !=null) out.add(0, "\"eula_47870\"      ", app.eula_47870      );
 								if (app.viewedLaunchEULA    !=null) out.add(0, "\"viewedLaunchEULA\"", app.viewedLaunchEULA);
 								
-								// TODO: createSoftwareValveSteamAppsNode
 								return out.generateOutput();
 							});
 						
@@ -1665,6 +1664,7 @@ class TreeNodes {
 				}
 				if (data.achievementMap!=null) {
 					if (data.achievementMap.hasParsedData) {
+						if (!data.achievementMap.entries.isEmpty() || !JSON_Data.isEmpty(data.achievementMap.parsedJsonValue))
 						children.add(
 							GroupingNode
 							.create(this, "Achievement Map", data.achievementMap.entries, null, TreeIcons.Achievement.getIcon(), AchievementMapEntryNode::new)
@@ -2868,7 +2868,8 @@ class TreeNodes {
 					if (imageContent==null)
 						imageContent = createImageOfMessage("Can't read image.",200,25,Color.RED);
 				} catch (IOException e) {
-					e.printStackTrace();
+					Data.showException("IOException", e, fileObj);
+					return createImageOfMessage("IOException: "+e.getMessage(),150,150,Color.RED);
 				}
 				return imageContent;
 			}

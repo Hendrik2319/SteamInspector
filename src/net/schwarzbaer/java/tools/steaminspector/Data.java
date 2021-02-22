@@ -714,7 +714,6 @@ class Data {
 	static void showException(VDFParseException           e, File file) { showException("VDFParseException"         , e, file); }
 	static void showException(VDFTraverseException        e, File file) { showException("VDFTraverseException"      , e, file); }
 	static void showException(Base64Exception             e, File file) { showException("Base64Exception"           , e, file); }
-
 	static void showException(String prefix, Throwable e, File file) {
 		showException(prefix, e.getMessage(), file);
 	}
@@ -854,7 +853,6 @@ class Data {
 				}
 			});
 		});
-		knownGameTitles.writeToFile();
 		
 		games.clear();
 		for (Integer appID:idSet) {
@@ -866,8 +864,8 @@ class Data {
 		for (Game game:games.values())
 			if (game.title!=null)
 				knownGameTitles.put(game.appID, game.title);
-		knownGameTitles.writeToFile();
 		
+		knownGameTitles.writeToFile();
 		DevHelper.unknownValues.show(System.err);
 		DevHelper.optional.show(System.err);
 	}

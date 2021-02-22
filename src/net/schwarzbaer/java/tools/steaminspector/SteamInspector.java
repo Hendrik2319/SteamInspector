@@ -1290,12 +1290,12 @@ class SteamInspector {
 				int result = JOptionPane.showConfirmDialog(mainWindow, "Do You really want to determine the titles of all untitled games?", "Are You Sure?", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
 				if (result!=JOptionPane.YES_OPTION) return;
 				
-				ProgressDialog.runWithProgressDialog(mainWindow, "Determine Game Title By Shop Page", 300, pd->{
+				ProgressDialog.runWithProgressDialog(mainWindow, "Determine All Game Titles By Shop Page", 300, true, pd->{
 					Vector<Integer> gameIDs = new Vector<>(Data.games.keySet());
 					gameIDs.sort(null);
 					
 					for (Integer gameID:gameIDs) {
-						System.out.printf("Determine Game Title By ShopPage: %d%n", gameID);
+						//System.out.printf("Determine Game Title By ShopPage: %d%n", gameID);
 						SwingUtilities.invokeLater(()->{
 							pd.setTaskTitle("["+gameID+"] Check Game");
 							pd.setIndeterminate(true);
@@ -1307,11 +1307,11 @@ class SteamInspector {
 						String storedTitle = Data.knownGameTitles.get(gameID);
 						if (storedTitle!=null && !storedTitle.isEmpty()) continue;
 						
-						if (Thread.interrupted()) {
-							System.out.printf("... %d ... interrupted%n", gameID);
+						if (Thread.currentThread().isInterrupted()) {
+							//System.out.printf("... %d ... interrupted%n", gameID);
 							break;
 						}
-						// TODO: save "interrupted" state
+						
 						String newTitle = determineGameTitleByShopPage(gameID, pd, false, false);
 						if (newTitle!=null) {
 							Data.knownGameTitles.put(gameID, newTitle);
@@ -1328,20 +1328,48 @@ class SteamInspector {
 			}
 		}
 
-		private String determineGameTitleByShopPage(Integer gameID, ProgressDialog pd, boolean writeHtmlIfCantFindName, boolean verbose) {
+		private static String determineGameTitleByShopPage(Integer gameID, ProgressDialog pd, boolean writeHtmlIfCantFindName, boolean verbose) {
 			if (gameID==null) throw new IllegalArgumentException();
 			if (pd==null) throw new IllegalArgumentException();
 			
+			LabeledUrl shopURL = Data.getShopURL(gameID);
+			Result result = determineGameTitleByShopPage(gameID, pd, writeHtmlIfCantFindName, verbose, shopURL.url);
+			if (result==null) return null;
+			if (result.newTitle==null && result.redirectLocation!=null) {
+				if (result.redirectLocation.startsWith("https://store.steampowered.com/agecheck/app/")) {
+					if (verbose) System.err.printf("Was redirected to age check for game %s.%n", gameID);
+					result = determineGameTitleByShopPage(gameID, pd, writeHtmlIfCantFindName, verbose, result.redirectLocation);
+					if (result==null) return null;
+				} else if (result.redirectLocation.equals("https://store.steampowered.com/")) {
+					if (verbose) System.err.printf("No shop page found for game %s.%n", gameID);
+					return null;
+				}
+			}
+			return result.newTitle;
+		}
+		
+		private static class Result {
+			final String newTitle;
+			final String redirectLocation;
+			Result(String newTitle) {
+				this(newTitle,null);
+			}
+			Result(String newTitle, String redirectLocation) {
+				this.newTitle = newTitle;
+				this.redirectLocation = redirectLocation;
+			}
+		}
+
+		private static Result determineGameTitleByShopPage(Integer gameID, ProgressDialog pd, boolean writeHtmlIfCantFindName, boolean verbose, String urlStr) {
 			SwingUtilities.invokeLater(()->{
 				pd.setTaskTitle("["+gameID+"] Get Connection to Server");
 				pd.setIndeterminate(true);
 			});
 			
-			LabeledUrl shopURL = Data.getShopURL(gameID);
 			URL url;
-			try { url = new URL(shopURL.url); }
-			catch (MalformedURLException e) { System.err.printf("MalformedURLException: %s (URL:%s)", e.getMessage(), shopURL.url); return null; }
-			if (Thread.interrupted()) return null;
+			try { url = new URL(urlStr); }
+			catch (MalformedURLException e) { System.err.printf("MalformedURLException: %s (URL:%s)", e.getMessage(), urlStr); return null; }
+			if (Thread.currentThread().isInterrupted()) return null;
 			
 			HttpURLConnection conn;
 			try {
@@ -1349,15 +1377,15 @@ class SteamInspector {
 				if (urlConn instanceof HttpURLConnection) conn = (HttpURLConnection) urlConn;
 				else { System.err.printf("Created Connection isn't a HttpURLConnection.%n"); return null; }
 			}
-			catch (IOException e) { System.err.printf("IOException while opening connection: %s (URL:%s)", e.getMessage(), shopURL.url); return null; }
-			if (Thread.interrupted()) return null;
+			catch (IOException e) { System.err.printf("IOException while opening connection: %s (URL:%s)", e.getMessage(), urlStr); return null; }
+			if (Thread.currentThread().isInterrupted()) return null;
 			
 			conn.setInstanceFollowRedirects(false);
 			conn.setRequestProperty("User-Agent", "KlaUS");
 			conn.setDoInput(true);
 			try { conn.connect(); }
-			catch (IOException e) { System.err.printf("IOException while connecting to server: %s (URL:%s)", e.getMessage(), shopURL.url); return null; }
-			if (Thread.interrupted()) return null;
+			catch (IOException e) { System.err.printf("IOException while connecting to server: %s (URL:%s)", e.getMessage(), urlStr); return null; }
+			if (Thread.currentThread().isInterrupted()) return null;
 			
 			SwingUtilities.invokeLater(()->{
 				pd.setTaskTitle("["+gameID+"] Read Response");
@@ -1367,31 +1395,32 @@ class SteamInspector {
 			try {
 				int responseCode = conn.getResponseCode();
 				if (responseCode<200 || responseCode>=300) {
-					if (verbose) {
-						System.err.printf("Wrong ResponseCode: %d (URL:%s)%n", responseCode, shopURL.url);
-						String location = conn.getHeaderField("Location");
-						if (location!=null)  System.err.printf("was redirected to location: \"%s\"%n", location);
-					}
+					if (verbose) System.err.printf("Wrong ResponseCode: %d (URL:%s)%n", responseCode, urlStr);
+					String location = conn.getHeaderField("Location");
+					if (verbose && location!=null) System.err.printf("was redirected to location: \"%s\"%n", location);
+					
 					//System.err.print(toString("HeaderFields", conn.getHeaderFields()));
-					return null;
+					return new Result(null,location);
 				}
-			} catch (IOException e) { System.err.printf("IOException while reading ResponseCode: %s (URL:%s)", e.getMessage(), shopURL.url); return null; }
-			if (Thread.interrupted()) return null;
+			} catch (IOException e) { System.err.printf("IOException while reading ResponseCode: %s (URL:%s)", e.getMessage(), urlStr); return null; }
+			if (Thread.currentThread().isInterrupted()) return null;
 			
 			ByteArrayOutputStream bytes = new ByteArrayOutputStream();
 			try (InputStream input = conn.getInputStream()) {
 				byte[] buffer = new byte[300000];
 				for (int n; 0 < (n=input.read(buffer)); ) {
 					bytes.write(buffer, 0, n);
-					if (Thread.interrupted()) return null;
+					if (Thread.currentThread().isInterrupted()) return null;
 				}
-			} catch (IOException e) { System.err.printf("IOException while reading response: %s (URL:%s)", e.getMessage(), shopURL.url); return null; }
+			} catch (IOException e) { System.err.printf("IOException while reading response: %s (URL:%s)", e.getMessage(), urlStr); return null; }
 			
 			String content = new String(bytes.toByteArray(),StandardCharsets.UTF_8);
 			
 			String newTitle = getPartOf(content, "<div class=\"apphub_AppName\">", "</div>");
+			if (newTitle==null) newTitle = getPartOf(content, "<meta property=\"og:title\" content=\"", " on Steam\">");
+			
 			if (newTitle==null) {
-				if (verbose) System.err.printf("Can't find name in response: %s (URL:%s)%n", shopURL.url);
+				if (verbose) System.err.printf("Can't find name in response: %s (URL:%s)%n", urlStr);
 				if (writeHtmlIfCantFindName) {
 					File file = new File(String.format("SteamGameShopPage.%d.html", gameID));
 					if (verbose) System.err.printf("Write response text to file \"%s\" ...%n", file.getAbsolutePath());
@@ -1405,7 +1434,7 @@ class SteamInspector {
 			if (content.contains("<div class=\"game_area_bubble game_area_dlc_bubble \">"))
 				newTitle = "(DLC) "+newTitle;
 			
-			return newTitle;
+			return new Result(newTitle);
 		}
 
 		@SuppressWarnings("unused")
