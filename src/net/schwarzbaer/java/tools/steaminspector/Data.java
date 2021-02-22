@@ -729,8 +729,10 @@ class Data {
 		private static final long serialVersionUID = 2599578502526459790L;
 		
 		void readFromFile() {
-			try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(SteamInspector.KNOWN_GAME_TITLES_INI), StandardCharsets.UTF_8))) {
+			File file = new File(SteamInspector.KNOWN_GAME_TITLES_INI);
+			try (BufferedReader in = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
 				
+				System.out.printf("Read known game titles from file \"%s\" ...%n", file.getAbsolutePath());
 				clear();
 				String line;
 				while ( (line=in.readLine())!=null ) {
@@ -743,6 +745,7 @@ class Data {
 							put(gameID,gameTitle);
 					}
 				}
+				System.out.printf("... done%n");
 				
 			} catch (FileNotFoundException e) {
 			} catch (IOException e) {
@@ -751,7 +754,9 @@ class Data {
 			}
 		}
 		void writeToFile() {
-			try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(SteamInspector.KNOWN_GAME_TITLES_INI), StandardCharsets.UTF_8))) {
+			File file = new File(SteamInspector.KNOWN_GAME_TITLES_INI);
+			System.out.printf("Write known game titles to file \"%s\" ...%n", file.getAbsolutePath());
+			try (PrintWriter out = new PrintWriter(new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8))) {
 				
 				Vector<Integer> gameIDs = new Vector<>(this.keySet());
 				gameIDs.sort(null);
@@ -762,6 +767,7 @@ class Data {
 				}
 				
 			} catch (FileNotFoundException e) {}
+			System.out.printf("... done%n");
 		}
 	}
 

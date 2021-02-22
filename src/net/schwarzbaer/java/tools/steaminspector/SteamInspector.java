@@ -17,14 +17,24 @@ import java.awt.event.FocusListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLConnection;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Vector;
 import java.util.concurrent.ExecutionException;
 import java.util.function.BiConsumer;
@@ -79,8 +89,10 @@ import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 
 import net.schwarzbaer.gui.ImageView;
+import net.schwarzbaer.gui.ProgressDialog;
 import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
+import net.schwarzbaer.java.tools.steaminspector.Data.Game;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.system.ClipboardTools;
 import net.schwarzbaer.system.Settings;
@@ -277,7 +289,6 @@ class SteamInspector {
 			if (path==null) return;
 			showContent(path.getLastPathComponent());
 		});
-		new MainTreeContextMenu(tree,()->treeModel);
 		
 		JScrollPane treePanel = new JScrollPane(tree);
 		treePanel.setPreferredSize(new Dimension(500, 800));
@@ -298,6 +309,8 @@ class SteamInspector {
 		mainWindow = new StandardMainWindow("Steam Inspector");
 		mainWindow.startGUI(contentPane,createMenuBar());
 		mainWindow.setIconImagesFromResource("/images/","Logo016.png","Logo024.png","Logo032.png","Logo048.png","Logo286.png");
+		
+		new MainTreeContextMenu(mainWindow,tree,()->treeModel);
 		
 		if (settings.isSet(AppSettings.ValueGroup.WindowPos )) mainWindow.setLocation(settings.getWindowPos ());
 		if (settings.isSet(AppSettings.ValueGroup.WindowSize)) mainWindow.setSize    (settings.getWindowSize());
@@ -1122,6 +1135,7 @@ class SteamInspector {
 			Filter getFilter();
 		}
 
+		private final Window mainWindow;
 		private final JTree tree;
 		private final Supplier<DefaultTreeModel> getCurrentTreeModel;
 		
@@ -1129,7 +1143,9 @@ class SteamInspector {
 		private final JMenuItem miCopyURL;
 		private final JMenuItem miExtViewer;
 		private final JMenuItem miSetTitle;
+		private final JMenuItem miDetermineTitle;
 		private final JMenuItem miCollapseChildren;
+		private final JMenuItem miExpandChildren;
 		private final JMenu     menuFilterChildren;
 		private final ExtViewerChooseMenu extViewerChooseMenu;
 		
@@ -1140,9 +1156,11 @@ class SteamInspector {
 		private ExternViewableItem clickedEVI    = null;
 		private Filter             clickedFilter = null;
 
-		MainTreeContextMenu(JTree tree, Supplier<DefaultTreeModel> getCurrentTreeModel) {
-			if (tree==null) throw new IllegalArgumentException();
-			if (getCurrentTreeModel==null) throw new IllegalArgumentException();
+		MainTreeContextMenu(Window mainWindow, JTree tree, Supplier<DefaultTreeModel> getCurrentTreeModel) {
+			if (mainWindow==null) throw new IllegalArgumentException("mainWindow == <null>");
+			if (tree==null) throw new IllegalArgumentException("tree == <null>");
+			if (getCurrentTreeModel==null) throw new IllegalArgumentException("getCurrentTreeModel == <null>");
+			this.mainWindow = mainWindow;
 			this.tree = tree;
 			this.getCurrentTreeModel = getCurrentTreeModel;
 			
@@ -1151,73 +1169,24 @@ class SteamInspector {
 			add(miCopyPath  = createMenuItem("Copy Path to Clipboard" , true, e->ClipboardTools.copyToClipBoard(clickedFile.file.getAbsolutePath())));
 			add(miCopyURL   = createMenuItem("Copy URL to Clipboard"  , true, e->ClipboardTools.copyToClipBoard(clickedURL.url)));
 			add(miExtViewer = createMenuItem("Open in External Viewer", true, e->openAs(clickedEVI)));
-			
 			add(extViewerChooseMenu.createMenu());
-			
-			add(miSetTitle = createMenuItem("Set Title", true, e->{
-				DefaultTreeModel treeModel = this.getCurrentTreeModel.get();
-				if (treeModel==null) return;
-				if (clickedNode instanceof TreeNode) {
-					TreeNode treeNode = (TreeNode) clickedNode;
-					Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
-					if (gameID!=null) {
-						String currentTitle = Data.knownGameTitles.get(gameID);
-						String actionName = currentTitle==null ? "Set" : "Change";
-						String newTitle = JOptionPane.showInputDialog(this, actionName+" Title of Game "+gameID, currentTitle);
-						if (newTitle!=null) {
-							Data.knownGameTitles.put(gameID, newTitle);
-							Data.knownGameTitles.writeToFile();
-							TreeNodes.PlayersNGames.gameChangeListeners.gameTitleWasChanged(treeModel, gameID);
-						}
-					}
-				}
-			}));
-			
+			add(miSetTitle       = createMenuItem("Set Title", true, e->changeGameTitle()));
+			add(miDetermineTitle = createMenuItem("Determine Title by Shop Page", true, e->determineGameTitleByShopPage()));
 			addSeparator();
-			add(miCollapseChildren = createMenuItem("Collapse Children", true, e->{
-				if (clickedPath!=null && clickedNode instanceof TreeNodes.TreeNodeII) {
-					TreeNodes.TreeNodeII treeNodeII = (TreeNodes.TreeNodeII) clickedNode;
-					Iterable<? extends TreeNode> children = treeNodeII.getChildren();
-					if (children!=null) {
-						this.tree.expandPath(clickedPath);
-						for (TreeNode child:children)
-							this.tree.collapsePath(clickedPath.pathByAddingChild(child));
-					}
-				}
-			}));
+			add(miCollapseChildren = createMenuItem("Collapse Children", true, e->expandCollapse(JTree::collapsePath)));
+			add(miExpandChildren   = createMenuItem("Expand Children"  , true, e->expandCollapse(JTree::expandPath  )));
 			add(menuFilterChildren = new JMenu("Filter Children"));
 			
 			this.tree.addMouseListener(new MouseAdapter() {
-
 				@Override public void mouseClicked(MouseEvent e) {
 					if (e.getButton()==MouseEvent.BUTTON3) {
 						clickedPath = MainTreeContextMenu.this.tree.getPathForLocation(e.getX(), e.getY());
-						if (clickedPath!=null)
-							clickedNode = clickedPath.getLastPathComponent();
+						clickedNode = clickedPath==null ? null : clickedPath.getLastPathComponent();
 						prepareMenuItems();
 						show(MainTreeContextMenu.this.tree, e.getX(), e.getY());
 					}
 				}
 			});
-		}
-
-		private void openAs(ExternViewableItem viewableItem) {
-			File viewer = viewableItem.viewerInfo.getExecutable(tree);
-			if (viewer==null) return;
-			
-			String viewerPath = viewer.getAbsolutePath();
-			String filePath = viewableItem.getItemPath();
-			
-			if (viewerPath!=null && filePath!=null)
-				try {
-					System.out.printf("Execute in Shell: \"%s\" \"%s\"%n", viewerPath, filePath);
-					Runtime.getRuntime().exec(new String[] { viewerPath, filePath });
-				} catch (IOException ex) {
-					System.err.println("Exception occured while opening selected file in an external viewer:");
-					System.err.printf ("    external viewer: \"%s\"%n", viewerPath);
-					System.err.printf ("    parameter: \"%s\"%n", filePath);
-					ex.printStackTrace();
-				}
 		}
 
 		protected void prepareMenuItems() {
@@ -1228,7 +1197,8 @@ class SteamInspector {
 			
 			extViewerChooseMenu.prepareMenuItems();
 			
-			miCollapseChildren.setEnabled(clickedNode!=null);
+			miCollapseChildren.setEnabled(clickedPath!=null && clickedNode!=null);
+			miExpandChildren  .setEnabled(clickedPath!=null && clickedNode!=null);
 			miCopyPath .setEnabled(clickedFile!=null);
 			miCopyURL  .setEnabled(clickedURL !=null);
 			miExtViewer.setEnabled(clickedEVI!=null && clickedEVI.areItemAndViewerCompatible());
@@ -1247,15 +1217,29 @@ class SteamInspector {
 				TreeNode treeNode = (TreeNode) clickedNode;
 				Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
 				Data.Game game = Data.games.get(gameID);
-				miSetTitle.setEnabled(gameID!=null && (game==null || !game.hasAFixedTitle()));
+				miSetTitle      .setEnabled(gameID!=null && (game==null || !game.hasAFixedTitle()));
+				miDetermineTitle.setEnabled(gameID!=null && (game==null || !game.hasAFixedTitle()));
 				if (gameID!=null) {
 					String currentTitle = Data.knownGameTitles.get(gameID);
-					String miTitle;
-					if (currentTitle==null) miTitle = String.format("Set Title of Game %d", gameID);
-					else miTitle = String.format("Change Title of Game %d (\"%s\")%s", gameID, currentTitle, game!=null && game.hasAFixedTitle() ? " <fixed by AppManifest>" : "");
-					miSetTitle.setText(miTitle);
-				} else
-					miSetTitle.setText("Set Title of Game");
+					String gameLabel, setCmdStr;
+					if (currentTitle==null) {
+						setCmdStr = "Set";
+						gameLabel = String.format("Game %d", gameID);
+					} else {
+						setCmdStr = "Change";
+						gameLabel = String.format("Game %d (\"%s\")%s", gameID, currentTitle, game!=null && game.hasAFixedTitle() ? " <fixed by AppManifest>" : "");
+					}
+					miSetTitle      .setText(String.format("%s Title of %s", setCmdStr, gameLabel));
+					miDetermineTitle.setText(String.format("Determine Title of %s", gameLabel));
+				} else {
+					miSetTitle      .setText("Set Title of Game");
+					miDetermineTitle.setText("Determine Title of Game");
+				}
+			} else {
+				miSetTitle.setEnabled(false);
+				miDetermineTitle.setEnabled(true);
+				miSetTitle.setText("Set Title of Game");
+				miDetermineTitle.setText("Determine Titles of All untitled Games");
 			}
 			
 			if (clickedFilter!=null) {
@@ -1286,6 +1270,236 @@ class SteamInspector {
 				menuFilterChildren.setEnabled(false);
 				menuFilterChildren.removeAll();
 			}
+		}
+
+		private void determineGameTitleByShopPage() {
+			DefaultTreeModel treeModel = this.getCurrentTreeModel.get();
+			if (treeModel==null) return;
+			
+			if (clickedNode instanceof TreeNode) {
+				TreeNode treeNode = (TreeNode) clickedNode;
+				Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
+				if (gameID == null) return;
+				
+				ProgressDialog.runWithProgressDialog(mainWindow, "Determine Game Title By Shop Page", 300, pd->{
+					String newTitle = determineGameTitleByShopPage(gameID, pd, true, true);
+					if (newTitle!=null) setNewGameTitle(treeModel, gameID, newTitle);
+				});
+				
+			} else {
+				int result = JOptionPane.showConfirmDialog(mainWindow, "Do You really want to determine the titles of all untitled games?", "Are You Sure?", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+				if (result!=JOptionPane.YES_OPTION) return;
+				
+				ProgressDialog.runWithProgressDialog(mainWindow, "Determine Game Title By Shop Page", 300, pd->{
+					Vector<Integer> gameIDs = new Vector<>(Data.games.keySet());
+					gameIDs.sort(null);
+					
+					for (Integer gameID:gameIDs) {
+						System.out.printf("Determine Game Title By ShopPage: %d%n", gameID);
+						SwingUtilities.invokeLater(()->{
+							pd.setTaskTitle("["+gameID+"] Check Game");
+							pd.setIndeterminate(true);
+						});
+						
+						Game game = Data.games.get(gameID);
+						if (game!=null && game.hasAFixedTitle()) continue;
+						
+						String storedTitle = Data.knownGameTitles.get(gameID);
+						if (storedTitle!=null && !storedTitle.isEmpty()) continue;
+						
+						if (Thread.interrupted()) {
+							System.out.printf("... %d ... interrupted%n", gameID);
+							break;
+						}
+						// TODO: save "interrupted" state
+						String newTitle = determineGameTitleByShopPage(gameID, pd, false, false);
+						if (newTitle!=null) {
+							Data.knownGameTitles.put(gameID, newTitle);
+							TreeNodes.PlayersNGames.gameChangeListeners.gameTitleWasChanged(treeModel, gameID);
+						}
+					}
+					
+					SwingUtilities.invokeLater(()->{
+						pd.setTaskTitle("Write Known Game Titles to file");
+						pd.setIndeterminate(true);
+					});
+					Data.knownGameTitles.writeToFile();
+				});
+			}
+		}
+
+		private String determineGameTitleByShopPage(Integer gameID, ProgressDialog pd, boolean writeHtmlIfCantFindName, boolean verbose) {
+			if (gameID==null) throw new IllegalArgumentException();
+			if (pd==null) throw new IllegalArgumentException();
+			
+			SwingUtilities.invokeLater(()->{
+				pd.setTaskTitle("["+gameID+"] Get Connection to Server");
+				pd.setIndeterminate(true);
+			});
+			
+			LabeledUrl shopURL = Data.getShopURL(gameID);
+			URL url;
+			try { url = new URL(shopURL.url); }
+			catch (MalformedURLException e) { System.err.printf("MalformedURLException: %s (URL:%s)", e.getMessage(), shopURL.url); return null; }
+			if (Thread.interrupted()) return null;
+			
+			HttpURLConnection conn;
+			try {
+				URLConnection urlConn = url.openConnection();
+				if (urlConn instanceof HttpURLConnection) conn = (HttpURLConnection) urlConn;
+				else { System.err.printf("Created Connection isn't a HttpURLConnection.%n"); return null; }
+			}
+			catch (IOException e) { System.err.printf("IOException while opening connection: %s (URL:%s)", e.getMessage(), shopURL.url); return null; }
+			if (Thread.interrupted()) return null;
+			
+			conn.setInstanceFollowRedirects(false);
+			conn.setRequestProperty("User-Agent", "KlaUS");
+			conn.setDoInput(true);
+			try { conn.connect(); }
+			catch (IOException e) { System.err.printf("IOException while connecting to server: %s (URL:%s)", e.getMessage(), shopURL.url); return null; }
+			if (Thread.interrupted()) return null;
+			
+			SwingUtilities.invokeLater(()->{
+				pd.setTaskTitle("["+gameID+"] Read Response");
+				pd.setIndeterminate(true);
+			});
+			
+			try {
+				int responseCode = conn.getResponseCode();
+				if (responseCode<200 || responseCode>=300) {
+					if (verbose) {
+						System.err.printf("Wrong ResponseCode: %d (URL:%s)%n", responseCode, shopURL.url);
+						String location = conn.getHeaderField("Location");
+						if (location!=null)  System.err.printf("was redirected to location: \"%s\"%n", location);
+					}
+					//System.err.print(toString("HeaderFields", conn.getHeaderFields()));
+					return null;
+				}
+			} catch (IOException e) { System.err.printf("IOException while reading ResponseCode: %s (URL:%s)", e.getMessage(), shopURL.url); return null; }
+			if (Thread.interrupted()) return null;
+			
+			ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+			try (InputStream input = conn.getInputStream()) {
+				byte[] buffer = new byte[300000];
+				for (int n; 0 < (n=input.read(buffer)); ) {
+					bytes.write(buffer, 0, n);
+					if (Thread.interrupted()) return null;
+				}
+			} catch (IOException e) { System.err.printf("IOException while reading response: %s (URL:%s)", e.getMessage(), shopURL.url); return null; }
+			
+			String content = new String(bytes.toByteArray(),StandardCharsets.UTF_8);
+			
+			String newTitle = getPartOf(content, "<div class=\"apphub_AppName\">", "</div>");
+			if (newTitle==null) {
+				if (verbose) System.err.printf("Can't find name in response: %s (URL:%s)%n", shopURL.url);
+				if (writeHtmlIfCantFindName) {
+					File file = new File(String.format("SteamGameShopPage.%d.html", gameID));
+					if (verbose) System.err.printf("Write response text to file \"%s\" ...%n", file.getAbsolutePath());
+				 	try { Files.write(file.toPath(), content.getBytes(), StandardOpenOption.CREATE); }
+				 	catch (IOException e) { System.err.printf("IOException while writing response file \"%s\": %s%n", file.getAbsolutePath(), e.getMessage()); }
+				}
+				return null;
+			}
+			newTitle = newTitle.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&");
+			
+			if (content.contains("<div class=\"game_area_bubble game_area_dlc_bubble \">"))
+				newTitle = "(DLC) "+newTitle;
+			
+			return newTitle;
+		}
+
+		@SuppressWarnings("unused")
+		private static String toString(String label, Map<String, List<String>> data) {
+			StringBuilder sb = new StringBuilder();
+			sb.append(String.format("%s {%n", label));
+			if (data==null)
+				sb.append(String.format("    <null>%n"));
+			else {
+				data.forEach((key,list)->{
+					sb.append(String.format("    %s: %s%n", key==null ? "<null>" : key, toString(list)));
+				});
+//				Vector<String> keys = new Vector<>(data.keySet());
+//				keys.sort(null);
+//				for (String key:keys) {
+//					List<String> list = data.get(key);
+//					sb.append(String.format("    %s: %s%n", key, toString(list)));
+//				}
+			}
+			
+			sb.append(String.format("}%n"));
+			return sb.toString();
+		}
+
+		private static String toString(List<String> list) {
+			String str;
+			if (list==null) str = "<null>";
+			else if (list.isEmpty()) str = "[]";
+			else str = String.format("[ \"%s\" ]", String.join("\", \"", list));
+			return str;
+		}
+		
+		private static String getPartOf(String str, String startPhrase, String endPhrase) {
+			int start = str.indexOf(startPhrase);
+			if (start<0) return null;
+			start += startPhrase.length();
+			int end = str.indexOf(endPhrase,start);
+			if (end<0) return null;
+			return str.substring(start, end);
+		}
+
+		private void changeGameTitle() {
+			DefaultTreeModel treeModel = this.getCurrentTreeModel.get();
+			if (treeModel==null) return;
+			
+			if (!(clickedNode instanceof TreeNode)) return;
+			TreeNode treeNode = (TreeNode) clickedNode;
+			
+			Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
+			if (gameID == null) return;
+			
+			String currentTitle = Data.knownGameTitles.get(gameID);
+			String actionName = currentTitle==null ? "Set" : "Change";
+			String newTitle = JOptionPane.showInputDialog(this, actionName+" Title of Game "+gameID, currentTitle);
+			if (newTitle == null) return;
+			
+			setNewGameTitle(treeModel, gameID, newTitle);
+		}
+
+		private static void setNewGameTitle(DefaultTreeModel treeModel, Integer gameID, String newTitle) {
+			Data.knownGameTitles.put(gameID, newTitle);
+			Data.knownGameTitles.writeToFile();
+			TreeNodes.PlayersNGames.gameChangeListeners.gameTitleWasChanged(treeModel, gameID);
+		}
+
+		private void expandCollapse(BiConsumer<JTree,TreePath> childFcn) {
+			if (clickedPath!=null && clickedNode instanceof TreeNodes.TreeNodeII) {
+				TreeNodes.TreeNodeII treeNodeII = (TreeNodes.TreeNodeII) clickedNode;
+				Iterable<? extends TreeNode> children = treeNodeII.getChildren();
+				if (children!=null) {
+					tree.expandPath(clickedPath);
+					for (TreeNode child:children)
+						childFcn.accept(tree, clickedPath.pathByAddingChild(child));
+				}
+			}
+		}
+
+		private void openAs(ExternViewableItem viewableItem) {
+			File viewer = viewableItem.viewerInfo.getExecutable(tree);
+			if (viewer==null) return;
+			
+			String viewerPath = viewer.getAbsolutePath();
+			String filePath = viewableItem.getItemPath();
+			
+			if (viewerPath!=null && filePath!=null)
+				try {
+					System.out.printf("Execute in Shell: \"%s\" \"%s\"%n", viewerPath, filePath);
+					Runtime.getRuntime().exec(new String[] { viewerPath, filePath });
+				} catch (IOException ex) {
+					System.err.println("Exception occured while opening selected file in an external viewer:");
+					System.err.printf ("    external viewer: \"%s\"%n", viewerPath);
+					System.err.printf ("    parameter: \"%s\"%n", filePath);
+					ex.printStackTrace();
+				}
 		}
 
 		private class ExtViewerChooseMenu {
