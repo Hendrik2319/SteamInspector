@@ -31,7 +31,7 @@ class JSONHelper {
 
 	private static Value<NV, V> parseJson(JSON_Parser<NV, V> parser) throws ParseException {
 		Value<NV, V> result = parser.parse_withParseException();
-		JSON_Data.traverseAllValues(result, null, (path,v)->v.extra.setHost(v));
+		JSON_Data.traverseAllValues(result, false, null, (path,v)->v.extra.setHost(v));
 		return result;
 	}
 
