@@ -90,6 +90,9 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextM
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.Filter;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FilterOption;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FilterableNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.SortOption;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.SortableNode;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.Sorter;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.URLBasedNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ParsedByteBasedTextFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TextContentSource;
@@ -397,19 +400,25 @@ class TreeNodes {
 			if (treeIDStr==null) return;
 			
 			HashMap<String, Boolean> treeMap = map.get(treeIDStr);
-			if (treeMap==null) map.put(treeIDStr, treeMap = new HashMap<>());
+			if (treeMap==null) {
+				if (isInteresting==null) return;
+				map.put(treeIDStr, treeMap = new HashMap<>());
+			}
 			String path = treeNode.getPath();
 			
-			if (isInteresting==null) treeMap.remove(path);
-			else treeMap.put(path, isInteresting);
+			if (isInteresting==null) {
+				treeMap.remove(path);
+				if (treeMap.isEmpty()) map.remove(treeIDStr);
+			} else
+				treeMap.put(path, isInteresting);
 		}
 
 		Boolean get(String treeIDStr, DataTreeNode treeNode) {
-			if (treeNode==null) return false;
-			if (treeIDStr==null) return false;
+			if (treeNode==null) return null;
+			if (treeIDStr==null) return null;
 			
 			HashMap<String, Boolean> treeMap = map.get(treeIDStr);
-			if (treeMap==null) map.put(treeIDStr, treeMap = new HashMap<>());
+			if (treeMap==null) return null;
 			String path = treeNode.getPath();
 			
 			return treeMap.get(path);
@@ -482,7 +491,7 @@ class TreeNodes {
 					
 					HashMap<String, Boolean> treeMap = map.get(treeIDStr);
 					Vector<String> nodePaths = new Vector<>(treeMap.keySet());
-					nodePaths.sort(Comparator.comparing(String::toLowerCase));
+					nodePaths.sort(Comparator.<String,String>comparing(String::toLowerCase).thenComparing(Comparator.naturalOrder()));
 					
 					for (String nodePath:nodePaths) {
 						Boolean nodeValue = treeMap.get(nodePath);
@@ -692,13 +701,14 @@ class TreeNodes {
 	}
 
 	@SuppressWarnings("unused")
-	private static class GroupingNode<ValueType> extends MultiPurposeNode implements FilterableNode {
+	private static class GroupingNode<ValueType> extends MultiPurposeNode implements FilterableNode, SortableNode {
 		
 		private final Collection<ValueType> values;
 		private final Comparator<ValueType> sortOrder;
 		private final NodeCreator1<ValueType> createChildNode;
 		private final BiConsumer<TreeNode, Vector<TreeNode>> createAllChildNodes;
 		private GroupingNodeFilter<ValueType,?> filter = null;
+		private GroupingNodeSorter<ValueType,?> sorter = null;
 		
 		private static <IT,VT> Comparator<Map.Entry<IT,VT>> createMapKeyOrder(Comparator<IT> keyOrder) {
 			return Comparator.comparing(Map.Entry<IT,VT>::getKey,keyOrder);
@@ -759,7 +769,13 @@ class TreeNodes {
 				
 			} else {
 				Vector<ValueType> vector = new Vector<>(values);
-				if (sortOrder!=null) vector.sort(sortOrder);
+				
+				Comparator<ValueType> sortOrder = this.sortOrder;
+				if (sorter!=null)
+					sortOrder = sorter.getOrder(this.sortOrder);
+				if (sortOrder!=null)
+					vector.sort(sortOrder);
+				
 				vector.forEach(value->{
 					if (filter==null || filter.allows(value)) {
 						TreeNode treeNode = createChildNode.create(this,value);
@@ -771,13 +787,22 @@ class TreeNodes {
 		}
 		
 		@Override public Filter getFilter() { return filter; }
+		@Override public Sorter getSorter() { return sorter; }
+		
 		GroupingNode<ValueType> setFilter(GroupingNodeFilter<ValueType,?> filter) {
 			if (createAllChildNodes!=null) throw new IllegalStateException("You can't set a filter, if you have created child nodes directly.");
 			this.filter = filter;
-			if (filter!=null)
-				filter.setHost(this);
+			if (filter!=null) filter.setHost(this);
 			return this;
 		}
+		
+		GroupingNode<ValueType> setSorter(GroupingNodeSorter<ValueType,?> sorter) {
+			if (createAllChildNodes!=null) throw new IllegalStateException("You can't set a sorter, if you have created child nodes directly.");
+			this.sorter = sorter;
+			if (sorter!=null) sorter.setHost(this);
+			return this;
+		}
+		
 		private static <IT, VT, FilterOptType extends Enum<FilterOptType> & FilterOption> GroupingNodeFilter<Map.Entry<IT,VT>,FilterOptType> createMapFilter(
 				Class<FilterOptType> filterOptionClass,
 				FilterOptType[] options,
@@ -797,23 +822,24 @@ class TreeNodes {
 				}
 			};
 		}
-		
+
 		private static abstract class GroupingNodeFilter<ValueType, FilterOptType extends Enum<FilterOptType> & FilterOption> implements Filter {
 			
 			private final FilterOptType[] options;
 			private final EnumSet<FilterOptType> currentSetting;
 			private GroupingNode<ValueType> host;
-
+		
 			GroupingNodeFilter(Class<FilterOptType> filterOptionClass, FilterOptType[] options) {
 				this.options = options;
 				currentSetting = EnumSet.noneOf(filterOptionClass);
 				host = null;
 			}
-
-			private void setHost(GroupingNode<ValueType> host) {
-				this.host = host;
-			}
-
+		
+			private void setHost(GroupingNode<ValueType> host) { this.host = host; }
+			@Override public FilterOptType[] getFilterOptions() { return options; }
+			@Override public boolean isFilterOptionSet(FilterOption option) { return currentSetting.contains(cast(option)); }
+			protected abstract boolean valueMeetsOption(ValueType value, FilterOptType option);
+		
 			private boolean allows(ValueType value) {
 				//System.out.printf("allows \"%s\" ?%n", value);
 				if (value==null) return true;
@@ -828,13 +854,7 @@ class TreeNodes {
 				//System.out.println("--> true");
 				return true;
 			}
-
-			protected abstract boolean valueMeetsOption(ValueType value, FilterOptType option);
-
-			@Override public FilterOptType[] getFilterOptions() { return options; }
-			@SuppressWarnings("unlikely-arg-type")
-			@Override public boolean isFilterOptionSet(FilterOption option) { return currentSetting.contains(option); }
-
+		
 			@Override public void setFilterOption(FilterOption option, boolean active, DefaultTreeModel currentTreeModel) {
 				//System.out.printf("setFilterOption( \"%s\", %s )%n", option, active);
 				if (option==null) {
@@ -859,19 +879,60 @@ class TreeNodes {
 					rebuildChildren(currentTreeModel);
 				}
 			}
-
+		
 			@Override public void clearFilter(DefaultTreeModel currentTreeModel) {
 				currentSetting.clear();
 				rebuildChildren(currentTreeModel);
 			}
-
+		
 			private void rebuildChildren(DefaultTreeModel currentTreeModel) {
 				if (host==null) throw new IllegalStateException();
 				host.rebuildChildren(currentTreeModel);
 			}
-
+		
 			protected abstract FilterOptType cast(FilterOption option);
 		}
+
+		private static abstract class GroupingNodeSorter<ValueType,SortOptionType extends SortOption> implements Sorter {
+
+			private GroupingNode<ValueType> host;
+			private final SortOptionType[] sortOptions;
+			private SortOptionType currentOption;
+			
+			GroupingNodeSorter(SortOptionType[] sortOptions) {
+				this.sortOptions = sortOptions;
+				currentOption = null;
+			}
+			
+			private Comparator<ValueType> getOrder(Comparator<ValueType> defaultSortOrder) {
+				if (currentOption == null) return defaultSortOrder;
+				return getOrder(currentOption);
+			}
+
+			abstract SortOptionType cast(SortOption option);
+			protected abstract Comparator<ValueType> getOrder(SortOptionType option);
+
+			private void setHost(GroupingNode<ValueType> host) { this.host = host; }
+			@Override public SortOptionType[] getSortOptions() { return sortOptions; }
+
+			@Override public boolean isOriginalOrder() { return isSortOptionSet(null); }
+			@Override public void resetToOriginalOrder(DefaultTreeModel treeModel) { setOrder(null, treeModel); }
+
+			@Override public boolean isSortOptionSet(SortOption option) { return currentOption==cast(option); }
+
+			@Override public void setOrder(SortOption option, DefaultTreeModel treeModel) {
+				currentOption = cast(option);
+				rebuildChildren(treeModel);
+			}
+
+
+			private void rebuildChildren(DefaultTreeModel treeModel) {
+				if (host==null) throw new IllegalStateException();
+				host.rebuildChildren(treeModel);
+			}
+		}
+		
+		
 	}
 	
 	private static MultiPurposeNode createImageUrlNode(TreeNode parent, String label, String url) { return createUrlNode(parent, TreeIcons.ImageFile.getIcon(), label, url, url, true ); }
@@ -1121,8 +1182,25 @@ class TreeNodes {
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {
 				Vector<TreeNode> children = new Vector<>();
-				children.add(GroupingNode.create(this, "Games"  , Data.games  , Comparator.<Game>naturalOrder(), GameNode  ::new));
-				children.add(GroupingNode.create(this, "Players", Data.players, Data.createPlayerIdKeyOrder()  , PlayerNode::new));
+				GroupingNode<Map.Entry<Integer,Game>> gamesNode   = GroupingNode.create(this, "Games"  , Data.games  , Comparator.<Game>naturalOrder(), GameNode  ::new);
+				GroupingNode<Map.Entry<Long, Player>> playersNode = GroupingNode.create(this, "Players", Data.players, Data.createPlayerIdKeyOrder()  , PlayerNode::new);
+				children.add(gamesNode);
+				children.add(playersNode);
+				
+				gamesNode.setSorter(new GroupingNode.GroupingNodeSorter<Map.Entry<Integer,Game>,Game.GameSortOption>(Game.GameSortOption.createOptionList()) {
+					@Override protected Comparator<Map.Entry<Integer,Game>> getOrder(Game.GameSortOption option) {
+						if (option==null) return null;
+						Comparator<Game> order = option.getOrder();
+						if (order==null) return null;
+						return Comparator.comparing(Map.Entry<Integer,Game>::getValue,order);
+					}
+					@Override Game.GameSortOption cast(SortOption option) {
+						if (option instanceof Game.GameSortOption)
+							return (Game.GameSortOption) option;
+						return null;
+					}
+				});
+				
 				return children;
 			}
 		}
@@ -1159,6 +1237,14 @@ class TreeNodes {
 							GameInfosNode::new
 					));
 				}
+				if (!game.lastPlayedData.isEmpty()) { // TODO
+					children.add(GroupingNode.create(
+							this, "Last Played",
+							game.lastPlayedData,
+							Data.createPlayerIdKeyOrder(),
+							(p,playerID,appData)->PlayerNode.createAppDataNode(p, appData, "by "+Data.getPlayerName(playerID), null)
+					));
+				}
 				if (!game.achievementProgress.isEmpty()) {
 					children.add(GroupingNode.create(
 							this, "Achievement Progress",
@@ -1176,7 +1262,7 @@ class TreeNodes {
 							(p,i,v)->FileSystem.FolderNode.createNode(p,v,null,null)
 					));
 				}
-				if (game.screenShots!=null && !game.screenShots.isEmpty()) {
+				if (!game.screenShots.isEmpty()) {
 					children.add(GroupingNode.create(
 							this, "ScreenShots",
 							game.screenShots,
@@ -1185,7 +1271,7 @@ class TreeNodes {
 							PlayersNGames::createGameScreenShotsNode
 					));
 				}
-				if (game.steamCloudFolders!=null && !game.steamCloudFolders.isEmpty()) {
+				if (!game.steamCloudFolders.isEmpty()) {
 					children.add(GroupingNode.create(
 							this, "SteamCloud Shared Data",
 							game.steamCloudFolders,
@@ -1205,9 +1291,16 @@ class TreeNodes {
 			private Player player;
 
 			public PlayerNode(TreeNode parent, Long playerID, Player player) {
-				super(parent, player.getName(true), true, false);
+				super(parent, generateTitle(player), true, false);
 				//this.playerID = playerID;
 				this.player = player;
+			}
+
+			private static String generateTitle(Player player) {
+				String title = player.getName(true);
+				Integer playerLevel = player.getPlayerLevel();
+				if (playerLevel!=null) title += " (Steam Level: "+playerLevel+")";
+				return title;
 			}
 
 			@Override public LabeledFile getFile() { return new LabeledFile(player.folder); }
@@ -1295,58 +1388,19 @@ class TreeNodes {
 			}
 
 			private static TreeNode createSoftwareValveSteamAppsNode(TreeNode parent, SoftwareValveSteamApps apps) {
-				String baseNodeTitle = "LocalConfig > Software > Valve > Steam > Apps";
+				String baseNodeTitle = "Last Play Times";
 				MultiPurposeNode baseNode;
 				if (apps.hasParsedData) {
 //					Comparator<SoftwareValveSteamApps.App> sortOrder = Comparator.comparing(app->app.appID,Comparator.nullsLast(Data.createGameIdOrder()));
 //					sortOrder = sortOrder.thenComparing(app->app.nodeName);
-					Comparator<SoftwareValveSteamApps.App> sortOrder = Comparator.comparing(app->app.lastPlayed_Ts,Comparator.nullsLast(Comparator.reverseOrder()));
+					Comparator<SoftwareValveSteamApps.AppData> sortOrder = Comparator.comparing(app->app.lastPlayed_Ts,Comparator.nullsLast(Comparator.reverseOrder()));
 					sortOrder = sortOrder.thenComparing(app->app.nodeName);
 					
-					baseNode = GroupingNode.create(parent, baseNodeTitle, apps.apps, sortOrder, (p,app)->{
-						String title = "Game \""+app.nodeName+"\"";
-						Icon icon = null;
-						if (app.appID!=null) {
-							title = Data.getGameTitle(app.appID);
-							icon  = Data.getGameIcon (app.appID,TreeIcons.Folder);
-						}
-						SimpleLeafNode node = new SimpleLeafNode(p, icon, title);
-						if (app.hasParsedData)
-							node.setTextSource(()->{
-								ValueListOutput out = new ValueListOutput();
-								if (app.appID               !=null) out.add(0, "App ID   ", "%d%s", app.appID, Data.hasGameATitle(app.appID) ? "  ->  "+Data.getGameTitle(app.appID) : "");
-								else                                out.add(0, "Node Name", app.nodeName);
-								addDateLine_s  (out, 0, app.lastPlayed_Ts          , app.str_lastPlayed          , "Last Time Played"       );
-								addTimeLine_min(out, 0, app.playtime_min           , app.str_playtime            , "Playtime"               );
-								addTimeLine_min(out, 0, app.playtime_min_2weeks    , app.str_playtime_2wks       , "Playtime (last 2 Weeks)");
-								addDateLine_s  (out, 0, app.autocloud_lastlaunch_Ts, app.str_autocloud_lastlaunch, "Autocloud > Last Launch");
-								addDateLine_s  (out, 0, app.autocloud_lastexit_Ts  , app.str_autocloud_lastexit  , "Autocloud > Last Exit  ");
-								if (app.badgeData           !=null) out.add(0, "Badge Data          ", app.badgeData       );
-								if (app.news                !=null) out.add(0, "News                ", app.news            );
-								if (app._1161580_eula_0     !=null) out.add(0, "\"1161580_eula_0\"  ", app._1161580_eula_0 );
-								if (app.eula_47870          !=null) out.add(0, "\"eula_47870\"      ", app.eula_47870      );
-								if (app.viewedLaunchEULA    !=null) out.add(0, "\"viewedLaunchEULA\"", app.viewedLaunchEULA);
-								
-								return out.generateOutput();
-							});
-						
-						else if (app.rawData!=null) 
-							node.setDataTree(app.rawData.createRawDataTreeRoot(app.getClass()));
-						
-						if (app.appID!=null) {
-							node.setURL(Data.getShopURL(app.appID), false, ExternalViewerInfo.Browser);
-							gameChangeListeners.add(app.appID, new GameChangeListener() {
-								@Override public TreeNode getTreeNode() { return node; }
-								@Override public void gameTitleWasChanged() { node.setTitle(Data.getGameTitle(app.appID)); }
-							});
-						}
-						
-						return node;
-						
-					}).setTextSource(()->{
+					baseNode = GroupingNode.create(parent, baseNodeTitle, apps.apps, sortOrder, PlayerNode::createAppDataNode)
+							.setTextSource(()->{
 						ValueListOutput out = new ValueListOutput();
-						addLine      (out,0,apps.playerLevel                , apps.str_playerLevel             , "Player Level", "%d");
-						addDateLine_s(out,0,apps.lastPlayedTimes_SyncTime_Ts, apps.str_lastPlayedTimes_SyncTime, "Last Sync Time of \"Played Times\"");
+						addLine      (out,0,apps.playerLevel    , apps.str_playerLevel , "Player Level", "%d");
+						addDateLine_s(out,0,apps.lastSyncTime_Ts, apps.str_lastSyncTime, "Last Sync Time of \"Played Times\"");
 						return out.generateOutput();
 					});
 					
@@ -1357,6 +1411,53 @@ class TreeNodes {
 				}
 				
 				return baseNode;
+			}
+
+			private static TreeNode createAppDataNode(TreeNode p, SoftwareValveSteamApps.AppData app) {
+				String title = "Game \""+app.nodeName+"\"";
+				Icon icon = null;
+				if (app.appID!=null) {
+					title = Data.getGameTitle(app.appID);
+					icon  = Data.getGameIcon (app.appID,TreeIcons.Folder);
+				}
+				
+				SimpleLeafNode node = createAppDataNode(p, app, title, icon);
+				
+				if (app.appID!=null) {
+					node.setURL(Data.getShopURL(app.appID), false, ExternalViewerInfo.Browser);
+					gameChangeListeners.add(app.appID, new GameChangeListener() {
+						@Override public TreeNode getTreeNode() { return node; }
+						@Override public void gameTitleWasChanged() { node.setTitle(Data.getGameTitle(app.appID)); }
+					});
+				}
+				return node;
+			}
+
+			private static SimpleLeafNode createAppDataNode(TreeNode p, SoftwareValveSteamApps.AppData app, String title, Icon icon) { // TODO
+				SimpleLeafNode node = new SimpleLeafNode(p, icon, title);
+				if (app.hasParsedData)
+					node.setTextSource(()->{
+						ValueListOutput out = new ValueListOutput();
+						if (app.appID               !=null) out.add(0, "App ID   ", "%d%s", app.appID, Data.hasGameATitle(app.appID) ? "  ->  "+Data.getGameTitle(app.appID) : "");
+						else                                out.add(0, "Node Name", app.nodeName);
+						addDateLine_s  (out, 0, app.lastPlayed_Ts          , app.str_lastPlayed          , "Last Time Played"       );
+						addTimeLine_min(out, 0, app.playtime_min           , app.str_playtime            , "Playtime"               );
+						addTimeLine_min(out, 0, app.playtime_min_2weeks    , app.str_playtime_2wks       , "Playtime (last 2 Weeks)");
+						addDateLine_s  (out, 0, app.autocloud_lastlaunch_Ts, app.str_autocloud_lastlaunch, "Autocloud > Last Launch");
+						addDateLine_s  (out, 0, app.autocloud_lastexit_Ts  , app.str_autocloud_lastexit  , "Autocloud > Last Exit  ");
+						if (app.badgeData           !=null) out.add(0, "Badge Data          ", app.badgeData       );
+						if (app.news                !=null) out.add(0, "News                ", app.news            );
+						if (app._1161580_eula_0     !=null) out.add(0, "\"1161580_eula_0\"  ", app._1161580_eula_0 );
+						if (app.eula_47870          !=null) out.add(0, "\"eula_47870\"      ", app.eula_47870      );
+						if (app.viewedLaunchEULA    !=null) out.add(0, "\"viewedLaunchEULA\"", app.viewedLaunchEULA);
+						
+						return out.generateOutput();
+					});
+				
+				else if (app.rawData!=null) 
+					node.setDataTree(app.rawData.createRawDataTreeRoot(app.getClass()));
+				
+				return node;
 			}
 
 			private static void addLine(ValueListOutput out, int indentLevel, Integer parsedValue, String rawStr, String label, String format) {

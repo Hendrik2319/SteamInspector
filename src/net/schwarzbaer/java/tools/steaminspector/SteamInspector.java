@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Vector;
 import java.util.concurrent.ExecutionException;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -1134,6 +1135,19 @@ class SteamInspector {
 		interface FilterableNode {
 			Filter getFilter();
 		}
+		
+		interface SortOption {}
+		interface Sorter {
+			SortOption[] getSortOptions();
+			boolean isSortOptionSet(SortOption option);
+			void setOrder(SortOption option, DefaultTreeModel treeModel);
+			void resetToOriginalOrder(DefaultTreeModel treeModel);
+			boolean isOriginalOrder();
+		}
+		
+		interface SortableNode {
+			Sorter getSorter();
+		}
 
 		private final Window mainWindow;
 		private final JTree tree;
@@ -1147,6 +1161,7 @@ class SteamInspector {
 		private final JMenuItem miCollapseChildren;
 		private final JMenuItem miExpandChildren;
 		private final JMenu     menuFilterChildren;
+		private final JMenu     menuReorderChildren;
 		private final ExtViewerChooseMenu extViewerChooseMenu;
 		
 		private TreePath[]         selectedPaths = null;
@@ -1155,7 +1170,6 @@ class SteamInspector {
 		private LabeledUrl         clickedURL    = null;
 		private LabeledFile        clickedFile   = null;
 		private ExternViewableItem clickedEVI    = null;
-		private Filter             clickedFilter = null;
 
 		MainTreeContextMenu(Window mainWindow, JTree tree, Supplier<DefaultTreeModel> getCurrentTreeModel) {
 			if (mainWindow==null) throw new IllegalArgumentException("mainWindow == <null>");
@@ -1174,9 +1188,10 @@ class SteamInspector {
 			add(miSetTitle       = createMenuItem("Set Title", true, e->changeGameTitle()));
 			add(miDetermineTitle = createMenuItem("Determine Title by Shop Page", true, e->determineGameTitleByShopPage()));
 			addSeparator();
-			add(miCollapseChildren = createMenuItem("Collapse Children", true, e->expandCollapse(JTree::collapsePath)));
-			add(miExpandChildren   = createMenuItem("Expand Children"  , true, e->expandCollapse(JTree::expandPath  )));
-			add(menuFilterChildren = new JMenu("Filter Children"));
+			add(miCollapseChildren  = createMenuItem("Collapse Children", true, e->expandCollapse(JTree::collapsePath)));
+			add(miExpandChildren    = createMenuItem("Expand Children"  , true, e->expandCollapse(JTree::expandPath  )));
+			add(menuFilterChildren  = new JMenu("Filter Children"));
+			add(menuReorderChildren = new JMenu("Change Order of Children "));
 			
 			this.tree.addMouseListener(new MouseAdapter() {
 
@@ -1196,10 +1211,14 @@ class SteamInspector {
 		}
 
 		protected void prepareMenuItems() {
+			final Filter clickedFilter;
+			final Sorter clickedSorter;
 			clickedURL    = clickedNode instanceof URLBasedNode       ? ((URLBasedNode      ) clickedNode).getURL()                : null;
 			clickedFile   = clickedNode instanceof FileBasedNode      ? ((FileBasedNode     ) clickedNode).getFile()               : null;
 			clickedEVI    = clickedNode instanceof ExternViewableNode ? ((ExternViewableNode) clickedNode).getExternViewableItem() : null;
 			clickedFilter = clickedNode instanceof FilterableNode     ? ((FilterableNode    ) clickedNode).getFilter()             : null;
+			clickedSorter = clickedNode instanceof SortableNode       ? ((SortableNode      ) clickedNode).getSorter()             : null;
+			
 			
 			extViewerChooseMenu.prepareMenuItems();
 			
@@ -1251,33 +1270,51 @@ class SteamInspector {
 					miDetermineTitle.setText("Determine Titles of All Untitled Games");
 			}
 			
-			if (clickedFilter!=null) {
-				menuFilterChildren.setEnabled(true);
-				menuFilterChildren.removeAll();
-				DefaultTreeModel treeModel = this.getCurrentTreeModel.get();
-				if (treeModel==null) {
-					menuFilterChildren.setEnabled(false);
-				} else {
-					menuFilterChildren.add(createMenuItem("Clear Filter", true, e->clickedFilter.clearFilter(treeModel)));
-					menuFilterChildren.addSeparator();
-					FilterOption[] filterOptions = clickedFilter.getFilterOptions();
-					//System.out.println("Rebuild FilterMenu:");
-					for (FilterOption opt:filterOptions) {
-						//System.out.printf("   create CheckBoxMenuItem( isSelected=%s, title=\"%s\" )%n", clickedFilter.isFilterOptionSet(opt), opt);
-						menuFilterChildren.add(
-								createCheckBoxMenuItem(
-										opt.toString(),
-										clickedFilter.isFilterOptionSet(opt),
-										true,
-										b->clickedFilter.setFilterOption(opt,b,treeModel)
-								)
-						);
-					}
+			fillOptionMenu(
+				clickedFilter, menuFilterChildren, this.getCurrentTreeModel.get(), Filter::getFilterOptions,
+				treeModel->{
+					return createMenuItem("Clear Filter", true, e->clickedFilter.clearFilter(treeModel));
+				},
+				(opt,treeModel)->{
+					return createCheckBoxMenuItem(
+						opt.toString(),
+						clickedFilter.isFilterOptionSet(opt),
+						true,
+						b->clickedFilter.setFilterOption(opt,b,treeModel)
+					);
 				}
-				
-			} else {
-				menuFilterChildren.setEnabled(false);
-				menuFilterChildren.removeAll();
+			);
+			
+			fillOptionMenu(
+				clickedSorter, menuReorderChildren, this.getCurrentTreeModel.get(), Sorter::getSortOptions,
+				treeModel->{
+					return createRadioButtonMenuItem("Original Order", clickedSorter.isOriginalOrder(), true, e->clickedSorter.resetToOriginalOrder(treeModel));
+				},
+				(opt,treeModel)->{
+					return createRadioButtonMenuItem(
+						opt.toString(),
+						clickedSorter.isSortOptionSet(opt),
+						true,
+						b->{ if (b) clickedSorter.setOrder(opt, treeModel); }
+					);
+				}
+			);
+		}
+
+		private static <OptionType,OptionSource> void fillOptionMenu(
+				OptionSource optionSource, JMenu menu, DefaultTreeModel treeModel,
+				Function<OptionSource,OptionType[]> getOptions,
+				Function<DefaultTreeModel, JMenuItem> createResetMenuItem,
+				BiFunction<OptionType, DefaultTreeModel, JMenuItem> createSetMenuItem
+		) {
+			menu.removeAll();
+			menu.setEnabled(treeModel!=null && optionSource!=null);
+			if (optionSource!=null && treeModel!=null) {
+				menu.add(createResetMenuItem.apply(treeModel));
+				menu.addSeparator();
+				OptionType[] filterOptions = getOptions.apply(optionSource);
+				for (OptionType opt:filterOptions)
+					menu.add(createSetMenuItem.apply(opt, treeModel));
 			}
 		}
 

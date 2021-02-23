@@ -26,6 +26,7 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import javax.imageio.ImageIO;
 import javax.swing.Icon;
@@ -39,6 +40,7 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.LabeledUrl;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FilterOption;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.SortOption;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileNameNExt;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.ValueListOutput;
@@ -772,6 +774,7 @@ class Data {
 
 	static final HashMap<Integer,Game> games = new HashMap<>();
 	static final HashMap<Long,Player> players = new HashMap<>();
+	
 	static void loadData() {
 		DevHelper.unknownValues.clear();
 		DevHelper.optional.clear();
@@ -1241,7 +1244,7 @@ class Data {
 			
 		}
 
-		public void forEachGameIDSet(Consumer<Collection<Integer>> action) {
+		void forEachGameIDSet(Consumer<Collection<Integer>> action) {
 			action.accept(steamCloudFolders.keySet());
 			if (screenShots!=null)
 				action.accept(screenShots.keySet());
@@ -1250,15 +1253,21 @@ class Data {
 				action.accept(achievementProgress.gameStates.keySet());
 		}
 
-		public long getSteamID() {
+		long getSteamID() {
 			return SteamId.getFullSteamID(playerID);
 		}
 
-		public String getName() {
+		Integer getPlayerLevel() {
+			if (localconfig!=null && localconfig.softwareValveSteamApps!=null)
+				return localconfig.softwareValveSteamApps.playerLevel;
+			return null;
+		}
+
+		String getName() {
 			return getName(false);
 		}
 		
-		public String getName(boolean addPlayerID) {
+		String getName(boolean addPlayerID) {
 			if (localconfig!=null && localconfig.friendList!=null && localconfig.friendList.personaName!=null) {
 				return localconfig.friendList.personaName + (addPlayerID? "  ["+playerID+"]" : "");
 			}
@@ -1269,7 +1278,6 @@ class Data {
 		
 			final long playerID;
 			final File file;
-			final VDFParser.Result vdfData;
 			final VDFTreeNode vdfTreeNode;
 			final FriendList friendList;
 			final SoftwareValveSteamApps softwareValveSteamApps;
@@ -1280,21 +1288,12 @@ class Data {
 				this.playerID = playerID;
 				this.file = file;
 				
-				VDFParser.Result localconfigData_ = null;
-				try { localconfigData_ = VDFParser.parse(this.file,StandardCharsets.UTF_8); }
+				VDFParser.Result parseResult = null;
+				try { parseResult = VDFParser.parse(this.file,StandardCharsets.UTF_8); }
 				catch (VDFParseException e) { showException(e, this.file); }
-				vdfData = localconfigData_;
+				vdfTreeNode = parseResult!=null ? parseResult.createVDFTreeNode() : null;
 				
-				if (vdfData!=null)
-					vdfTreeNode = vdfData.createVDFTreeNode();
-				else
-					vdfTreeNode = null;
-				
-				if (vdfTreeNode == null) {
-					friendList = null;
-					softwareValveSteamApps = null;
-					
-				} else {
+				if (vdfTreeNode!=null) {
 					friendList = parseSubNode(
 							FriendList::new,FriendList::new,
 							"LocalConfig[Player "+playerID+"].FriendList",
@@ -1307,6 +1306,10 @@ class Data {
 							file,vdfTreeNode,
 							"UserLocalConfigStore","Software","Valve","Steam"
 					);
+					
+				} else {
+					friendList = null;
+					softwareValveSteamApps = null;
 				}
 			}
 			
@@ -1343,21 +1346,25 @@ class Data {
 				final VDFTreeNode rawData;
 				final boolean hasParsedData;
 				
-				final Vector<App> apps;
+				final Vector<AppData> apps;
+				final HashMap<Integer,AppData> appsWithID;
+				final Vector<AppData> appsWithoutID;
 				final String  str_playerLevel;
-				final String  str_lastPlayedTimes_SyncTime;
+				final String  str_lastSyncTime;
 				final Integer playerLevel;
-				final Long    lastPlayedTimes_SyncTime_Ts;
+				final Long    lastSyncTime_Ts;
 
 				SoftwareValveSteamApps(VDFTreeNode rawData) {
 					this.rawData = rawData;
 					hasParsedData = false;
 					
 					apps = null;
-					str_playerLevel              = null;
-					str_lastPlayedTimes_SyncTime = null;
-					playerLevel                  = null;
-					lastPlayedTimes_SyncTime_Ts  = null;
+					appsWithID = null;
+					appsWithoutID = null;
+					str_playerLevel  = null;
+					str_lastSyncTime = null;
+					playerLevel      = null;
+					lastSyncTime_Ts  = null;
 				}
 				
 				SoftwareValveSteamApps(VDFTreeNode blockNode, String debugOutputPrefixStr, File file) throws VDFTraverseException {
@@ -1369,67 +1376,87 @@ class Data {
 					blockNode.markAsProcessed();
 					
 					ValueContainer<String> playerLevel = new ValueContainer<>();
-					ValueContainer<String> lastPlayedTimesSyncTime = new ValueContainer<>();
+					ValueContainer<String> lastSyncTime = new ValueContainer<>();
 					
-					apps = new Vector<SoftwareValveSteamApps.App>();
+					apps = new Vector<SoftwareValveSteamApps.AppData>();
+					appsWithID = new HashMap<>();
+					appsWithoutID = new Vector<>();
 					blockNode.forEach((subNode, type, name, value)->{
-						switch (type) {
-						
-						case Root:
-							System.err.printf("%s: contains a Root node%n", debugOutputPrefixStr);
-							DevHelper.unknownValues.add("SoftwareValveSteamApps", name, type);
-							break;
-			
-						case Array: // Friend
-							switch (name) {
-							case "Apps":
-								String subPrefixStr = debugOutputPrefixStr+".Apps";
-								subNode.forEach((subNode1, type1, name1, value1)->{
-									switch (type) {
-									case Root:
-										System.err.printf("%s: contains a Root node%n", subPrefixStr);
-										DevHelper.unknownValues.add("SoftwareValveSteamApps.Apps", name1, type1);
-										break;
-										
-									case Array:
-										try {
-											apps.add(new App(name1, subNode1, subPrefixStr));
-											return true;
-										} catch (VDFTraverseException e) {
-											showException(e, file);
-											apps.add(new App(name1, subNode1));
-										}
-										
-									case String:
-										DevHelper.unknownValues.add("SoftwareValveSteamApps.Apps", name1, type1);
-										break;
-									}
-									
-									
-									return false;
-								});
-								return true;
-								
-							case "ShaderCacheManager": break;
-							default: DevHelper.unknownValues.add("SoftwareValveSteamApps", name, type); break;
-							}
-							return true;
-							
-						case String: // simple value
-							switch (name) {
-							case "PlayerLevel": playerLevel.value = value; return true;
-							case "LastPlayedTimesSyncTime": lastPlayedTimesSyncTime.value = value; return true;
-							default: DevHelper.unknownValues.add("SoftwareValveSteamApps", name, type); break;
-							}
-						}
-						return false;
+						return processBlockSubNode(debugOutputPrefixStr, file, playerLevel, lastSyncTime, subNode, type, name, value);
 					});
 					
-					this.playerLevel                 = parseNumber    (str_playerLevel              = playerLevel            .value);
-					this.lastPlayedTimes_SyncTime_Ts = parseLongNumber(str_lastPlayedTimes_SyncTime = lastPlayedTimesSyncTime.value);
+					this.playerLevel     = parseNumber    (str_playerLevel  = playerLevel .value);
+					this.lastSyncTime_Ts = parseLongNumber(str_lastSyncTime = lastSyncTime.value);
 				}
 
-				static class App {
+				private boolean processBlockSubNode(
+						String debugOutputPrefixStr, File file, ValueContainer<String> playerLevel, ValueContainer<String> lastSyncTime,
+						VDFTreeNode subNode, VDFTreeNode.Type type, String name, String value
+				) {
+					switch (type) {
+					
+					case Root:
+						System.err.printf("%s: contains a Root node%n", debugOutputPrefixStr);
+						DevHelper.unknownValues.add("SoftwareValveSteamApps", name, type);
+						break;
+
+					case Array:
+						switch (name) {
+						case "Apps":
+							String subPrefixStr = debugOutputPrefixStr+".Apps";
+							subNode.forEach((subNode1, type1, name1, value1)->{
+								return processAppsSubNode(subPrefixStr, file, subNode1, type1, name1, value1);
+							});
+							return true;
+							
+						case "ShaderCacheManager": break;
+						default: DevHelper.unknownValues.add("SoftwareValveSteamApps", name, type); break;
+						}
+						break;
+						
+					case String:
+						switch (name) {
+						case "PlayerLevel"            : playerLevel .value = value; return true;
+						case "LastPlayedTimesSyncTime": lastSyncTime.value = value; return true;
+						default: DevHelper.unknownValues.add("SoftwareValveSteamApps", name, type); break;
+						}
+						break;
+					}
+					return false;
+				}
+
+				private boolean processAppsSubNode(String debugOutputPrefixStr, File file, VDFTreeNode subNode, VDFTreeNode.Type type, String name, String value) {
+					switch (type) {
+					case Root:
+						System.err.printf("%s: contains a Root node%n", debugOutputPrefixStr);
+						DevHelper.unknownValues.add("SoftwareValveSteamApps.Apps", name, type);
+						break;
+						
+					case Array:
+						try {
+							addApp(new AppData(name, subNode, debugOutputPrefixStr));
+							return true;
+						} catch (VDFTraverseException e) {
+							showException(e, file);
+							addApp(new AppData(name, subNode));
+						}
+						
+					case String:
+						DevHelper.unknownValues.add("SoftwareValveSteamApps.Apps", name, type);
+						break;
+					}
+					return false;
+				}
+
+				private void addApp(AppData app) {
+					apps.add(app);
+					if (app.appID!=null)
+						appsWithID.put(app.appID, app);
+					else
+						appsWithoutID.add(app);
+				}
+
+				static class AppData {
 					// Block "SoftwareValveSteamApps.Apps[]"
 					//     <Base>:[Array]
 					//     <Base>.autocloud:[null, Array]
@@ -1481,7 +1508,7 @@ class Data {
 					final String eula_47870;
 					final String news;
 
-					App(String nodeName, VDFTreeNode rawData) {
+					AppData(String nodeName, VDFTreeNode rawData) {
 						this.rawData = rawData;
 						appID = parseNumber(this.nodeName = nodeName);
 						hasParsedData = false;
@@ -1498,14 +1525,14 @@ class Data {
 						autocloud_lastexit_Ts   = null;
 						autocloud_lastlaunch_Ts = null;
 						
-						badgeData            = null;
-						viewedLaunchEULA     = null;
-						_1161580_eula_0      = null;
-						eula_47870           = null;
-						news                 = null;
+						badgeData        = null;
+						viewedLaunchEULA = null;
+						_1161580_eula_0  = null;
+						eula_47870       = null;
+						news             = null;
 					}
 					
-					App(String nodeName, VDFTreeNode node, String debugOutputPrefixStr) throws VDFTraverseException {
+					AppData(String nodeName, VDFTreeNode node, String debugOutputPrefixStr) throws VDFTraverseException {
 						if (node==null) throw new IllegalArgumentException("node == null");
 						if (nodeName==null) throw new IllegalArgumentException("nodeName == null");
 						if (!node.is(VDFTreeNode.Type.Array)) throw new VDFTraverseException("%s: node.type != Array", debugOutputPrefixStr);
@@ -1522,11 +1549,11 @@ class Data {
 						autocloud_lastexit_Ts   = parseLongNumber(str_autocloud_lastexit   = node.getString_optional("autocloud","lastexit"  ));
 						autocloud_lastlaunch_Ts = parseLongNumber(str_autocloud_lastlaunch = node.getString_optional("autocloud","lastlaunch"));
 						
-						badgeData            = node.getString_optional("BadgeData"             );
-						viewedLaunchEULA     = node.getString_optional("ViewedLaunchEULA"      );
-						_1161580_eula_0      = node.getString_optional("1161580_eula_0"        );
-						eula_47870           = node.getString_optional("eula_47870"            );
-						news                 = node.getString_optional("News"                  );
+						badgeData        = node.getString_optional("BadgeData"             );
+						viewedLaunchEULA = node.getString_optional("ViewedLaunchEULA"      );
+						_1161580_eula_0  = node.getString_optional("1161580_eula_0"        );
+						eula_47870       = node.getString_optional("eula_47870"            );
+						news             = node.getString_optional("News"                  );
 						
 						//showValue("BadgeData"       , badgeData       );
 						//showValue("ViewedLaunchEULA", viewedLaunchEULA);
@@ -3574,6 +3601,7 @@ class Data {
 		final HashMap<Long, ScreenShotLists.ScreenShotList> screenShots;
 		final HashMap<Long, Player.GameInfos>  gameInfos;
 		final HashMap<Long, Player.AchievementProgress.AchievementProgressInGame>  achievementProgress;
+		final HashMap<Long, Player.LocalConfig.SoftwareValveSteamApps.AppData>  lastPlayedData;
 		
 		Game(int appID, AppManifest appManifest, HashMap<String, File> imageFiles, HashMap<Long, Player> players) {
 			this.appID = appID;
@@ -3585,27 +3613,32 @@ class Data {
 			screenShots = new HashMap<>();
 			gameInfos = new HashMap<>();
 			achievementProgress = new HashMap<>();
+			lastPlayedData = new HashMap<>();
 			players.forEach((playerID,player)->{
+				if (playerID==null) return;
 				
-				File steamCloudFolder = player.steamCloudFolders.get(appID);
-				if (steamCloudFolder!=null)
-					steamCloudFolders.put(playerID, steamCloudFolder);
+				copyValue(player.steamCloudFolders, steamCloudFolders, appID, playerID);
+				copyValue(player.gameInfos        , gameInfos        , appID, playerID);
 				
-				if (player.screenShots!=null) {
-					ScreenShotLists.ScreenShotList screenShots = player.screenShots.get(appID);
-					if (screenShots!=null && !screenShots.isEmpty())
-						this.screenShots.put(playerID, screenShots);
-				}
-				Player.GameInfos gameStateInfo = player.gameInfos.get(appID);
-				if (gameStateInfo!=null)
-					gameInfos.put(playerID, gameStateInfo);
+				if (player.screenShots!=null)
+					copyValue(player.screenShots, screenShots, appID, playerID, v->!v.isEmpty());
 				
-				if (player.achievementProgress!=null && player.achievementProgress.gameStates!=null) {
-					Player.AchievementProgress.AchievementProgressInGame progress = player.achievementProgress.gameStates.get(appID);
-					if (progress!=null)
-						achievementProgress.put(playerID, progress);
+				if (player.achievementProgress!=null && player.achievementProgress.gameStates!=null)
+					copyValue(player.achievementProgress.gameStates, achievementProgress, appID, playerID);
+				
+				if (player.localconfig!=null) {
+					if (player.localconfig.softwareValveSteamApps!=null && player.localconfig.softwareValveSteamApps.appsWithID!=null)
+						copyValue(player.localconfig.softwareValveSteamApps.appsWithID, lastPlayedData, appID, playerID);
 				}
 			});
+		}
+		
+		private static <ValueType> void copyValue(HashMap<Integer,ValueType> source, HashMap<Long,ValueType> target, int sourceKey, long targetKey) {
+			copyValue(source, target, sourceKey, targetKey, v->true);
+		}
+		private static <ValueType> void copyValue(HashMap<Integer,ValueType> source, HashMap<Long,ValueType> target, int sourceKey, long targetKey, Predicate<ValueType> isOK) {
+			ValueType value = source.get(sourceKey);
+			if (value!=null && isOK.test(value)) target.put(targetKey, value);
 		}
 
 		boolean hasAFixedTitle() {
@@ -3651,6 +3684,45 @@ class Data {
 				if (n!=0) return n;
 			}
 			return this.appID-other.appID;
+		}
+		
+		static class GameSortOption implements SortOption {
+			
+			private final String label;
+			private final Comparator<Game> order;
+
+			GameSortOption(String label, Comparator<Game> order) {
+				this.label = label;
+				this.order = order;
+			}
+
+			@Override public String toString() { return label; }
+			Comparator<Game> getOrder() { return order; }
+
+			static GameSortOption[] createOptionList() {
+				GameSortOption[] gameSortOptions = new GameSortOption[players.size()];
+				Vector<Long> keys = new Vector<>(players.keySet());
+				keys.sort(null);
+				for (int i=0; i<keys.size(); i++) {
+					Player player = players.get(keys.get(i));
+					gameSortOptions[i] = new GameSortOption("Sort by Last Play Time of "+player.getName(true), createLastPlayedOrder(player));
+				}
+				return gameSortOptions;
+			}
+
+			private static Comparator<Game> createLastPlayedOrder(Player player) {
+				return Comparator
+						.<Game,Long>comparing(game->getLastPlayed(game,player.playerID),Comparator.nullsLast(Comparator.reverseOrder()))
+						.thenComparing(Comparator.nullsLast(Comparator.naturalOrder()));
+			}
+
+			private static Long getLastPlayed(Game game, long playerID) {
+				if (game==null) return null;
+				Player.LocalConfig.SoftwareValveSteamApps.AppData appData = game.lastPlayedData.get(playerID);
+				if (appData==null) return null;
+				return appData.lastPlayed_Ts;
+			}
+			
 		}
 	}
 
