@@ -283,9 +283,9 @@ class SteamInspector {
 		tree = new JTree(treeModel = treeRoot==null ? null : new DefaultTreeModel(treeRoot));
 		tree.setRootVisible(isRootVisible);
 		tree.setCellRenderer(new BaseTreeNodeRenderer());
-		tree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
+		tree.getSelectionModel().setSelectionMode(TreeSelectionModel.DISCONTIGUOUS_TREE_SELECTION);
 		tree.addTreeSelectionListener(e->{
-			TreePath path = e.getPath();
+			TreePath path = e.getNewLeadSelectionPath();
 			if (path==null) return;
 			showContent(path.getLastPathComponent());
 		});
@@ -1149,6 +1149,7 @@ class SteamInspector {
 		private final JMenu     menuFilterChildren;
 		private final ExtViewerChooseMenu extViewerChooseMenu;
 		
+		private TreePath[]         selectedPaths = null;
 		private TreePath           clickedPath   = null;
 		private Object             clickedNode   = null;
 		private LabeledUrl         clickedURL    = null;
@@ -1178,10 +1179,15 @@ class SteamInspector {
 			add(menuFilterChildren = new JMenu("Filter Children"));
 			
 			this.tree.addMouseListener(new MouseAdapter() {
+
 				@Override public void mouseClicked(MouseEvent e) {
 					if (e.getButton()==MouseEvent.BUTTON3) {
 						clickedPath = MainTreeContextMenu.this.tree.getPathForLocation(e.getX(), e.getY());
 						clickedNode = clickedPath==null ? null : clickedPath.getLastPathComponent();
+						selectedPaths = null;
+						if (clickedNode==null) {
+							selectedPaths = MainTreeContextMenu.this.tree.getSelectionPaths();
+						}
 						prepareMenuItems();
 						show(MainTreeContextMenu.this.tree, e.getX(), e.getY());
 					}
@@ -1237,9 +1243,12 @@ class SteamInspector {
 				}
 			} else {
 				miSetTitle.setEnabled(false);
-				miDetermineTitle.setEnabled(true);
 				miSetTitle.setText("Set Title of Game");
-				miDetermineTitle.setText("Determine Titles of All untitled Games");
+				miDetermineTitle.setEnabled(true);
+				if (selectedPaths!=null && selectedPaths.length>1)
+					miDetermineTitle.setText("Determine Titles of All Selected Games");
+				else
+					miDetermineTitle.setText("Determine Titles of All Untitled Games");
 			}
 			
 			if (clickedFilter!=null) {
@@ -1286,46 +1295,67 @@ class SteamInspector {
 					if (newTitle!=null) setNewGameTitle(treeModel, gameID, newTitle);
 				});
 				
+			} else if (selectedPaths!=null && selectedPaths.length>1) {
+				ProgressDialog.runWithProgressDialog(mainWindow, "Determine Titles of All Selected Game by Shop Page", 300, true, pd->{
+					Vector<Integer> gameIDs = new Vector<>();
+					for (TreePath path:selectedPaths)
+						if (path != null) {
+							Object pathComp = path.getLastPathComponent();
+							if (pathComp instanceof TreeNode) {
+								Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID((TreeNode) pathComp);
+								if (gameID!=null && !gameIDs.contains(gameID))
+									gameIDs.add(gameID);
+							}
+						}
+					
+					determineGameTitleByShopPage(treeModel, pd, gameIDs);
+				});
+				
+				
 			} else {
 				int result = JOptionPane.showConfirmDialog(mainWindow, "Do You really want to determine the titles of all untitled games?", "Are You Sure?", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
 				if (result!=JOptionPane.YES_OPTION) return;
 				
-				ProgressDialog.runWithProgressDialog(mainWindow, "Determine All Game Titles By Shop Page", 300, true, pd->{
+				ProgressDialog.runWithProgressDialog(mainWindow, "Determine Titles of All Untitled Games by Shop Page", 300, true, pd->{
 					Vector<Integer> gameIDs = new Vector<>(Data.games.keySet());
 					gameIDs.sort(null);
 					
-					for (Integer gameID:gameIDs) {
-						//System.out.printf("Determine Game Title By ShopPage: %d%n", gameID);
-						SwingUtilities.invokeLater(()->{
-							pd.setTaskTitle("["+gameID+"] Check Game");
-							pd.setIndeterminate(true);
-						});
-						
-						Game game = Data.games.get(gameID);
-						if (game!=null && game.hasAFixedTitle()) continue;
-						
-						String storedTitle = Data.knownGameTitles.get(gameID);
-						if (storedTitle!=null && !storedTitle.isEmpty()) continue;
-						
-						if (Thread.currentThread().isInterrupted()) {
-							//System.out.printf("... %d ... interrupted%n", gameID);
-							break;
-						}
-						
-						String newTitle = determineGameTitleByShopPage(gameID, pd, false, false);
-						if (newTitle!=null) {
-							Data.knownGameTitles.put(gameID, newTitle);
-							TreeNodes.PlayersNGames.gameChangeListeners.gameTitleWasChanged(treeModel, gameID);
-						}
-					}
-					
-					SwingUtilities.invokeLater(()->{
-						pd.setTaskTitle("Write Known Game Titles to file");
-						pd.setIndeterminate(true);
-					});
-					Data.knownGameTitles.writeToFile();
+					determineGameTitleByShopPage(treeModel, pd, gameIDs);
 				});
 			}
+		}
+
+		private static void determineGameTitleByShopPage(DefaultTreeModel treeModel, ProgressDialog pd, Vector<Integer> gameIDs) {
+			for (Integer gameID:gameIDs) {
+				//System.out.printf("Determine Game Title By ShopPage: %d%n", gameID);
+				SwingUtilities.invokeLater(()->{
+					pd.setTaskTitle("["+gameID+"] Check Game");
+					pd.setIndeterminate(true);
+				});
+				
+				Game game = Data.games.get(gameID);
+				if (game!=null && game.hasAFixedTitle()) continue;
+				
+				String storedTitle = Data.knownGameTitles.get(gameID);
+				if (storedTitle!=null && !storedTitle.isEmpty()) continue;
+				
+				if (Thread.currentThread().isInterrupted()) {
+					//System.out.printf("... %d ... interrupted%n", gameID);
+					break;
+				}
+				
+				String newTitle = determineGameTitleByShopPage(gameID, pd, false, false);
+				if (newTitle!=null) {
+					Data.knownGameTitles.put(gameID, newTitle);
+					TreeNodes.PlayersNGames.gameChangeListeners.gameTitleWasChanged(treeModel, gameID);
+				}
+			}
+			
+			SwingUtilities.invokeLater(()->{
+				pd.setTaskTitle("Write Known Game Titles to file");
+				pd.setIndeterminate(true);
+			});
+			Data.knownGameTitles.writeToFile();
 		}
 
 		private static String determineGameTitleByShopPage(Integer gameID, ProgressDialog pd, boolean writeHtmlIfCantFindName, boolean verbose) {
@@ -1335,7 +1365,9 @@ class SteamInspector {
 			LabeledUrl shopURL = Data.getShopURL(gameID);
 			Result result = determineGameTitleByShopPage(gameID, pd, writeHtmlIfCantFindName, verbose, shopURL.url);
 			if (result==null) return null;
+			
 			if (result.newTitle==null && result.redirectLocation!=null) {
+				if (Thread.currentThread().isInterrupted()) return null;
 				if (result.redirectLocation.startsWith("https://store.steampowered.com/agecheck/app/")) {
 					if (verbose) System.err.printf("Was redirected to age check for game %s.%n", gameID);
 					result = determineGameTitleByShopPage(gameID, pd, writeHtmlIfCantFindName, verbose, result.redirectLocation);
