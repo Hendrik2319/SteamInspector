@@ -32,6 +32,7 @@ import javax.imageio.ImageIO;
 import javax.swing.Icon;
 
 import net.schwarzbaer.gui.IconSource;
+import net.schwarzbaer.gui.ValueListOutput;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Array;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
@@ -43,7 +44,6 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextM
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.SortOption;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileNameNExt;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.ValueListOutput;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFParseException;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTraverseException;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;

@@ -55,6 +55,7 @@ import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
 import net.schwarzbaer.gui.IconSource;
+import net.schwarzbaer.gui.ValueListOutput;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.Data.AppManifest;
@@ -293,78 +294,6 @@ class TreeNodes {
 			}
 			return colorSetting.notProcessed;
 		}
-	}
-	
-	static class ValueListOutput extends Vector<ValueListOutput.Entry> {
-		private static final long serialVersionUID = -5898390765518030500L;
-
-		void add(int indentLevel, String label, int     value) { add(indentLevel, label, "%d", value); }
-		void add(int indentLevel, String label, long    value) { add(indentLevel, label, "%d", value); }
-		void add(int indentLevel, String label, float   value) { add(indentLevel, label, "%f", value); }
-		void add(int indentLevel, String label, double  value) { add(indentLevel, label, "%f", value); }
-		void add(int indentLevel, String label, boolean value) { add(indentLevel, label, "%s", value); }
-		void add(int indentLevel, String label, Integer value) { if (value==null) add(indentLevel, label, "<null> (%s)", "Integer"); else add(indentLevel, label, "%d", value); }
-		void add(int indentLevel, String label, Long    value) { if (value==null) add(indentLevel, label, "<null> (%s)", "Long"   ); else add(indentLevel, label, "%d", value); }
-		void add(int indentLevel, String label, Float   value) { if (value==null) add(indentLevel, label, "<null> (%s)", "Float"  ); else add(indentLevel, label, "%f", value); }
-		void add(int indentLevel, String label, Double  value) { if (value==null) add(indentLevel, label, "<null> (%s)", "Double" ); else add(indentLevel, label, "%f", value); }
-		void add(int indentLevel, String label, Boolean value) { if (value==null) add(indentLevel, label, "<null> (%s)", "Boolean"); else add(indentLevel, label, "%s", value); }
-		void add(int indentLevel, String label, String  value) { if (value==null) add(indentLevel, label, "<null> (%s)", "String" ); else add(indentLevel, label, "\"%s\"", value); }
-		
-		void addEmptyLine() { add(null); }
-		
-		void add(int indentLevel, String label, String format, Object... args) {
-			add(new Entry(indentLevel, label, format, args));
-		}
-		void add(int indentLevel, String label) {
-			add(new Entry(indentLevel, label, ""));
-		}
-
-		String generateOutput() {
-			return generateOutput("");
-		}
-		String generateOutput(String baseIndent) {
-			HashMap<Integer,Integer> labelLengths = new HashMap<>();
-			for (Entry entry:this)
-				if (entry!=null){
-					Integer maxLength = labelLengths.get(entry.indentLevel);
-					if (maxLength==null) maxLength=0;
-					maxLength = Math.max(entry.label.length(), maxLength);
-					labelLengths.put(entry.indentLevel,maxLength);
-				}
-			
-			HashMap<Integer,String> indents = new HashMap<>();
-			for (Integer indentLevel:labelLengths.keySet()) {
-				String str = ""; int i=0;
-				while (i<indentLevel) { str += "    "; i++; }
-				indents.put(indentLevel, str);
-			}
-			
-			StringBuilder sb = new StringBuilder();
-			for (Entry entry:this)
-				if (entry == null)
-					sb.append(String.format("%n"));
-				else {
-					String spacer = entry.valueStr.isEmpty() ? "" : entry.label.isEmpty() ? "  " : ": ";
-					String indent = indents.get(entry.indentLevel);
-					int labelLength = labelLengths.get(entry.indentLevel);
-					String labelFormat = labelLength==0 ? "%s" : "%-"+labelLength+"s";
-					sb.append(String.format("%s%s"+labelFormat+"%s%s%n", baseIndent, indent, entry.label, spacer, entry.valueStr));
-				}
-			
-			return sb.toString();
-		}
-
-		static class Entry {
-			final int indentLevel;
-			final private String label;
-			final private String valueStr;
-			public Entry(int indentLevel, String label, String format, Object... args) {
-				this.indentLevel = indentLevel;
-				this.label = label==null ? "" : label.trim();
-				this.valueStr = String.format(Locale.ENGLISH, format, args);
-			}
-		}
-		
 	}
 	
 	static class FileNameNExt implements Comparable<FileNameNExt>{
@@ -1237,7 +1166,7 @@ class TreeNodes {
 							GameInfosNode::new
 					));
 				}
-				if (!game.lastPlayedData.isEmpty()) { // TODO
+				if (!game.lastPlayedData.isEmpty()) {
 					children.add(GroupingNode.create(
 							this, "Last Played",
 							game.lastPlayedData,
@@ -1433,7 +1362,7 @@ class TreeNodes {
 				return node;
 			}
 
-			private static SimpleLeafNode createAppDataNode(TreeNode p, SoftwareValveSteamApps.AppData app, String title, Icon icon) { // TODO
+			private static SimpleLeafNode createAppDataNode(TreeNode p, SoftwareValveSteamApps.AppData app, String title, Icon icon) {
 				SimpleLeafNode node = new SimpleLeafNode(p, icon, title);
 				if (app.hasParsedData)
 					node.setTextSource(()->{
