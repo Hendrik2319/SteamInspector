@@ -38,6 +38,7 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Array;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.TraverseException;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value;
+import net.schwarzbaer.java.lib.jsonparser.JSON_Helper;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.LabeledUrl;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.MainTreeContextMenu.FilterOption;
@@ -55,9 +56,9 @@ class Data {
 		
 		static OptionalValues optional = new OptionalValues();
 		static class OptionalValues {
-			final OptionalVdfValues      vdfValues      = new OptionalVdfValues();
-			final OptionalJsonValues     jsonValues     = new OptionalJsonValues();
-			final OptionalJsonValues_Old jsonValues_old = new OptionalJsonValues_Old();
+			final OptionalVdfValues                vdfValues      = new OptionalVdfValues();
+			final JSON_Helper.OptionalValues<NV,V> jsonValues     = new JSON_Helper.OptionalValues<NV,V>();
+			final OptionalJsonValues_Old           jsonValues_old = new OptionalJsonValues_Old();
 			void clear() {
 				vdfValues     .clear();
 				jsonValues    .clear();
@@ -178,203 +179,6 @@ class Data {
 					return sb.toString();
 				}
 				
-			}
-		}
-		
-		static class OptionalJsonValues extends HashMap<String,OptionalJsonValues.BlockTypes> {
-			private static final long serialVersionUID = -8194747876262097702L;
-			
-			void scan(JSON_Data.Value<NV, V> value, String prefixStr) {
-				
-				BlockTypes blockTypes = get(prefixStr);
-				boolean blockIsNew = false;
-				if (blockTypes==null) {
-					blockIsNew = true;
-					put(prefixStr, blockTypes=new BlockTypes());
-				}
-				
-				if (blockTypes.baseValue == null)
-					blockTypes.baseValue = new Types();
-				
-				if (value==null)
-					blockTypes.baseValue.types.add(null);
-				else {
-					blockTypes.baseValue.types.add(value.type);
-					scanSubValues(blockTypes.baseValue, value, "<Base>", prefixStr);
-				}
-			}
-			
-			void scan(JSON_Array<NV,V> array, String prefixStr) {
-				
-				BlockTypes blockTypes = get(prefixStr);
-				boolean blockIsNew = false;
-				if (blockTypes==null) {
-					blockIsNew = true;
-					put(prefixStr, blockTypes=new BlockTypes());
-				}
-				
-				if (blockTypes.baseValue == null)
-					blockTypes.baseValue = new Types();
-				
-				blockTypes.baseValue.types.add(JSON_Data.Value.Type.Array);
-				if (array==null)
-					blockTypes.baseValue.types.add(null);
-				else
-					scanArray(blockTypes.baseValue, array, "<Base>", prefixStr);
-			}
-			
-			void scan(JSON_Object<NV,V> object, String prefixStr) {
-				
-				BlockTypes blockTypes = get(prefixStr);
-				boolean blockIsNew = false;
-				if (blockTypes==null) {
-					blockIsNew = true;
-					put(prefixStr, blockTypes=new BlockTypes());
-				}
-				
-				scanObject(blockTypes, blockIsNew, object, prefixStr);
-			}
-
-			private void scanObject(BlockTypes blockTypes, boolean blockIsNew, JSON_Object<NV, V> object, String prefixStr) {
-				blockTypes.objectValues.forEach((name,types)->{
-					JSON_Data.Value<NV, V> value = object.getValue(name);
-					if (value==null) types.types.add(null);
-				});
-				
-				for (JSON_Data.NamedValue<NV,V> nvalue:object) {
-					Types types = blockTypes.objectValues.get(nvalue.name);
-					if (types==null) {
-						blockTypes.objectValues.put(nvalue.name, types=new Types());
-						if (!blockIsNew) types.types.add(null);
-					}
-					types.types.add(nvalue.value.type);
-					scanSubValues(types, nvalue.value, nvalue.name, prefixStr);
-				}
-			}
-
-			private void scanSubValues(Types types, JSON_Data.Value<NV, V> value, String name, String prefixStr) {
-				switch (value.type) {
-				case Bool: case Float: case Integer: case Null: case String: break;
-				case Array: {
-					JSON_Data.ArrayValue<NV, V> arrayValue = value.castToArrayValue();
-					if (arrayValue==null || arrayValue.value==null) throw new IllegalStateException();
-					scanArray(types, arrayValue.value, name, prefixStr);
-				} break;
-				case Object:
-					JSON_Data.ObjectValue<NV, V> objectValue = value.castToObjectValue();
-					if (objectValue==null || objectValue.value==null) throw new IllegalStateException();
-					String prefixStr2 = prefixStr+"."+name;
-					scan(objectValue.value, prefixStr2);
-					break;
-				}
-			}
-
-			private void scanArray(Types types, JSON_Array<NV, V> array, String name, String prefixStr) {
-				Types types2 = types.arrayValueTypes;
-				if (types2==null) types.arrayValueTypes = (types2=new Types());
-				if (array.isEmpty())
-					types.isEmptyArrayPossible = true;
-				else
-					for (JSON_Data.Value<NV, V> value:array) {
-						if (value==null || value.type==null) throw new IllegalStateException();
-						types2.types.add(value.type);
-						scanSubValues(types2, value, name+"[]", prefixStr);
-					}
-			}
-
-			@Override public String toString() {
-				StringBuilder sb = new StringBuilder();
-				sb.append(String.format("%s {%n",getClass().getSimpleName()));
-				String indent = "    ";
-				forEach((blockName,valueMap)->{
-					valueMap.toString(sb, indent, blockName);
-				});
-				sb.append("}\r\n");
-				return sb.toString();
-			}
-
-			void show(PrintStream out) {
-				if (isEmpty()) return;
-				String indent = "    ";
-				Vector<String> prefixStrs = new Vector<>(keySet());
-				prefixStrs.sort(null);
-				out.printf("Optional JSON Values: [%d blocks]%n", prefixStrs.size());
-				for (String prefixStr:prefixStrs) {
-					BlockTypes valueMap = get(prefixStr);
-					valueMap.show(out, indent, prefixStr);
-				}
-					
-			}
-			
-			static class BlockTypes {
-				HashMap<String,Types> objectValues = new HashMap<>();
-				Types baseValue = null;
-
-				void toString(StringBuilder sb, String indent, String blockName) {
-					String indent2 = indent+"    ";
-					sb.append(String.format("%s%s {%n", indent, blockName));
-					if (baseValue!=null) baseValue.toString(sb,indent2,"<Base>");
-					objectValues.forEach((valueName,types)->types.toString(sb, indent2, valueName));
-					sb.append(String.format("%s}%n", indent));
-				}
-
-				void show(PrintStream out, String indent, String prefixStr) {
-					Vector<String> names = new Vector<>(objectValues.keySet());
-					names.sort(null);
-					out.printf("%sBlock \"%s\" [%d]%n", indent, prefixStr, names.size());
-					String indent2 = indent+"    ";
-					if (baseValue!=null)
-						baseValue.show(out,indent2,"<Base>");
-					for (String name:names)
-						objectValues.get(name).show(out,indent2,name);
-				}
-			}
-
-			static class Types {
-				
-				HashSet<JSON_Data.Value.Type> types = new HashSet<>();
-				Types arrayValueTypes = null;
-				boolean isEmptyArrayPossible = false;
-				
-				void toString(StringBuilder sb, String indent, String valueName) {
-					toString(sb, indent, valueName, false);
-				}
-				void toString(StringBuilder sb, String indent, String valueName, boolean isEmptyArrayPossible) {
-					sb.append(String.format("%s%s = %s%s%n", indent, valueName, types.toString(), isEmptyArrayPossible ? " | EmptyArray" : ""));
-					if (arrayValueTypes!=null)
-						arrayValueTypes.toString(sb, indent, valueName+"[]", this.isEmptyArrayPossible);
-				}
-				
-				void show(PrintStream out, String indent, String name) {
-					show(out, indent, name, false);
-				}
-				void show(PrintStream out, String indent, String name, boolean isEmptyArrayPossible) {
-					Vector<JSON_Data.Value.Type> types = new Vector<>(this.types);
-					types.sort(Comparator.nullsLast(Comparator.naturalOrder()));
-					StringBuilder sb = new StringBuilder();
-					if      (types.size()==1) sb.append(types.firstElement());
-					else if (types.size()> 1) sb.append(types.toString());
-					if (isEmptyArrayPossible) {
-						if (sb.length()>0) sb.append(" or ");
-						sb.append("empty array");
-					}
-					out.printf("%s%s:%s%n", indent, name, sb.toString());
-					if (arrayValueTypes!=null)
-						arrayValueTypes.show(out, indent, name+"[]", this.isEmptyArrayPossible);
-					
-//					for (JSON_Data.Value.Type type:types) {
-//						String comment = ":"+type;
-//						if (type==null ) {
-//							if (name.endsWith("[]"))
-//								comment = " is empty"; // array was empty
-//							else if (name.isEmpty())
-//								comment = " == <null>"; // base value of this block was NULL
-//							else
-//								comment = " is optional"; // sub value of an object was optional
-//						}
-//						out.printf("      %s%s%n", name, comment);
-//					}
-				}
 			}
 		}
 		
@@ -3245,6 +3049,8 @@ class Data {
 				Achievements(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 					super(null, version, true);
 					
+					DevHelper.optional.jsonValues.scan(blockDataValue, "GameInfos.Achievements(V"+version+")");
+					
 					JSON_Object<NV, V> object        = JSON_Data.getObjectValue (blockDataValue, dataValueStr);
 					achieved                         = JSON_Data.getIntegerValue(object, "nAchieved"        , dataValueStr);
 					total                            = JSON_Data.getIntegerValue(object, "nTotal"           , dataValueStr);
@@ -3366,7 +3172,7 @@ class Data {
 				Badge(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 					super(null, version, true);
 					
-					// DevHelper.optionalJsonValues.scan(blockDataValue, "GameInfos.Badge(V"+version+")");
+					DevHelper.optional.jsonValues.scan(blockDataValue, "GameInfos.Badge(V"+version+")");
 					
 					JSON_Object<NV, V> object = JSON_Data.getObjectValue (blockDataValue, dataValueStr);
 					name          = JSON_Data.getStringValue (object, "strName"         , dataValueStr);
