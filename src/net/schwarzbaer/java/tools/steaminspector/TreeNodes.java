@@ -79,9 +79,11 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AbstractTreeCont
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.BaseTreeNode;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteBasedTextFileSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ByteFileSource;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.CustomOutputSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternViewableItem;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ExternalViewerInfo;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.FilePromise;
+import net.schwarzbaer.java.tools.steaminspector.SteamInspector.GameOverview;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.ImageNTextContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.LabeledFile;
@@ -1134,22 +1136,29 @@ class TreeNodes {
 			}
 		}
 		
-		private static class GameNode extends BaseTreeNode<TreeNode,TreeNode> implements URLBasedNode, ExternViewableNode {
+		private static class GameNode extends BaseTreeNode<TreeNode,TreeNode> implements URLBasedNode, ExternViewableNode, CustomOutputSource {
 		
 			private final Game game;
+			private GameOverview overview;
 		
 			protected GameNode(TreeNode parent, Game game) {
 				super(parent, game.getTitle(), true, false, game.getIcon());
 				this.game = game;
-				//if (this.game.title==null)
-					gameChangeListeners.add(this.game.appID, new GameChangeListener() {
-						@Override public TreeNode getTreeNode() { return GameNode.this; }
-						@Override public void gameTitleWasChanged() { setTitle(GameNode.this.game.getTitle()); }
-					});
+				overview = null;
+				gameChangeListeners.add(this.game.appID, new GameChangeListener() {
+					@Override public TreeNode getTreeNode() { return GameNode.this; }
+					@Override public void gameTitleWasChanged() { setTitle(GameNode.this.game.getTitle()); }
+				});
 			}
 
 			@Override public LabeledUrl getURL() { return Data.getShopURL(game.appID); }
 			@Override public ExternViewableItem getExternViewableItem() { return ExternalViewerInfo.Browser.createItem(getURL()); }
+
+			@Override ContentType getContentType() { return ContentType.Custom; }
+			@Override public GameOverview getCustomOutput() {
+				if (overview==null) overview = new GameOverview(game);
+				return overview;
+			}
 
 			@Override
 			protected Vector<? extends TreeNode> createChildren() {

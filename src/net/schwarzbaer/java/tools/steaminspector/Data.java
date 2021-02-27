@@ -903,8 +903,19 @@ class Data {
 	}
 	
 	static LabeledUrl getShopURL(int appID) { return getShopURL(""+appID); }
-	static LabeledUrl getShopURL(String appID) {
-		return new LabeledUrl("Shop Page", "https://store.steampowered.com/app/"+appID+"/");
+	static LabeledUrl getShopURL(String appID) { return getGameURL(GameURL.ShopPage,appID); }
+	
+	enum GameURL { ShopPage, NewsHub, Community, Workshop, Discussions, Guides }
+	static LabeledUrl getGameURL(GameURL type, String appID) {
+		switch (type) {
+		case ShopPage   : return new LabeledUrl("Shop Page", "https://store.steampowered.com/app/"+appID+"/");
+		case Community  : return new LabeledUrl("Shop Page", "https://steamcommunity.com/app/"+appID);
+		case Discussions: return new LabeledUrl("Shop Page", "https://steamcommunity.com/app/"+appID+"/discussions/");
+		case Guides     : return new LabeledUrl("Shop Page", "https://steamcommunity.com/app/"+appID+"/guides/");
+		case Workshop   : return new LabeledUrl("Shop Page", "https://steamcommunity.com/app/"+appID+"/workshop/");
+		case NewsHub    : return new LabeledUrl("Shop Page", "https://store.steampowered.com/news/app/"+appID);
+		}
+		return null;
 	}
 	
 	static LabeledUrl getWorkshopItemURL(String id) {

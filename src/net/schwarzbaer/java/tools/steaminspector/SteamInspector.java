@@ -32,6 +32,8 @@ import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -44,11 +46,13 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import javax.imageio.ImageIO;
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
 import javax.swing.Icon;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JCheckBoxMenuItem;
@@ -94,6 +98,7 @@ import net.schwarzbaer.gui.ProgressDialog;
 import net.schwarzbaer.gui.StandardDialog;
 import net.schwarzbaer.gui.StandardMainWindow;
 import net.schwarzbaer.java.tools.steaminspector.Data.Game;
+import net.schwarzbaer.java.tools.steaminspector.Data.GameURL;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
 import net.schwarzbaer.system.ClipboardTools;
 import net.schwarzbaer.system.Settings;
@@ -356,7 +361,19 @@ class SteamInspector {
 			BaseTreeNode.ContentType contentType = baseTreeNode.getContentType();
 			if (contentType!=null) {
 				switch (contentType) {
-				// TODO: add CustomOutput as ContentType (--> Game Overview: Link to NewsHub, ShopPage, Community, Discussions ... | Image(s) from Game, Description(s))
+				
+				case Custom:
+					if (baseTreeNode instanceof CustomOutputSource) {
+						CustomOutputSource source = (CustomOutputSource) baseTreeNode;
+						FileContentOutput customOutput = source.getCustomOutput();
+						if (customOutput!=null) {
+							changeFileContentOutput(customOutput);
+							hideOutput = false;
+						}
+					} else
+						System.err.printf("TreeNode (\"%s\") has wrong ContentSource interface for \"%s\" ContentType %n", baseTreeNode, contentType);
+					break;
+					
 				case Bytes:
 					if (baseTreeNode instanceof ByteContentSource) {
 						ByteContentSource source = (ByteContentSource) baseTreeNode;
@@ -468,7 +485,11 @@ class SteamInspector {
 	}
 
 	private static <BTN extends AbstractButton> BTN configure(BTN comp, boolean isEnabled, ButtonGroup bg, ActionListener al) {
+		return configure(comp, isEnabled, false, bg, al);
+	}
+	private static <BTN extends AbstractButton> BTN configure(BTN comp, boolean isEnabled, boolean leftAligned, ButtonGroup bg, ActionListener al) {
 		comp.setEnabled(isEnabled);
+		if (leftAligned) comp.setHorizontalAlignment(AbstractButton.LEFT);
 		if (bg!=null) bg.add(comp);
 		if (al!=null) comp.addActionListener(al);
 		return comp;
@@ -479,6 +500,9 @@ class SteamInspector {
 
 	static JRadioButton createRadioButton(String title, boolean isSelected, boolean isEnabled, ButtonGroup bg, Consumer<Boolean> setValue) {
 		return configure(new JRadioButton(title, isSelected), isEnabled, bg, setValue);
+	}
+	static JButton createButton(String title, boolean enabled, boolean leftAligned, ActionListener al) {
+		return configure(new JButton(title), enabled, leftAligned, null, al);
 	}
 	static JButton createButton(String title, boolean enabled, ActionListener al) {
 		return configure(new JButton(title), enabled, null, al);
@@ -1183,7 +1207,7 @@ class SteamInspector {
 			
 			add(miCopyPath  = createMenuItem("Copy Path to Clipboard" , true, e->ClipboardTools.copyToClipBoard(clickedFile.file.getAbsolutePath())));
 			add(miCopyURL   = createMenuItem("Copy URL to Clipboard"  , true, e->ClipboardTools.copyToClipBoard(clickedURL.url)));
-			add(miExtViewer = createMenuItem("Open in External Viewer", true, e->openAs(clickedEVI)));
+			add(miExtViewer = createMenuItem("Open in External Viewer", true, e->openViewableItem(clickedEVI)));
 			add(extViewerChooseMenu.createMenu());
 			add(miSetTitle       = createMenuItem("Set Title", true, e->changeGameTitle()));
 			add(miDetermineTitle = createMenuItem("Determine Title by Shop Page", true, e->determineGameTitleByShopPage()));
@@ -1581,8 +1605,12 @@ class SteamInspector {
 			}
 		}
 
-		private void openAs(ExternViewableItem viewableItem) {
-			File viewer = viewableItem.viewerInfo.getExecutable(tree);
+		private void openViewableItem(ExternViewableItem viewableItem) {
+			openViewableItem(tree, viewableItem);
+		}
+
+		static void openViewableItem(Component parent, ExternViewableItem viewableItem) {
+			File viewer = viewableItem.viewerInfo.getExecutable(parent);
 			if (viewer==null) return;
 			
 			String viewerPath = viewer.getAbsolutePath();
@@ -1616,7 +1644,7 @@ class SteamInspector {
 				menu = new JMenu("Open in ...");
 				menuItems.clear();
 				for (ExternalViewerInfo evi:ExternalViewerInfo.values())
-					menuItems.put(evi, menu.add(createMenuItem(evi.viewerName, true, e->openAs(clickedEVI.createCopy(evi)))));
+					menuItems.put(evi, menu.add(createMenuItem(evi.viewerName, true, e->openViewableItem(clickedEVI.createCopy(evi)))));
 				return menu;
 			}
 		
@@ -1685,6 +1713,95 @@ class SteamInspector {
 		}
 		@Override void showLoadingMsg() {}
 	}
+	
+	static class GameOverview extends FileContentOutput {
+
+		private final JPanel panel;
+
+		public GameOverview(Game game) {
+			panel = new JPanel(new GridBagLayout());
+			GridBagConstraints c = new GridBagConstraints();
+			c.fill = GridBagConstraints.BOTH;
+			c.gridx = 0;
+			c.gridy = 0;
+			c.gridwidth  = 1;
+			c.gridheight = 1;
+			c.weightx = 0;
+			c.weighty = 0;
+			
+			if (game==null) return;
+			
+			boolean withHeaderImage = false;
+			File headerImageFile = game.imageFiles.get("header");
+			if (headerImageFile!=null) {
+				BufferedImage image = null;
+				try { image = ImageIO.read(headerImageFile); }
+				catch (IOException e1) {}
+				if (image!=null) {
+					JLabel headerImageLabel = new JLabel(new ImageIcon(image));
+					headerImageLabel.setPreferredSize(new Dimension(460,215));
+					c.gridheight = 7;
+					panel.add(headerImageLabel,c);
+					c.gridheight = 1;
+					c.gridx++;
+					withHeaderImage = true;
+				}
+			}
+			
+			c.weightx = 1;
+			panel.add(createButton("Shop Page"  , true, true, e->openGameURL(Data.GameURL.ShopPage   , game.appID)),c); c.gridy++;
+			panel.add(createButton("News Hub"   , true, true, e->openGameURL(Data.GameURL.NewsHub    , game.appID)),c); c.gridy++;
+			panel.add(createButton("Community"  , true, true, e->openGameURL(Data.GameURL.Community  , game.appID)),c); c.gridy++;
+			panel.add(createButton("Discussions", true, true, e->openGameURL(Data.GameURL.Discussions, game.appID)),c); c.gridy++;
+			panel.add(createButton("Guides"     , true, true, e->openGameURL(Data.GameURL.Guides     , game.appID)),c); c.gridy++;
+			panel.add(createButton("Workshop"   , true, true, e->openGameURL(Data.GameURL.Workshop   , game.appID)),c); c.gridy++;
+			if (withHeaderImage) { /*c.weighty = 1;*/ panel.add(new JLabel(),c); c.gridy++; }
+			
+			HashMap<Long,String> fullDescriptions  = new HashMap<>();
+			HashMap<Long,String> shortDescriptions = new HashMap<>();
+			if (game.gameInfos!=null) {
+				game.gameInfos.forEach((playerrID,infos)->{
+					if (infos.fullDesc !=null) fullDescriptions .put(playerrID, infos.fullDesc);
+					if (infos.shortDesc!=null) shortDescriptions.put(playerrID, infos.shortDesc);
+				});
+			}
+			
+			c.gridx = 0;
+			c.gridwidth = withHeaderImage ? 2 : 1;
+			c.weighty = 1;
+			if (fullDescriptions.isEmpty() && shortDescriptions.isEmpty()) {
+				panel.add(new JLabel(),c);
+				
+			} else {
+				HashSet<Long> playerIDs = new HashSet<>();
+				playerIDs.addAll(fullDescriptions.keySet());
+				playerIDs.addAll(shortDescriptions.keySet());
+				Vector<Long> sortedPlayerIDs = new Vector<>(playerIDs);
+				sortedPlayerIDs.sort(null);
+				
+				JTabbedPane descriptions = new JTabbedPane();
+				for (Long playerID:sortedPlayerIDs) {
+					String playerName = Data.getPlayerName(playerID);
+					String fullDescription  = fullDescriptions .get(playerID);
+					String shortDescription = shortDescriptions.get(playerID);
+					TextOutput shortDescrField = shortDescription==null ? null : new TextOutput(shortDescription);
+					TextOutput  fullDescrField =  fullDescription==null ? null : new TextOutput( fullDescription);
+					if (shortDescrField!=null) descriptions.addTab("Short Description by "+playerName, shortDescrField.getMainComponent());
+					if ( fullDescrField!=null) descriptions.addTab( "Full Description by "+playerName,  fullDescrField.getMainComponent());
+				}
+				panel.add(descriptions,c);
+			}
+			// TODO Auto-generated constructor stub
+		}
+
+		private void openGameURL(GameURL gameURL, int appID) {
+			MainTreeContextMenu.openViewableItem(panel, ExternalViewerInfo.Browser.createItem(Data.getGameURL(gameURL, ""+appID)));
+		}
+
+		@Override Component getMainComponent() { return panel; }
+		@Override void showLoadingMsg() {}
+	}
+
 
 	private static class ImageNTextOutput extends FileContentOutput {
 		
@@ -1905,6 +2022,11 @@ class SteamInspector {
 			new ContextMenu();
 		}
 		
+		TextOutput(String text) {
+			this();
+			setText(text);
+		}
+
 		private void updateWordWrap() {
 			//System.out.printf("TextOutput[%08X].updateWordWrap [isWordWrapActive:%s]%n", hashCode(), isWordWrapActive);
 			view.setLineWrap(isWordWrapActive);
@@ -2269,6 +2391,9 @@ class SteamInspector {
 		long getFileSize();
 	}
 	
+	interface CustomOutputSource {
+		FileContentOutput getCustomOutput();
+	}
 	interface ByteContentSource {
 		byte[] getContentAsBytes();
 	}
@@ -2357,7 +2482,7 @@ class SteamInspector {
 
 	static abstract class BaseTreeNode<ParentNodeType extends TreeNode, ChildNodeType extends TreeNode> implements TreeNodes.TreeNodeII {
 		
-		enum ContentType { PlainText, Bytes, ByteBasedText, ParsedByteBasedText, Image, DataTree, ImageNText }
+		enum ContentType { PlainText, Bytes, ByteBasedText, ParsedByteBasedText, Image, DataTree, ImageNText, Custom }
 		
 		protected final ParentNodeType parent;
 		private   String title;
