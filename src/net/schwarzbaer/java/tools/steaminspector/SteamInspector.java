@@ -1755,7 +1755,7 @@ class SteamInspector {
 			panel.add(createButton("Discussions", true, true, e->openGameURL(Data.GameURL.Discussions, game.appID)),c); c.gridy++;
 			panel.add(createButton("Guides"     , true, true, e->openGameURL(Data.GameURL.Guides     , game.appID)),c); c.gridy++;
 			panel.add(createButton("Workshop"   , true, true, e->openGameURL(Data.GameURL.Workshop   , game.appID)),c); c.gridy++;
-			if (withHeaderImage) { /*c.weighty = 1;*/ panel.add(new JLabel(),c); c.gridy++; }
+			if (withHeaderImage) { panel.add(new JLabel(),c); c.gridy++; }
 			
 			HashMap<Long,String> fullDescriptions  = new HashMap<>();
 			HashMap<Long,String> shortDescriptions = new HashMap<>();
@@ -1791,7 +1791,6 @@ class SteamInspector {
 				}
 				panel.add(descriptions,c);
 			}
-			// TODO Auto-generated constructor stub
 		}
 
 		private void openGameURL(GameURL gameURL, int appID) {
