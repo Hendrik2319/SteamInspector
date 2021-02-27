@@ -356,7 +356,7 @@ class SteamInspector {
 			BaseTreeNode.ContentType contentType = baseTreeNode.getContentType();
 			if (contentType!=null) {
 				switch (contentType) {
-				
+				// TODO: add CustomOutput as ContentType (--> Game Overview: Link to NewsHub, ShopPage, Community, Discussions ... | Image(s) from Game, Description(s))
 				case Bytes:
 					if (baseTreeNode instanceof ByteContentSource) {
 						ByteContentSource source = (ByteContentSource) baseTreeNode;

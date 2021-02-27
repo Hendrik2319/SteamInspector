@@ -65,9 +65,9 @@ class Data {
 				jsonValues_old.clear();
 			}
 			void show(PrintStream out) {
-				vdfValues     .show(out);
-				jsonValues    .show(out);
-				jsonValues_old.show(out);
+				vdfValues     .show("Optional VDF Values",out);
+				jsonValues    .show("Optional JSON Values",out);
+				jsonValues_old.show("Optional JSON Values [OLD]",out);
 			}
 		}
 		
@@ -123,9 +123,9 @@ class Data {
 				}
 			}
 
-			void show(PrintStream out) {
+			void show(String label, PrintStream out) {
 				if (isEmpty()) return;
-				out.printf("Optional VDF Values: %d blocks%n", size());
+				out.printf("%s: %d blocks%n", label, size());
 				String indent = "    ";
 				String indent2 = indent+indent;
 				forEach_keySorted(this,(id,nodeTypes)->{
@@ -224,11 +224,11 @@ class Data {
 				return sb.toString();
 			}
 
-			void show(PrintStream out) {
+			void show(String label, PrintStream out) {
 				if (isEmpty()) return;
 				Vector<String> prefixStrs = new Vector<>(keySet());
 				prefixStrs.sort(null);
-				out.printf("Optional JSON Values [OLD]: [%d blocks]%n", prefixStrs.size());
+				out.printf("%s: [%d blocks]%n", label, prefixStrs.size());
 				for (String prefixStr:prefixStrs) {
 					HashMap<String, HashSet<JSON_Data.Value.Type>> valueMap = get(prefixStr);
 					Vector<String> names = new Vector<>(valueMap.keySet());
@@ -3049,7 +3049,7 @@ class Data {
 				Achievements(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 					super(null, version, true);
 					
-					DevHelper.optional.jsonValues.scan(blockDataValue, "GameInfos.Achievements(V"+version+")");
+					//DevHelper.optional.jsonValues.scan(blockDataValue, "GameInfos.Achievements(V"+version+")");
 					
 					JSON_Object<NV, V> object        = JSON_Data.getObjectValue (blockDataValue, dataValueStr);
 					achieved                         = JSON_Data.getIntegerValue(object, "nAchieved"        , dataValueStr);
@@ -3172,7 +3172,7 @@ class Data {
 				Badge(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 					super(null, version, true);
 					
-					DevHelper.optional.jsonValues.scan(blockDataValue, "GameInfos.Badge(V"+version+")");
+					//DevHelper.optional.jsonValues.scan(blockDataValue, "GameInfos.Badge(V"+version+")");
 					
 					JSON_Object<NV, V> object = JSON_Data.getObjectValue (blockDataValue, dataValueStr);
 					name          = JSON_Data.getStringValue (object, "strName"         , dataValueStr);
