@@ -1419,6 +1419,24 @@ class SteamInspector {
 			Data.knownGameTitles.writeToFile();
 		}
 
+		private static Result tryCommunityPage(Integer gameID, ProgressDialog pd, boolean writeHtmlIfCantFindName, boolean verbose) {
+			Result result = determineGameTitleByShopPage(gameID, pd, writeHtmlIfCantFindName, verbose, "https://steamcommunity.com/app/"+gameID);
+			if (result==null) return null;
+			if (verbose && result.newTitle!=null) System.err.printf("Found name on community page for game %s.%n", gameID);
+			if (result.newTitle==null && result.redirectLocation!=null) {
+				if (result.redirectLocation.startsWith("https://steamcommunity.com/app/")) {
+					if (verbose) System.err.printf("Was redirected to another community page.%n");
+					result = determineGameTitleByShopPage(gameID, pd, writeHtmlIfCantFindName, verbose, result.redirectLocation);
+					if (result==null) return null;
+					if (result.newTitle!=null) {
+						if (verbose) System.err.printf("Found a name on this community page. Generate a name for game %s.%n", gameID);
+						return Result.reportTitle(String.format("[Tool/Demo/DLC for %s]", result.newTitle));
+					}
+				}						
+			}
+			return result;
+		}
+
 		private static String determineGameTitleByShopPage(Integer gameID, ProgressDialog pd, boolean writeHtmlIfCantFindName, boolean verbose) {
 			if (gameID==null) throw new IllegalArgumentException();
 			if (pd==null) throw new IllegalArgumentException();
@@ -1427,32 +1445,39 @@ class SteamInspector {
 			Result result = determineGameTitleByShopPage(gameID, pd, writeHtmlIfCantFindName, verbose, shopURL.url);
 			if (result==null) return null;
 			
-			if (result.newTitle==null && result.redirectLocation!=null) {
-				if (Thread.currentThread().isInterrupted()) return null;
-				if (result.redirectLocation.startsWith("https://store.steampowered.com/agecheck/app/")) {
-					if (verbose) System.err.printf("Was redirected to age check for game %s.%n", gameID);
-					result = determineGameTitleByShopPage(gameID, pd, writeHtmlIfCantFindName, verbose, result.redirectLocation);
+			if (result.newTitle==null) {
+				if (result.isSiteError) {
+					result = tryCommunityPage(gameID, pd, writeHtmlIfCantFindName, verbose);
 					if (result==null) return null;
-				} else if (result.redirectLocation.equals("https://store.steampowered.com/")) {
-					if (verbose) System.err.printf("No shop page found for game %s.%n", gameID);
-					return null;
+					
+				} else if (result.redirectLocation!=null) {
+					if (Thread.currentThread().isInterrupted()) return null;
+					
+					if (result.redirectLocation.startsWith("https://store.steampowered.com/agecheck/app/")) {
+						if (verbose) System.err.printf("Was redirected to age check for game %s.%n", gameID);
+						result = determineGameTitleByShopPage(gameID, pd, writeHtmlIfCantFindName, verbose, result.redirectLocation);
+						if (result==null) return null;
+						if (verbose && result.newTitle!=null) System.err.printf("Found name on age check for game %s.%n", gameID);
+						
+					} else if (result.redirectLocation.startsWith("https://store.steampowered.com/app/")) {
+						if (verbose) System.err.printf("Was redirected to another shop page.%n");
+						result = determineGameTitleByShopPage(gameID, pd, writeHtmlIfCantFindName, verbose, result.redirectLocation);
+						if (result==null) return null;
+						if (result.newTitle!=null) {
+							if (verbose) System.err.printf("Found a name on this shop page. Generate a name for game %s.%n", gameID);
+							return String.format("[Tool/Demo/DLC for %s]", result.newTitle);
+						}
+						
+					} else if (result.redirectLocation.equals("https://store.steampowered.com/")) {
+						if (verbose) System.err.printf("No shop page found for game %s.%n", gameID);
+						result = tryCommunityPage(gameID, pd, writeHtmlIfCantFindName, verbose);
+						if (result==null) return null;
+					}
 				}
 			}
 			return result.newTitle;
 		}
 		
-		private static class Result {
-			final String newTitle;
-			final String redirectLocation;
-			Result(String newTitle) {
-				this(newTitle,null);
-			}
-			Result(String newTitle, String redirectLocation) {
-				this.newTitle = newTitle;
-				this.redirectLocation = redirectLocation;
-			}
-		}
-
 		private static Result determineGameTitleByShopPage(Integer gameID, ProgressDialog pd, boolean writeHtmlIfCantFindName, boolean verbose, String urlStr) {
 			SwingUtilities.invokeLater(()->{
 				pd.setTaskTitle("["+gameID+"] Get Connection to Server");
@@ -1493,7 +1518,7 @@ class SteamInspector {
 					if (verbose && location!=null) System.err.printf("was redirected to location: \"%s\"%n", location);
 					
 					//System.err.print(toString("HeaderFields", conn.getHeaderFields()));
-					return new Result(null,location);
+					return Result.reportRedirect(location);
 				}
 			} catch (IOException e) { System.err.printf("IOException while reading ResponseCode: %s (URL:%s)", e.getMessage(), urlStr); return null; }
 			if (Thread.currentThread().isInterrupted()) return null;
@@ -1511,14 +1536,20 @@ class SteamInspector {
 			
 			String newTitle = getPartOf(content, "<div class=\"apphub_AppName\">", "</div>");
 			if (newTitle==null) newTitle = getPartOf(content, "<meta property=\"og:title\" content=\"", " on Steam\">");
+			if (newTitle==null) newTitle = getPartOf(content, "<meta property=\"og:title\" content=\"Steam Community :: ", "\">");
 			
 			if (newTitle==null) {
-				if (verbose) System.err.printf("Can't find name in response: %s (URL:%s)%n", urlStr);
-				if (writeHtmlIfCantFindName) {
-					File file = new File(String.format("SteamGameShopPage.%d.html", gameID));
-					if (verbose) System.err.printf("Write response text to file \"%s\" ...%n", file.getAbsolutePath());
-				 	try { Files.write(file.toPath(), content.getBytes(), StandardOpenOption.CREATE); }
-				 	catch (IOException e) { System.err.printf("IOException while writing response file \"%s\": %s%n", file.getAbsolutePath(), e.getMessage()); }
+				if (content.contains("meta property=\"og:title\" content=\"Site Error\">")) {
+					if (verbose) System.err.printf("Response was \"Site Error\". Can't find name in response. (URL:%s)%n", urlStr);
+					return Result.reportSiteError();
+				} else {
+					if (verbose) System.err.printf("Can't find name in response. (URL:%s)%n", urlStr);
+					if (writeHtmlIfCantFindName) {
+						File file = new File(String.format("SteamGameShopPage.%d.html", gameID));
+						if (verbose) System.err.printf("Write response text to file \"%s\" ...%n", file.getAbsolutePath());
+					 	try { Files.write(file.toPath(), content.getBytes(), StandardOpenOption.CREATE); }
+					 	catch (IOException e) { System.err.printf("IOException while writing response file \"%s\": %s%n", file.getAbsolutePath(), e.getMessage()); }
+					}
 				}
 				return null;
 			}
@@ -1527,7 +1558,28 @@ class SteamInspector {
 			if (content.contains("<div class=\"game_area_bubble game_area_dlc_bubble \">"))
 				newTitle = "(DLC) "+newTitle;
 			
-			return new Result(newTitle);
+			return Result.reportTitle(newTitle);
+		}
+
+		private static class Result {
+			final String newTitle;
+			final String redirectLocation;
+			final boolean isSiteError;
+			
+			private Result(String newTitle, String redirectLocation, boolean isSiteError) {
+				this.newTitle = newTitle;
+				this.redirectLocation = redirectLocation;
+				this.isSiteError = isSiteError;
+			}
+			static Result reportTitle(String newTitle) {
+				return new Result(newTitle, null, false);
+			}
+			static Result reportRedirect(String redirectLocation) {
+				return new Result(null, redirectLocation, false);
+			}
+			static Result reportSiteError() {
+				return new Result(null, null, true);
+			}
 		}
 
 		@SuppressWarnings("unused")
@@ -1732,7 +1784,7 @@ class SteamInspector {
 			if (game==null) return;
 			
 			boolean withHeaderImage = false;
-			File headerImageFile = game.imageFiles.get("header");
+			File headerImageFile = game.imageFiles==null ? null : game.imageFiles.get("header");
 			if (headerImageFile!=null) {
 				BufferedImage image = null;
 				try { image = ImageIO.read(headerImageFile); }
