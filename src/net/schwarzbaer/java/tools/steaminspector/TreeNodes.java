@@ -2076,7 +2076,8 @@ class TreeNodes {
 						if (values.levels!=null)
 							for (CommunityItem.KeyValues.Level level:values.levels) {
 								String label = "Badge <Level "+level.id.toUpperCase()+">";
-								if (level.name!=null) label += " \""+level.name+"\"";
+								String levelname = level.getName();
+								if (levelname  !=null) label += " \""+levelname+"\"";
 								if (level.image!=null && !level.image.isEmpty())
 									addImageUrlNode(parent, children, data, level.image, label);
 								else
@@ -2210,6 +2211,7 @@ class TreeNodes {
 							str += String.format(Locale.ENGLISH, "%s: "+"%d (%s)"+"%n", "Unlocked"   , achievement.unlocked, achievement.unlocked==0 ? "not yet" : getTimeStr(achievement.unlocked*1000));
 							if (achievement.achievedRatio!=null)
 								str += String.format(Locale.ENGLISH, "%s: %f%n" , "Achieved Ratio", achievement.achievedRatio);
+							str += String.format(Locale.ENGLISH, "%s: %f (%f..%f)%n" , "Progress", achievement.currentProgress, achievement.minProgress, achievement.maxProgress);
 							return str;
 						}
 						return null;
@@ -2231,7 +2233,8 @@ class TreeNodes {
 							children.add(new SimpleLeafNode    (this, "Unlocked: %d (%s)", achievement.unlocked, achievement.unlocked==0 ? "not yet" : getTimeStr(achievement.unlocked*1000)));
 							if (achievement.achievedRatio!=null)
 								children.add(new PrimitiveValueNode(this, "Achieved Ratio", achievement.achievedRatio));
-							children.add(createImageUrlNode      (this, "Image"      , achievement.image      ));
+							children.add(new SimpleLeafNode    (this, "Progress: %f (%f..%f)", achievement.currentProgress, achievement.minProgress, achievement.maxProgress));
+							children.add(createImageUrlNode    (this, "Image"      , achievement.image      ));
 						}
 						return children;
 					}

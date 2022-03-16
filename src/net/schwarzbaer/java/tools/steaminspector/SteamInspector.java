@@ -106,6 +106,7 @@ import net.schwarzbaer.system.Settings;
 class SteamInspector {
 	
 	public static void main(String[] args) {
+		// SoftwareValveSteamApps
 		new SteamInspector().createGUI();
 	}
 
@@ -2586,8 +2587,8 @@ class SteamInspector {
 			return children.indexOf(node);
 		}
 
-		@SuppressWarnings("rawtypes")
-		@Override public Enumeration children() {
+		@Override
+		public Enumeration<? extends TreeNode> children() {
 			checkChildren("children()");
 			return children.elements();
 		}

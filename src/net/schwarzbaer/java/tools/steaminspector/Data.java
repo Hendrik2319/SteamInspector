@@ -1217,7 +1217,7 @@ class Data {
 
 					case Array:
 						switch (name) {
-						case "Apps":
+						case "Apps": case "apps":
 							String subPrefixStr = debugOutputPrefixStr+".Apps";
 							subNode.forEach((subNode1, type1, name1, value1)->{
 								return processAppsSubNode(subPrefixStr, file, subNode1, type1, name1, value1);
@@ -1358,7 +1358,7 @@ class Data {
 						
 						//DevHelper.optional.vdfValues.scan(node, "SoftwareValveSteamApps.Apps[]");
 						
-						lastPlayed_Ts           = parseLongNumber(str_lastPlayed           = node.getString         ("LastPlayed"            ));
+						lastPlayed_Ts           = parseLongNumber(str_lastPlayed           = node.getString_optional("LastPlayed"            ));
 						playtime_min            = parseNumber    (str_playtime             = node.getString_optional("Playtime"              ));
 						playtime_min_2weeks     = parseNumber    (str_playtime_2wks        = node.getString_optional("Playtime2wks"          ));
 						autocloud_lastexit_Ts   = parseLongNumber(str_autocloud_lastexit   = node.getString_optional("autocloud","lastexit"  ));
@@ -1759,20 +1759,21 @@ class Data {
 					}
 				}
 				
-				String         preFullDesc       = null;
-				String         preShortDesc      = null;
-				Badge          preBadge          = null;
-				Achievements   preAchievements   = null;
-				UserNews       preUserNews       = null;
-				GameActivity   preGameActivity   = null;
-				AchievementMap preAchievementMap = null;
-				SocialMedia    preSocialMedia    = null;
-				Associations   preAssociations   = null;
-				AppActivity    preAppActivity    = null;
-				ReleaseData    preReleaseData    = null;
-				Friends        preFriends        = null;
-				CommunityItems preCommunityItems = null;
-				Workshop       preWorkshop       = null;
+				String              preFullDesc            = null;
+				String              preShortDesc           = null;
+				Badge               preBadge               = null;
+				Achievements        preAchievements        = null;
+				UserNews            preUserNews            = null;
+				GameActivity        preGameActivity        = null;
+				AchievementMap      preAchievementMap      = null;
+				SocialMedia         preSocialMedia         = null;
+				Associations        preAssociations        = null;
+				AppActivity         preAppActivity         = null;
+				ReleaseData         preReleaseData         = null;
+				Friends             preFriends             = null;
+				CommunityItems      preCommunityItems      = null;
+				Workshop            preWorkshop            = null;
+				//WorkshopTrendyItems preWorkshopTrendyItems = null;
 				
 				for (Block block:blocks)
 					if (block.hasParsedData) {
@@ -1781,18 +1782,25 @@ class Data {
 						
 						switch (block.label) {
 							
-						case "badge"          : preBadge          = parseBlock( Badge         ::new, Badge         ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "achievements"   : preAchievements   = parseBlock( Achievements  ::new, Achievements  ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "usernews"       : preUserNews       = parseBlock( UserNews      ::new, UserNews      ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "gameactivity"   : preGameActivity   = parseBlock( GameActivity  ::new, GameActivity  ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "achievementmap" : preAchievementMap = parseBlock( AchievementMap::new, AchievementMap::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "socialmedia"    : preSocialMedia    = parseBlock( SocialMedia   ::new, SocialMedia   ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "associations"   : preAssociations   = parseBlock( Associations  ::new, Associations  ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "appactivity"    : preAppActivity    = parseBlock( AppActivity   ::new, AppActivity   ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "releasedata"    : preReleaseData    = parseBlock( ReleaseData   ::new, ReleaseData   ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "friends"        : preFriends        = parseBlock( Friends       ::new, Friends       ::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "community_items": preCommunityItems = parseBlock( CommunityItems::new, CommunityItems::new, block.dataValue, block.version, dataValueStr, file ); break;
-						case "workshop"       : preWorkshop       = parseBlock( Workshop      ::new, Workshop      ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "badge"                : preBadge               = parseBlock( Badge              ::new, Badge              ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "achievements"         : preAchievements        = parseBlock( Achievements       ::new, Achievements       ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "usernews"             : preUserNews            = parseBlock( UserNews           ::new, UserNews           ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "gameactivity"         : preGameActivity        = parseBlock( GameActivity       ::new, GameActivity       ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "achievementmap"       : preAchievementMap      = parseBlock( AchievementMap     ::new, AchievementMap     ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "socialmedia"          : preSocialMedia         = parseBlock( SocialMedia        ::new, SocialMedia        ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "associations"         : preAssociations        = parseBlock( Associations       ::new, Associations       ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "appactivity"          : preAppActivity         = parseBlock( AppActivity        ::new, AppActivity        ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "releasedata"          : preReleaseData         = parseBlock( ReleaseData        ::new, ReleaseData        ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "friends"              : preFriends             = parseBlock( Friends            ::new, Friends            ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "community_items"      : preCommunityItems      = parseBlock( CommunityItems     ::new, CommunityItems     ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "workshop"             : preWorkshop            = parseBlock( Workshop           ::new, Workshop           ::new, block.dataValue, block.version, dataValueStr, file ); break;
+						//case "workshop_trendy_items": preWorkshopTrendyItems = parseBlock( WorkshopTrendyItems::new, WorkshopTrendyItems::new, block.dataValue, block.version, dataValueStr, file ); break;
+						case "workshop_trendy_items":
+							if (block.dataValue!=null) {
+								System.err.printf("Found GameInfos.Block["+block.label+"] with non null BlockData in \"%s\"%n", file);
+								DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
+							}
+							break;
 							
 						case "descriptions":
 							JSON_Object<NV, V> object = null;
@@ -1806,24 +1814,30 @@ class Data {
 							}
 							break;
 							
+						//case "workshop_trendy_items": // unknown block
+						//	System.err.printf("Found GameInfos.Block["+block.label+"] in \"%s\"%n", file);
+						//	DevHelper.scanJsonStructure(block.dataValue,String.format("GameInfo.Block[\"%s\",V%d].dataValue", block.label, block.version));
+						//	break;
+							
 						default:
 							DevHelper.unknownValues.add("GameInfos.Block["+block.label+"] - Unknown Block");
 						}
 					}
-				fullDesc       = preFullDesc      ;
-				shortDesc      = preShortDesc     ;
-				badge          = preBadge         ;
-				achievements   = preAchievements  ;
-				userNews       = preUserNews      ;
-				gameActivity   = preGameActivity  ;
-				achievementMap = preAchievementMap;
-				socialMedia    = preSocialMedia   ;
-				associations   = preAssociations  ;
-				appActivity    = preAppActivity   ;
-				releaseData    = preReleaseData   ;
-				friends        = preFriends       ;
-				communityItems = preCommunityItems;
-				workshop       = preWorkshop      ;
+				fullDesc            = preFullDesc      ;
+				shortDesc           = preShortDesc     ;
+				badge               = preBadge         ;
+				achievements        = preAchievements  ;
+				userNews            = preUserNews      ;
+				gameActivity        = preGameActivity  ;
+				achievementMap      = preAchievementMap;
+				socialMedia         = preSocialMedia   ;
+				associations        = preAssociations  ;
+				appActivity         = preAppActivity   ;
+				releaseData         = preReleaseData   ;
+				friends             = preFriends       ;
+				communityItems      = preCommunityItems;
+				workshop            = preWorkshop      ;
+				//workshopTrendyItems = preWorkshopTrendyItems;
 			}
 			private static <ClassType> ClassType parseBlock(
 					BlockParseConstructor<ClassType> parseConstructor,
@@ -1858,6 +1872,7 @@ class Data {
 					return rawData==null;
 				}
 			}
+			
 			static class Workshop extends ParsedBlock {
 				
 				final Vector<Entry> entries;
@@ -2390,13 +2405,27 @@ class Data {
 								.add("level_images"          , JSON_Data.Value.Type.Object ) // optional value
 								.add("level_names"           , JSON_Data.Value.Type.Object );// optional value
 						
-						private static final DevHelper.KnownJsonValues KNOWN_LEVEL_VALUES = new DevHelper.KnownJsonValues()
+						private static final DevHelper.KnownJsonValues KNOWN_LEVEL_IMAGES_VALUES = new DevHelper.KnownJsonValues()
 								.add("1"   , JSON_Data.Value.Type.String)
 								.add("2"   , JSON_Data.Value.Type.String)
 								.add("3"   , JSON_Data.Value.Type.String)
 								.add("4"   , JSON_Data.Value.Type.String)
 								.add("5"   , JSON_Data.Value.Type.String)
 								.add("foil", JSON_Data.Value.Type.String);
+						
+						private static final DevHelper.KnownJsonValues KNOWN_LEVEL_NAMES_VALUES = new DevHelper.KnownJsonValues()
+								.add("1"   , JSON_Data.Value.Type.String)
+								.add("2"   , JSON_Data.Value.Type.String)
+								.add("3"   , JSON_Data.Value.Type.String)
+								.add("4"   , JSON_Data.Value.Type.String)
+								.add("5"   , JSON_Data.Value.Type.String)
+								.add("foil", JSON_Data.Value.Type.String)
+								.add("1"   , JSON_Data.Value.Type.Object)
+								.add("2"   , JSON_Data.Value.Type.Object)
+								.add("3"   , JSON_Data.Value.Type.Object)
+								.add("4"   , JSON_Data.Value.Type.Object)
+								.add("5"   , JSON_Data.Value.Type.Object)
+								.add("foil", JSON_Data.Value.Type.Object);
 
 						final JSON_Data.Value<NV, V> rawData;
 						final boolean hasParsedData;
@@ -2467,20 +2496,68 @@ class Data {
 							
 							String path = "TreeNodes.Player.GameInfos.CommunityItems.CommunityItem";
 							if (level_images!=null)
-								KNOWN_LEVEL_VALUES.scanUnexpectedValues(level_images, path+".KeyValues.level_images");
+								KNOWN_LEVEL_IMAGES_VALUES.scanUnexpectedValues(level_images, path+".KeyValues.level_images");
 							if (level_names !=null)
-								KNOWN_LEVEL_VALUES.scanUnexpectedValues(level_names, path+".KeyValues.level_names");
+								KNOWN_LEVEL_NAMES_VALUES.scanUnexpectedValues(level_names, path+".KeyValues.level_names");
 							KNOWN_VALUES.scanUnexpectedValues(object, path);
 						}
 						
 						static class Level {
 							final String id;
 							final String image;
-							final String name;
+							private final String name;
+							private final HashMap<String,String> nameMap;
+							
 							public Level(String id, JSON_Object<NV, V> level_images, JSON_Object<NV, V> level_names, String debugOutputPrefixStr) throws TraverseException {
 								this.id = id;
-								if (level_images==null) image = null; else image = JSON_Data.getStringValue(level_images, id, debugOutputPrefixStr+".level_images");
-								if (level_names ==null) name  = null; else name  = JSON_Data.getStringValue(level_names , id, debugOutputPrefixStr+".level_names" );
+								
+								if (level_images==null) image = null;
+								else image = JSON_Data.getStringValue(level_images, id, debugOutputPrefixStr+".level_images");
+								
+								if (level_names ==null) {
+									name  = null;
+									nameMap = null;
+								} else {
+									String             name_str = JSON_Data.getValue(level_names, id, false, JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, true, debugOutputPrefixStr);
+									JSON_Object<NV, V> name_obj = JSON_Data.getValue(level_names, id, false, JSON_Data.Value.Type.Object, JSON_Data.Value::castToObjectValue, true, debugOutputPrefixStr);
+									if (name_str==null && name_obj==null)
+										throw new TraverseException("%s isn't a StringValue or an ObjectValue", debugOutputPrefixStr+".level_names");
+									
+									name = name_str;
+									if (name_obj==null) nameMap = null;
+									else {
+										nameMap = new HashMap<>();
+										Vector<String> langNames = name_obj.getNames();
+										for (String lang : langNames) {
+											String name_lang = JSON_Data.getStringValue(name_obj, lang, debugOutputPrefixStr+".level_names."+id);
+											if (!name_lang.isBlank()) nameMap.put(lang, name_lang);
+										}
+									}
+								}
+							}
+							
+							public String getName() {
+								return getName(null);
+							}
+							public String getName(String lang) {
+								if (name!=null)
+									return name;
+								
+								if (nameMap!=null) {
+									if (lang!=null)
+										return nameMap.get(lang);
+									
+									if (nameMap.containsKey("english"))
+										return nameMap.get("english");
+									
+									Vector<String> langs = new Vector<>( nameMap.keySet() );
+									langs.sort(null);
+									
+									if (!langs.isEmpty())
+										return nameMap.get(langs.firstElement());
+								}
+								
+								return null;
 							}
 						}
 					}
@@ -3089,36 +3166,47 @@ class Data {
 				static class Achievement {
 
 					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
-							.add("bAchieved"     , JSON_Data.Value.Type.Bool   )
-							.add("flAchieved"    , JSON_Data.Value.Type.Float  )
-							.add("flAchieved"    , JSON_Data.Value.Type.Integer)
-							.add("rtUnlocked"    , JSON_Data.Value.Type.Integer)
-							.add("strDescription", JSON_Data.Value.Type.String )
-							.add("strID"         , JSON_Data.Value.Type.String )
-							.add("strImage"      , JSON_Data.Value.Type.String )
-							.add("strName"       , JSON_Data.Value.Type.String );
+							.add("bAchieved"        , JSON_Data.Value.Type.Bool   )
+							.add("flAchieved"       , JSON_Data.Value.Type.Float  ) // optional
+							.add("flAchieved"       , JSON_Data.Value.Type.Integer) // optional
+							.add("flCurrentProgress", JSON_Data.Value.Type.Float  ) // optional
+							.add("flCurrentProgress", JSON_Data.Value.Type.Integer) // optional
+							.add("flMaxProgress"    , JSON_Data.Value.Type.Float  ) // optional
+							.add("flMaxProgress"    , JSON_Data.Value.Type.Integer) // optional
+							.add("flMinProgress"    , JSON_Data.Value.Type.Float  ) // optional
+							.add("flMinProgress"    , JSON_Data.Value.Type.Integer) // optional
+							.add("rtUnlocked"       , JSON_Data.Value.Type.Integer)
+							.add("strDescription"   , JSON_Data.Value.Type.String )
+							.add("strID"            , JSON_Data.Value.Type.String )
+							.add("strImage"         , JSON_Data.Value.Type.String )
+							.add("strName"          , JSON_Data.Value.Type.String );
 					
 					final JSON_Data.Value<NV, V> rawData;
 					final boolean hasParsedData;
 					final boolean isAchieved;
 					final Double achievedRatio;
+					final Double currentProgress;
+					final Double maxProgress;
+					final Double minProgress;
 					final long unlocked;
 					final String description;
 					final String id;
 					final String image;
 					final String name;
 
-
 					public Achievement(JSON_Data.Value<NV, V> rawData) {
 						this.rawData = rawData;
-						hasParsedData = false;
-						isAchieved    = false;
-						achievedRatio = null;
-						unlocked      = -1;
-						description   = null;
-						id            = null;
-						image         = null;
-						name          = null;
+						hasParsedData   = false;
+						isAchieved      = false;
+						achievedRatio   = null;
+						currentProgress = null;
+						maxProgress     = null;
+						minProgress     = null;
+						unlocked        = -1;
+						description     = null;
+						id              = null;
+						image           = null;
+						name            = null;
 					}
 
 					public Achievement(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
@@ -3127,15 +3215,18 @@ class Data {
 						//DevHelper.scanJsonStructure(value,"GameStateInfo.Achievements.Achievement");
 						
 						JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, debugOutputPrefixStr);
-						isAchieved    = JSON_Data.getBoolValue   (object, "bAchieved"     , debugOutputPrefixStr);
-						unlocked      = JSON_Data.getIntegerValue(object, "rtUnlocked"    , debugOutputPrefixStr);
-						description   = JSON_Data.getStringValue (object, "strDescription", debugOutputPrefixStr);
-						id            = JSON_Data.getStringValue (object, "strID"         , debugOutputPrefixStr);
-						image         = JSON_Data.getStringValue (object, "strImage"      , debugOutputPrefixStr);
-						name          = JSON_Data.getStringValue (object, "strName"       , debugOutputPrefixStr);
-						achievedRatio = JSON_Data.getNumber(object, "flAchieved", true, debugOutputPrefixStr);
+						isAchieved      = JSON_Data.getBoolValue   (object, "bAchieved"        , debugOutputPrefixStr);
+						unlocked        = JSON_Data.getIntegerValue(object, "rtUnlocked"       , debugOutputPrefixStr);
+						description     = JSON_Data.getStringValue (object, "strDescription"   , debugOutputPrefixStr);
+						id              = JSON_Data.getStringValue (object, "strID"            , debugOutputPrefixStr);
+						image           = JSON_Data.getStringValue (object, "strImage"         , debugOutputPrefixStr);
+						name            = JSON_Data.getStringValue (object, "strName"          , debugOutputPrefixStr);
+						achievedRatio   = JSON_Data.getNumber      (object, "flAchieved",        true, debugOutputPrefixStr);
+						currentProgress = JSON_Data.getNumber      (object, "flCurrentProgress", true, debugOutputPrefixStr);
+						maxProgress     = JSON_Data.getNumber      (object, "flMaxProgress"    , true, debugOutputPrefixStr);
+						minProgress     = JSON_Data.getNumber      (object, "flMinProgress"    , true, debugOutputPrefixStr);
 						
-						KNOWN_VALUES.scanUnexpectedValues(object, "Data.Player.GameInfos.Achievements.Achievement");
+						KNOWN_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.Achievements.Achievement");
 					}
 					
 				}
