@@ -324,10 +324,22 @@ class Data {
 
 		static class KnownVdfValuesRecursive extends HashSet<String>{
 			private static final long serialVersionUID = 7831756644369424798L;
+			private final String defaultPrefixStr;
+			
+			KnownVdfValuesRecursive() { this(null,null); }
+			KnownVdfValuesRecursive(Class<?> dataClass) { this(dataClass,null); }
+			KnownVdfValuesRecursive(Class<?> dataClass, String annex) {
+				defaultPrefixStr = getValueLabelFor(dataClass, annex);
+			}
 			
 			KnownVdfValuesRecursive add(VDFTreeNode.Type type, String... path) {
 				add(String.join(".",path)+":"+type);
 				return this;
+			}
+			
+			final void scanUnexpectedValues(VDFTreeNode node) {
+				if (defaultPrefixStr==null) throw new IllegalStateException("Can't call scanUnexpectedValues without prefixStr, if KnownVdfValuesRecursive was constructed without class object.");
+				scanUnexpectedValues(node, defaultPrefixStr);
 			}
 			
 			void scanUnexpectedValues(VDFTreeNode node, String blockPrefix) {
@@ -1349,7 +1361,7 @@ class Data {
 					//     <Base>.eula_47870:[null, String]
 					//     <Base>.News:[null, String]
 					
-					private static final DevHelper.KnownVdfValuesRecursive KNOWN_VDF_VALUES = new DevHelper.KnownVdfValuesRecursive()
+					private static final DevHelper.KnownVdfValuesRecursive KNOWN_VDF_VALUES = new DevHelper.KnownVdfValuesRecursive(AppData.class)
 							.add(VDFTreeNode.Type.Array )
 							.add(VDFTreeNode.Type.Array , "autocloud")
 							.add(VDFTreeNode.Type.String, "autocloud", "lastexit")
@@ -1439,7 +1451,7 @@ class Data {
 						//showValue("eula_47870"      , eula_47870      );
 						//showValue("News"            , news            );
 						
-						KNOWN_VDF_VALUES.scanUnexpectedValues(node, "SoftwareValveSteamApps.Apps[]");
+						KNOWN_VDF_VALUES.scanUnexpectedValues(node); //, "SoftwareValveSteamApps.Apps[]");
 					}
 
 					@SuppressWarnings("unused")
@@ -2689,7 +2701,7 @@ class Data {
 				}
 				Friends(JSON_Data.Value<NV, V> blockDataValue, long version, String debugOutputPrefixStr, File file) throws TraverseException {
 					super(null, version, true);
-					String baseValueLabel = "TreeNodes.Player.GameInfos.Friends";
+					String baseValueLabel = DevHelper.getValueLabelFor(Friends.class);
 					//DevHelper.scanJsonStructure(blockDataValue, baseValueLabel, true);
 					
 					JSON_Object<NV, V> object = JSON_Data.getObjectValue(blockDataValue, debugOutputPrefixStr);
