@@ -53,6 +53,7 @@ class Data {
 
 	@SuppressWarnings("unused")
 	private static class DevHelper {
+		private static final String PACKAGE_PREFIX = "net.schwarzbaer.java.tools.steaminspector.";
 		
 		static OptionalValues optional = new OptionalValues();
 		static class OptionalValues {
@@ -271,24 +272,48 @@ class Data {
 			protected abstract SelfType getThis();
 		}
 
-		static class KnownJsonValues extends ExtHashMap<KnownJsonValues,JSON_Data.Value.Type> {
+		static abstract class KnownValues<SelfType,NodeType,TypeType> extends ExtHashMap<SelfType,TypeType> {
+			private static final long serialVersionUID = 5989432566005669294L;
+			private final String defaultPrefixStr;
+			
+			KnownValues(Class<?> dataClass, String annex) {
+				String str = getValueLabelFor(dataClass, annex);
+				defaultPrefixStr = str;
+			}
+			
+			final void scanUnexpectedValues(NodeType node) {
+				if (defaultPrefixStr==null) throw new IllegalStateException("Can't call scanUnexpectedValues without prefixStr, if KnownValues was constructed without class object.");
+				scanUnexpectedValues(node, defaultPrefixStr);
+			}
+			abstract void scanUnexpectedValues(NodeType node, String prefixStr);
+		}
+
+		static class KnownJsonValues extends KnownValues<KnownJsonValues, JSON_Object<NV,V>, JSON_Data.Value.Type> {
 			private static final long serialVersionUID = 875837641187739890L;
+			
+			KnownJsonValues() { this(null, null); }
+			KnownJsonValues(Class<?> dataClass) { this(dataClass, null); }
+			KnownJsonValues(Class<?> dataClass, String annex) { super(dataClass, annex); }
 			
 			@Override protected KnownJsonValues getThis() { return this; }
 			
-			void scanUnexpectedValues(JSON_Object<NV, V> object, String prefixStr) {
+			@Override void scanUnexpectedValues(JSON_Object<NV, V> object, String prefixStr) {
 				for (JSON_Data.NamedValue<NV,V> nvalue:object)
 					if (!contains(nvalue.name, nvalue.value.type))
 						unknownValues.add(prefixStr,nvalue.name,nvalue.value.type);
 			}
 		}
 
-		static class KnownVdfValues extends ExtHashMap<KnownVdfValues,VDFTreeNode.Type> {
+		static class KnownVdfValues extends KnownValues<KnownVdfValues, VDFTreeNode, VDFTreeNode.Type> {
 			private static final long serialVersionUID = -8137083046811709725L;
+			
+			KnownVdfValues() { this(null, null); }
+			KnownVdfValues(Class<?> dataClass) { this(dataClass, null); }
+			KnownVdfValues(Class<?> dataClass, String annex) { super(dataClass, annex); }
 			
 			@Override protected KnownVdfValues getThis() { return this; }
 			
-			void scanUnexpectedValues(VDFTreeNode node, String prefixStr) {
+			@Override void scanUnexpectedValues(VDFTreeNode node, String prefixStr) {
 				node.forEach((subNode,t,n,v) -> {
 					if (!contains(n,t))
 						unknownValues.add(prefixStr, n, t);
@@ -354,7 +379,27 @@ class Data {
 					out.printf("   \"%s\"%n", str);
 			}
 		}
-		
+
+		private static String getValueLabelFor(Class<?> dataClass) {
+			return getValueLabelFor(dataClass, null);
+		}
+
+		private static String getValueLabelFor(Class<?> dataClass, String annex) {
+			if (dataClass == null)
+				return null;
+			
+			String str = dataClass.getCanonicalName();
+			if (str==null) str = dataClass.getName();
+			
+			if (str.startsWith(PACKAGE_PREFIX))
+				str = str.substring(PACKAGE_PREFIX.length());
+			
+			if (annex!=null)
+				str += annex;
+			
+			return str;
+		}
+
 		static void scanVdfStructure(VDFTreeNode node, String nodeLabel) {
 			node.forEach((node1,t,n,v) -> {
 				unknownValues.add(nodeLabel, n, t);
@@ -364,6 +409,12 @@ class Data {
 			});
 		}
 		
+		static void scanJsonStructure(JSON_Data.Value<NV, V> value, Class<?> dataClass, String annex) {
+			scanJsonStructure(value, getValueLabelFor(dataClass, annex));
+		}
+		static void scanJsonStructure(JSON_Data.Value<NV, V> value, Class<?> dataClass) {
+			scanJsonStructure(value, getValueLabelFor(dataClass, null));
+		}
 		static void scanJsonStructure(JSON_Data.Value<NV, V> value, String valueLabel) {
 			scanJsonStructure(value, valueLabel, false);
 		}
@@ -389,6 +440,12 @@ class Data {
 			}
 		}
 	
+		static void scanJsonStructure(JSON_Object<NV,V> object, Class<?> dataClass, String annex) {
+			scanJsonStructure(object, getValueLabelFor(dataClass, annex));
+		}
+		static void scanJsonStructure(JSON_Object<NV,V> object, Class<?> dataClass) {
+			scanJsonStructure(object, getValueLabelFor(dataClass, null));
+		}
 		static void scanJsonStructure(JSON_Object<NV,V> object, String valueLabel) {
 			scanJsonStructure(object, valueLabel, false);
 		}
@@ -403,6 +460,12 @@ class Data {
 			}
 		}
 	
+		static void scanJsonStructure(JSON_Array<NV,V> array, Class<?> dataClass, String annex) {
+			scanJsonStructure(array, getValueLabelFor(dataClass, annex));
+		}
+		static void scanJsonStructure(JSON_Array<NV,V> array, Class<?> dataClass) {
+			scanJsonStructure(array, getValueLabelFor(dataClass, null));
+		}
 		static void scanJsonStructure(JSON_Array<NV,V> array, String valueLabel) {
 			scanJsonStructure(array, valueLabel, false);
 		}
@@ -1441,7 +1504,7 @@ class Data {
 				}
 			
 				static class Friend {
-					private static final DevHelper.KnownVdfValues KNOWN_VDF_VALUES = new DevHelper.KnownVdfValues()
+					private static final DevHelper.KnownVdfValues KNOWN_VDF_VALUES = new DevHelper.KnownVdfValues(Friend.class)
 							.add("name"  , VDFTreeNode.Type.String)
 							.add("tag"   , VDFTreeNode.Type.String)
 							.add("avatar", VDFTreeNode.Type.String)
@@ -1481,7 +1544,7 @@ class Data {
 						
 						Long parsedNodeName = parseLongNumber(nodeName);
 						if (parsedNodeName==null)
-							throw new VDFTraverseException("Name of node [%s] isn't a number.", node.getPath());
+							throw new VDFTraverseException("Name of node [%s] isn't a number.", node.getPathStr());
 							
 						id       = parsedNodeName;
 						id_lower = id & 0xFFFFFFFFL;
@@ -1508,14 +1571,14 @@ class Data {
 						} else
 							nameHistory = null;
 						
-						KNOWN_VDF_VALUES.scanUnexpectedValues(node, "TreeNodes.Player.FriendList.Friend");
+						KNOWN_VDF_VALUES.scanUnexpectedValues(node); //, "TreeNodes.Player.FriendList.Friend");
 					}
 				}
 			}
 		}
 
 		static class AchievementProgress {
-			private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues()
+			private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues(AchievementProgress.class)
 					.add("nVersion", JSON_Data.Value.Type.Integer)
 					.add("mapCache", JSON_Data.Value.Type.Object);
 
@@ -1564,11 +1627,11 @@ class Data {
 					else
 						gameStates_withoutID.add(progress);
 				}
-				KNOWN_JSON_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.AchievementProgress");
+				KNOWN_JSON_VALUES.scanUnexpectedValues(object); //, "TreeNodes.Player.AchievementProgress");
 			}
 			
 			static class AchievementProgressInGame {
-				private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues()
+				private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues(AchievementProgressInGame.class)
 						.add("all_unlocked", JSON_Data.Value.Type.Bool)
 						.add("appid"       , JSON_Data.Value.Type.Integer)
 						.add("cache_time"  , JSON_Data.Value.Type.Integer)
@@ -1621,7 +1684,7 @@ class Data {
 					total       = JSON_Data.getIntegerValue(object, "total"       , prefixStr);
 					unlocked    = JSON_Data.getIntegerValue(object, "unlocked"    , prefixStr);
 					percentage  = JSON_Data.getNumber(object, "percentage"  , prefixStr);
-					KNOWN_JSON_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.AchievementProgress.AchievementProgressInGame");
+					KNOWN_JSON_VALUES.scanUnexpectedValues(object); //, "TreeNodes.Player.AchievementProgress.AchievementProgressInGame");
 				}
 
 				int getGameID() { return (int) appID; }
@@ -1894,7 +1957,7 @@ class Data {
 				
 				static class Entry {
 
-					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues(Entry.class)
 							.add("app_name"                    , JSON_Data.Value.Type.String )
 							.add("available_revisions"         , JSON_Data.Value.Type.Array  )  // empty
 							.add("ban_reason"                  , JSON_Data.Value.Type.String )
@@ -2149,10 +2212,13 @@ class Data {
 						votes_down = JSON_Data.getIntegerValue(vote_data, "votes_down", debugOutputPrefixStr+".vote_data");
 						votes_up   = JSON_Data.getIntegerValue(vote_data, "votes_up"  , debugOutputPrefixStr+".vote_data");
 						
-						KNOWN_VALUES.scanUnexpectedValues(object, "GameInfos.Workshop.Entry");
+						KNOWN_VALUES.scanUnexpectedValues(object); //, "GameInfos.Workshop.Entry");
 					}
 					
 					static class Tag {
+						private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues(Tag.class)
+								.add("adminonly", JSON_Data.Value.Type.Bool)
+								.add("tag"      , JSON_Data.Value.Type.String);
 						//    Block "GameInfos.Workshop.Entry.tags[]" [2]
 						//       adminonly:Bool
 						//       tag:String
@@ -2162,6 +2228,7 @@ class Data {
 							JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, debugOutputPrefixStr);
 							adminonly = JSON_Data.getBoolValue  (object, "adminonly", debugOutputPrefixStr);
 							tag       = JSON_Data.getStringValue(object, "tag"      , debugOutputPrefixStr);
+							KNOWN_VALUES.scanUnexpectedValues(object);
 						}
 					}
 
@@ -2261,7 +2328,7 @@ class Data {
 
 				static class CommunityItem {
 
-					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues(CommunityItem.class)
 							.add("active"                  , JSON_Data.Value.Type.Bool   )
 							.add("appid"                   , JSON_Data.Value.Type.Integer)
 							.add("item_class"              , JSON_Data.Value.Type.Integer)
@@ -2370,7 +2437,7 @@ class Data {
 						//DevHelper.unknownValues.add("CommunityItem.itemMovieMp4Small  = "+(itemMovieMp4Small ==null ? "<null>" : "\""+itemMovieMp4Small +"\""));
 						//DevHelper.unknownValues.add("CommunityItem.itemMovieWebm      = "+(itemMovieWebm     ==null ? "<null>" : "\""+itemMovieWebm     +"\""));
 						//DevHelper.unknownValues.add("CommunityItem.itemMovieWebmSmall = "+(itemMovieWebmSmall==null ? "<null>" : "\""+itemMovieWebmSmall+"\""));
-						KNOWN_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.CommunityItems.CommunityItem");
+						KNOWN_VALUES.scanUnexpectedValues(object); //, "TreeNodes.Player.GameInfos.CommunityItems.CommunityItem");
 					}
 					
 					String getURL(String urlPart) {
@@ -2390,7 +2457,7 @@ class Data {
 					}
 
 					static class KeyValues {
-						private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+						private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues(KeyValues.class)
 								.add("card_border_color"     , JSON_Data.Value.Type.String ) // optional value
 								.add("card_border_logo"      , JSON_Data.Value.Type.String ) // optional value
 								.add("card_drop_method"      , JSON_Data.Value.Type.Integer) // optional value
@@ -2405,7 +2472,7 @@ class Data {
 								.add("level_images"          , JSON_Data.Value.Type.Object ) // optional value
 								.add("level_names"           , JSON_Data.Value.Type.Object );// optional value
 						
-						private static final DevHelper.KnownJsonValues KNOWN_LEVEL_IMAGES_VALUES = new DevHelper.KnownJsonValues()
+						private static final DevHelper.KnownJsonValues KNOWN_LEVEL_IMAGES_VALUES = new DevHelper.KnownJsonValues(KeyValues.class, "[LevelImages]")
 								.add("1"   , JSON_Data.Value.Type.String)
 								.add("2"   , JSON_Data.Value.Type.String)
 								.add("3"   , JSON_Data.Value.Type.String)
@@ -2413,7 +2480,7 @@ class Data {
 								.add("5"   , JSON_Data.Value.Type.String)
 								.add("foil", JSON_Data.Value.Type.String);
 						
-						private static final DevHelper.KnownJsonValues KNOWN_LEVEL_NAMES_VALUES = new DevHelper.KnownJsonValues()
+						private static final DevHelper.KnownJsonValues KNOWN_LEVEL_NAMES_VALUES = new DevHelper.KnownJsonValues(KeyValues.class, "[LevelValues]")
 								.add("1"   , JSON_Data.Value.Type.String)
 								.add("2"   , JSON_Data.Value.Type.String)
 								.add("3"   , JSON_Data.Value.Type.String)
@@ -2494,12 +2561,12 @@ class Data {
 							} else
 								levels = null;
 							
-							String path = "TreeNodes.Player.GameInfos.CommunityItems.CommunityItem";
+							//String path = "TreeNodes.Player.GameInfos.CommunityItems.CommunityItem";
 							if (level_images!=null)
-								KNOWN_LEVEL_IMAGES_VALUES.scanUnexpectedValues(level_images, path+".KeyValues.level_images");
+								KNOWN_LEVEL_IMAGES_VALUES.scanUnexpectedValues(level_images); //, path+".KeyValues.level_images");
 							if (level_names !=null)
-								KNOWN_LEVEL_NAMES_VALUES.scanUnexpectedValues(level_names, path+".KeyValues.level_names");
-							KNOWN_VALUES.scanUnexpectedValues(object, path);
+								KNOWN_LEVEL_NAMES_VALUES.scanUnexpectedValues(level_names); //, path+".KeyValues.level_names");
+							KNOWN_VALUES.scanUnexpectedValues(object); //, path);
 						}
 						
 						static class Level {
@@ -2594,7 +2661,7 @@ class Data {
 				//       minutes_played_forever == <null>
 				//       owned:Bool
 				
-				private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+				private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues(Friends.class)
 						.add("in_game"        , JSON_Data.Value.Type.Array)
 						.add("in_wishlist"    , JSON_Data.Value.Type.Array)
 						.add("owns"           , JSON_Data.Value.Type.Array)
@@ -2602,7 +2669,7 @@ class Data {
 						.add("played_recently", JSON_Data.Value.Type.Array)
 						.add("your_info"      , JSON_Data.Value.Type.Object); // optional
 				
-				private static final DevHelper.KnownJsonValues KNOWN_VALUES_STEAMID_ONLY = new DevHelper.KnownJsonValues()
+				private static final DevHelper.KnownJsonValues KNOWN_VALUES_STEAMID_ONLY = new DevHelper.KnownJsonValues(Friends.class, "[SteamID Only]")
 						.add("steamid", JSON_Data.Value.Type.String);
 
 				final SteamId[] in_wishlist;
@@ -2659,7 +2726,7 @@ class Data {
 					if (raw_your_info==null) your_info = null;
 					else your_info = parse(Entry::new, Entry::new, raw_your_info, debugOutputPrefixStr+".your_info", file);
 					
-					KNOWN_VALUES.scanUnexpectedValues(object, baseValueLabel);
+					KNOWN_VALUES.scanUnexpectedValues(object); //, baseValueLabel);
 				}
 				
 				private interface ArrayElementTask {
@@ -2699,7 +2766,7 @@ class Data {
 					//       steamid:String
 					//       steamid == <null>
 					
-					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues(Entry.class)
 							.add("minutes_played"        , JSON_Data.Value.Type.Integer)  // optional
 							.add("minutes_played_forever", JSON_Data.Value.Type.Integer)  // optional
 							.add("owned"                 , JSON_Data.Value.Type.Bool   )  // optional
@@ -2739,7 +2806,7 @@ class Data {
 							if (steamid.steamid==null)  DevHelper.unknownValues.add(baseValueLabel+".steamid:String can't be parsed as a number");
 						}
 						
-						KNOWN_VALUES.scanUnexpectedValues(object, baseValueLabel);
+						KNOWN_VALUES.scanUnexpectedValues(object); //, baseValueLabel);
 					}
 					
 				}
@@ -2765,7 +2832,7 @@ class Data {
 				// "GameStateInfo.Block["associations",V1].dataValue.rgPublishers[]:Object"
 				// "GameStateInfo.Block["associations",V1].dataValue:Object"
 				
-				private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+				private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues(Associations.class)
 						.add("rgDevelopers", JSON_Data.Value.Type.Array)
 						.add("rgFranchises", JSON_Data.Value.Type.Array)
 						.add("rgPublishers", JSON_Data.Value.Type.Array);
@@ -2786,7 +2853,7 @@ class Data {
 					developers = parseArray(Association::new, Association::new, object, "rgDevelopers", dataValueStr, file);
 					franchises = parseArray(Association::new, Association::new, object, "rgFranchises", dataValueStr, file);
 					publishers = parseArray(Association::new, Association::new, object, "rgPublishers", dataValueStr, file);
-					KNOWN_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.Associations");
+					KNOWN_VALUES.scanUnexpectedValues(object); //, "TreeNodes.Player.GameInfos.Associations");
 				}
 				
 				@Override boolean isEmpty() {
@@ -2795,7 +2862,7 @@ class Data {
 				
 				static class Association {
 					
-					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues(Association.class)
 							.add("strName", JSON_Data.Value.Type.String)
 							.add("strName", JSON_Data.Value.Type.Null  )
 							.add("strURL" , JSON_Data.Value.Type.String)
@@ -2825,7 +2892,7 @@ class Data {
 						name = JSON_Data.getValue(object, "strName", false, JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, true, dataValueStr);
 						url  = JSON_Data.getValue(object, "strURL" , false, JSON_Data.Value.Type.String, JSON_Data.Value::castToStringValue, true, dataValueStr);
 						
-						KNOWN_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.Associations.Association");
+						KNOWN_VALUES.scanUnexpectedValues(object); //, "TreeNodes.Player.GameInfos.Associations.Association");
 					}
 					
 				}
@@ -2855,7 +2922,7 @@ class Data {
 				
 				static class Entry {
 
-					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues(Entry.class)
 							.add("eType"  , JSON_Data.Value.Type.Integer)
 							.add("strName", JSON_Data.Value.Type.String )
 							.add("strURL" , JSON_Data.Value.Type.String );
@@ -2896,7 +2963,7 @@ class Data {
 						url   = JSON_Data.getStringValue (object, "strURL" , dataValueStr);
 						type  = Type.getType(typeN);
 						if (type==null) DevHelper.unknownValues.add("GameInfos.SocialMedia.SocialMediaEntry.type = "+type+"  <New Emum Value>");
-						KNOWN_VALUES.scanUnexpectedValues(object, "GameInfos.SocialMedia.SocialMediaEntry");
+						KNOWN_VALUES.scanUnexpectedValues(object); //, "GameInfos.SocialMedia.SocialMediaEntry");
 					}
 				}
 			}
@@ -2972,12 +3039,13 @@ class Data {
 				//       strImage:String
 				//       strName:String
 				
-				final Vector<Entry> entries;
+				//final Vector<Entry> entries;
+				final Vector<GameEntries> gameEntries;
 				final JSON_Data.Value<NV, V> parsedJsonValue;
 				
 				AchievementMap(JSON_Data.Value<NV, V> rawData, long version) {
 					super(rawData, version, false);
-					entries = null;
+					gameEntries = null;
 					parsedJsonValue = null;
 				}
 				AchievementMap(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
@@ -2986,17 +3054,87 @@ class Data {
 					String jsonText = JSON_Data.getStringValue(blockDataValue, dataValueStr);
 					parsedJsonValue = JSONHelper.parseJsonText(jsonText, dataValueStr);
 					
-					entries = parseArray(Entry::new, Entry::new, parsedJsonValue, dataValueStr+"<ParsedJsonText>", file);
+					if (isEmpty(parsedJsonValue, dataValueStr+"<ParsedJsonText>")) {
+						gameEntries = new Vector<>();
+						
+					} else if (isOldVersion(parsedJsonValue, dataValueStr+"<ParsedJsonText>")) {
+						gameEntries = new Vector<>();
+						gameEntries.add(new GameEntries(-1, parsedJsonValue, dataValueStr+"<ParsedJsonText as Entry List>", file));
+						
+					} else {
+						gameEntries = parseArray(GameEntries::new, GameEntries::new, parsedJsonValue, dataValueStr+"<ParsedJsonText as GameEntries List>", file);
+					}
 				}
 				
 				@Override boolean isEmpty() {
-					return super.isEmpty() && (!hasParsedData || entries.isEmpty());
+					return super.isEmpty() && (!hasParsedData || gameEntries.isEmpty());
+				}
+				
+				private static boolean isEmpty(JSON_Data.Value<NV, V> parsedJsonValue, String debugOutputPrefixStr) throws TraverseException {
+					JSON_Array<NV, V> array = JSON_Data.getArrayValue(parsedJsonValue, debugOutputPrefixStr);
+					return array.isEmpty();
+				}
+				
+				private static boolean isOldVersion(JSON_Data.Value<NV, V> parsedJsonValue, String debugOutputPrefixStr) throws TraverseException {
+					JSON_Array<NV, V> array0 = JSON_Data.getArrayValue(parsedJsonValue, debugOutputPrefixStr);
+					if (array0.isEmpty()) throw new TraverseException("%s:Array is empty", debugOutputPrefixStr);
+					
+					debugOutputPrefixStr = debugOutputPrefixStr+"[0]";
+					JSON_Array<NV, V> array1 = JSON_Data.getArrayValue(array0.get(0), debugOutputPrefixStr);
+					if (array1.isEmpty()) throw new TraverseException("%s:Array is empty", debugOutputPrefixStr);
+					
+					debugOutputPrefixStr = debugOutputPrefixStr+"[0]";
+					JSON_Data.Value<NV, V> firstValue = array1.get(0);
+					if (null!=JSON_Data.getValue(firstValue, JSON_Data.Value.Type.String , JSON_Data.Value::castToStringValue , true, debugOutputPrefixStr))
+						return true;
+					if (null!=JSON_Data.getValue(firstValue, JSON_Data.Value.Type.Integer, JSON_Data.Value::castToIntegerValue, true, debugOutputPrefixStr))
+						return false;
+					
+					throw new TraverseException("%s isn't an IntegerValue or a StringValue (found %s)", debugOutputPrefixStr, firstValue.type);
+				}
+
+				static class GameEntries {
+					
+					final JSON_Data.Value<NV, V> rawData;
+					final boolean hasParsedData;
+					final long gameID;
+					final Vector<Entry> entries;
+					
+					GameEntries(JSON_Data.Value<NV, V> rawData) {
+						this.rawData = rawData;
+						hasParsedData = false;
+						gameID = -1;
+						entries = null;
+					}
+					
+					GameEntries(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr, File file) throws TraverseException {
+						this.rawData = null;
+						hasParsedData = true;
+						
+						JSON_Array<NV, V> array = JSON_Data.getArrayValue(value, debugOutputPrefixStr);
+						if (array.size()!=2) throw new TraverseException("%s:Array has a length(==%d) != 2", debugOutputPrefixStr, array.size());
+						
+						JSON_Array<NV, V> rawEntries;
+						gameID     = JSON_Data.getIntegerValue(array.get(0), debugOutputPrefixStr+"[0]");
+						rawEntries = JSON_Data.getArrayValue  (array.get(1), debugOutputPrefixStr+"[1]");
+						
+						entries = parseArray(Entry::new, Entry::new, rawEntries, debugOutputPrefixStr+"[1]", file);
+					}
+					
+					GameEntries(long gameID, JSON_Data.Value<NV, V> parsedJsonValue, String debugOutputPrefixStr, File file) throws TraverseException {
+						this.rawData = null;
+						hasParsedData = true;
+						
+						this.gameID = gameID;
+						entries = parseArray(Entry::new, Entry::new, parsedJsonValue, debugOutputPrefixStr, file);
+					}
 				}
 				
 				static class Entry {
 					
-					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues(Entry.class)
 							.add("bAchieved"     , JSON_Data.Value.Type.Bool   )
+							.add("bHidden"       , JSON_Data.Value.Type.Bool   )
 							.add("flAchieved"    , JSON_Data.Value.Type.Integer)
 							.add("flAchieved"    , JSON_Data.Value.Type.Float  )
 							.add("strDescription", JSON_Data.Value.Type.String )
@@ -3012,6 +3150,7 @@ class Data {
 					final String description;
 					final boolean isAchieved;
 					final double achievedRatio;
+					final Boolean isHidden;
 
 
 					Entry(JSON_Data.Value<NV, V> rawData) {
@@ -3024,6 +3163,7 @@ class Data {
 						description   = null;
 						isAchieved    = false;
 						achievedRatio = Double.NaN;
+						isHidden      = null;
 					}
 					
 					Entry(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
@@ -3037,12 +3177,15 @@ class Data {
 						id     = JSON_Data.getStringValue(array.get(0), debugOutputPrefixStr+"[0]");
 						object = JSON_Data.getObjectValue(array.get(1), debugOutputPrefixStr+"[1]");
 						
+						// DevHelper.optional.jsonValues.scan(object, "GameInfos.AchievementMap.Entry");
+						
+						isHidden      = JSON_Data.getBoolValue   (object,"bHidden"       , true, false, debugOutputPrefixStr+"[1]");
 						isAchieved    = JSON_Data.getBoolValue   (object,"bAchieved"     ,debugOutputPrefixStr+"[1]");
 						achievedRatio = JSON_Data.getNumber      (object,"flAchieved"    ,debugOutputPrefixStr+"[1]");
 						description   = JSON_Data.getStringValue (object,"strDescription",debugOutputPrefixStr+"[1]");
 						image         = JSON_Data.getStringValue (object,"strImage"      ,debugOutputPrefixStr+"[1]");
 						name          = JSON_Data.getStringValue (object,"strName"       ,debugOutputPrefixStr+"[1]");
-						KNOWN_VALUES.scanUnexpectedValues(object, "GameInfos.AchievementMap.Entry(array[1])");
+						KNOWN_VALUES.scanUnexpectedValues(object); //, "GameInfos.AchievementMap.Entry(array[1])");
 					}
 				}
 			}
@@ -3112,7 +3255,7 @@ class Data {
 			
 			static class Achievements extends ParsedBlock {
 
-				private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+				private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues(Achievements.class)
 						.add("nAchieved"        , JSON_Data.Value.Type.Integer)
 						.add("nTotal"           , JSON_Data.Value.Type.Integer)
 						.add("vecAchievedHidden", JSON_Data.Value.Type.Array  )
@@ -3150,7 +3293,7 @@ class Data {
 					this.unachieved     = parseArray(Achievement::new, Achievement::new, unachieved    , dataValueStr+"."+"vecUnachieved"    , file);
 					this.highlight      = parseArray(Achievement::new, Achievement::new, highlight     , dataValueStr+"."+"vecHighlight"     , file);
 					
-					KNOWN_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.Achievements");
+					KNOWN_VALUES.scanUnexpectedValues(object); //, "TreeNodes.Player.GameInfos.Achievements");
 				}
 				
 				@Override boolean isEmpty() {
@@ -3165,8 +3308,9 @@ class Data {
 
 				static class Achievement {
 
-					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues()
+					private static final DevHelper.KnownJsonValues KNOWN_VALUES = new DevHelper.KnownJsonValues(Achievement.class)
 							.add("bAchieved"        , JSON_Data.Value.Type.Bool   )
+							.add("bHidden"          , JSON_Data.Value.Type.Bool   ) // optional
 							.add("flAchieved"       , JSON_Data.Value.Type.Float  ) // optional
 							.add("flAchieved"       , JSON_Data.Value.Type.Integer) // optional
 							.add("flCurrentProgress", JSON_Data.Value.Type.Float  ) // optional
@@ -3184,6 +3328,7 @@ class Data {
 					final JSON_Data.Value<NV, V> rawData;
 					final boolean hasParsedData;
 					final boolean isAchieved;
+					final Boolean isHidden;
 					final Double achievedRatio;
 					final Double currentProgress;
 					final Double maxProgress;
@@ -3194,10 +3339,12 @@ class Data {
 					final String image;
 					final String name;
 
+
 					public Achievement(JSON_Data.Value<NV, V> rawData) {
 						this.rawData = rawData;
 						hasParsedData   = false;
 						isAchieved      = false;
+						isHidden        = null;
 						achievedRatio   = null;
 						currentProgress = null;
 						maxProgress     = null;
@@ -3212,21 +3359,23 @@ class Data {
 					public Achievement(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
 						rawData = null;
 						hasParsedData = true;
-						//DevHelper.scanJsonStructure(value,"GameStateInfo.Achievements.Achievement");
+						//DevHelper.scanJsonStructure(value, Achievement.class); //,"GameStateInfo.Achievements.Achievement");
+						//DevHelper.optional.jsonValues.scan(value, DevHelper.getValueLabelFor(Achievement.class));
 						
 						JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, debugOutputPrefixStr);
 						isAchieved      = JSON_Data.getBoolValue   (object, "bAchieved"        , debugOutputPrefixStr);
+						isHidden        = JSON_Data.getBoolValue   (object, "bHidden"          , true, false, debugOutputPrefixStr);
 						unlocked        = JSON_Data.getIntegerValue(object, "rtUnlocked"       , debugOutputPrefixStr);
 						description     = JSON_Data.getStringValue (object, "strDescription"   , debugOutputPrefixStr);
 						id              = JSON_Data.getStringValue (object, "strID"            , debugOutputPrefixStr);
 						image           = JSON_Data.getStringValue (object, "strImage"         , debugOutputPrefixStr);
 						name            = JSON_Data.getStringValue (object, "strName"          , debugOutputPrefixStr);
-						achievedRatio   = JSON_Data.getNumber      (object, "flAchieved",        true, debugOutputPrefixStr);
+						achievedRatio   = JSON_Data.getNumber      (object, "flAchieved"       , true, debugOutputPrefixStr);
 						currentProgress = JSON_Data.getNumber      (object, "flCurrentProgress", true, debugOutputPrefixStr);
 						maxProgress     = JSON_Data.getNumber      (object, "flMaxProgress"    , true, debugOutputPrefixStr);
 						minProgress     = JSON_Data.getNumber      (object, "flMinProgress"    , true, debugOutputPrefixStr);
 						
-						KNOWN_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.Achievements.Achievement");
+						KNOWN_VALUES.scanUnexpectedValues(object); //, "TreeNodes.Player.GameInfos.Achievements.Achievement");
 					}
 					
 				}
@@ -3234,10 +3383,11 @@ class Data {
 
 			static class Badge extends ParsedBlock {
 				
-				private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues()
+				private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues(Badge.class)
 						.add("strName"         , JSON_Data.Value.Type.String)
 						.add("bHasBadgeData"   , JSON_Data.Value.Type.Bool)
 						.add("bMaxed"          , JSON_Data.Value.Type.Null)
+						.add("dtNextRetry"     , JSON_Data.Value.Type.Null)
 						.add("nMaxLevel"       , JSON_Data.Value.Type.Integer)
 						.add("nLevel"          , JSON_Data.Value.Type.Integer)
 						.add("nXP"             , JSON_Data.Value.Type.Integer)
@@ -3249,7 +3399,7 @@ class Data {
 				final Vector<TradingCard> tradingCards;
 
 				final String  name;
-				final boolean hasBadgeData;
+				final Boolean hasBadgeData;
 				final long    maxLevel;
 				final long    currentLevel;
 				final long    currentXP;
@@ -3262,7 +3412,7 @@ class Data {
 					super(rawData, version, false);
 					tradingCards  = null;
 					name          = null;
-					hasBadgeData  = false;
+					hasBadgeData  = null;
 					maxLevel      = -1;
 					currentLevel  = -1;
 					currentXP     = -1;
@@ -3274,11 +3424,11 @@ class Data {
 				Badge(JSON_Data.Value<NV, V> blockDataValue, long version, String dataValueStr, File file) throws TraverseException {
 					super(null, version, true);
 					
-					//DevHelper.optional.jsonValues.scan(blockDataValue, "GameInfos.Badge(V"+version+")");
+					// DevHelper.optional.jsonValues.scan(blockDataValue, "GameInfos.Badge(V"+version+")");
 					
 					JSON_Object<NV, V> object = JSON_Data.getObjectValue (blockDataValue, dataValueStr);
 					name          = JSON_Data.getStringValue (object, "strName"         , dataValueStr);
-					hasBadgeData  = JSON_Data.getBoolValue   (object, "bHasBadgeData"   , dataValueStr);
+					hasBadgeData  = JSON_Data.getBoolValue   (object, "bHasBadgeData"   , true, false, dataValueStr);
 					maxLevel      = JSON_Data.getIntegerValue(object, "nMaxLevel"       , dataValueStr);
 					currentLevel  = JSON_Data.getIntegerValue(object, "nLevel"          , dataValueStr);
 					currentXP     = JSON_Data.getIntegerValue(object, "nXP"             , dataValueStr);
@@ -3286,10 +3436,11 @@ class Data {
 					nextLevelXP   = JSON_Data.getIntegerValue(object, "nNextLevelXP"    , dataValueStr);
 					iconURL       = JSON_Data.getStringValue (object, "strIconURL"      , dataValueStr);
 					JSON_Data.getNullValue(object, "bMaxed", dataValueStr);
+					JSON_Data.getNullValue(object, "dtNextRetry", true, false, dataValueStr);
 					
 					tradingCards = parseArray(TradingCard::new, TradingCard::new, object, "rgCards", dataValueStr, file);
 					
-					KNOWN_JSON_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.Badge");
+					KNOWN_JSON_VALUES.scanUnexpectedValues(object); //, "TreeNodes.Player.GameInfos.Badge");
 				}
 				
 				@Override boolean isEmpty() {
@@ -3355,13 +3506,16 @@ class Data {
 
 				static class TradingCard {
 					
-					private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues()
+					private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues(TradingCard.class)
 							.add("strName"      , JSON_Data.Value.Type.String)
+							.add("strName"      , JSON_Data.Value.Type.Null)
 							.add("strTitle"     , JSON_Data.Value.Type.String)
+							.add("strTitle"     , JSON_Data.Value.Type.Null)
 							.add("nOwned"       , JSON_Data.Value.Type.Integer)
 							.add("strArtworkURL", JSON_Data.Value.Type.String)
 							.add("strImgURL"    , JSON_Data.Value.Type.String)
-							.add("strMarketHash", JSON_Data.Value.Type.String);
+							.add("strMarketHash", JSON_Data.Value.Type.String)
+							.add("strMarketHash", JSON_Data.Value.Type.Null);
 
 					final JSON_Data.Value<NV, V> rawData;
 					final boolean hasParsedData;
@@ -3390,14 +3544,17 @@ class Data {
 						hasParsedData = true;
 						
 						JSON_Object<NV,V> object = JSON_Data.getObjectValue(value, debugOutputPrefixStr);
-						name       = JSON_Data.getStringValue (object, "strName"      , debugOutputPrefixStr);
-						title      = JSON_Data.getStringValue (object, "strTitle"     , debugOutputPrefixStr);
+						name       = JSON_Data.getStringValue (object, "strName"      , false, true, debugOutputPrefixStr);
+						title      = JSON_Data.getStringValue (object, "strTitle"     , false, true, debugOutputPrefixStr);
 						owned      = JSON_Data.getIntegerValue(object, "nOwned"       , debugOutputPrefixStr);
 						artworkURL = JSON_Data.getStringValue (object, "strArtworkURL", debugOutputPrefixStr);
 						imageURL   = JSON_Data.getStringValue (object, "strImgURL"    , debugOutputPrefixStr);
-						marketHash = JSON_Data.getStringValue (object, "strMarketHash", debugOutputPrefixStr);
+						marketHash = JSON_Data.getStringValue (object, "strMarketHash", false, true, debugOutputPrefixStr);
+						JSON_Data.getNullValue (object, "strName"      , false, true, debugOutputPrefixStr);
+						JSON_Data.getNullValue (object, "strTitle"     , false, true, debugOutputPrefixStr);
+						JSON_Data.getNullValue (object, "strMarketHash", false, true, debugOutputPrefixStr);
 						
-						KNOWN_JSON_VALUES.scanUnexpectedValues(object, "TreeNodes.Player.GameInfos.Badge.TradingCard");
+						KNOWN_JSON_VALUES.scanUnexpectedValues(object); //, "TreeNodes.Player.GameInfos.Badge.TradingCard");
 					}
 				}
 			}

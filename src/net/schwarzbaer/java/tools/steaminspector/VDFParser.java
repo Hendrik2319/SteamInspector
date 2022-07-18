@@ -486,9 +486,9 @@ class VDFParser {
 			return base==null ? false : base.hasUnprocessedChildren;
 		}
 		
-		@Override public String getPath() {
+		@Override public String getPathStr() {
 			if (parent==null) return "<root>";
-			return parent.getPath()+/*"["+parent.getIndex(this)+"]"+*/"."+name;
+			return parent.getPathStr()+/*"["+parent.getIndex(this)+"]"+*/"."+name;
 		}
 		
 		@Override public String getAccessCall() {

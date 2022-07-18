@@ -38,6 +38,7 @@ import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import javax.imageio.ImageIO;
@@ -67,8 +68,6 @@ import net.schwarzbaer.java.tools.steaminspector.Data.Player;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.AchievementProgress;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.AchievementProgress.AchievementProgressInGame;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos;
-import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos.CommunityItems.CommunityItem;
-import net.schwarzbaer.java.tools.steaminspector.Data.Player.GameInfos.GameInfosFilterOptions;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.LocalConfig.FriendList;
 import net.schwarzbaer.java.tools.steaminspector.Data.Player.LocalConfig.SoftwareValveSteamApps;
 import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShot;
@@ -102,7 +101,7 @@ import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TextContentSourc
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeContentSource;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.TreeRoot;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FolderNode;
-import net.schwarzbaer.java.tools.steaminspector.TreeNodes.PlayersNGames.GameChangeListeners.GameChangeListener;
+import net.schwarzbaer.java.tools.steaminspector.TreeNodes.PlayersNGames.GameTitleChangeListeners.GameTitleChangeListener;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFParseException;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;
 import net.schwarzbaer.system.ClipboardTools;
@@ -335,7 +334,7 @@ class TreeNodes {
 				if (isInteresting==null) return;
 				map.put(treeIDStr, treeMap = new HashMap<>());
 			}
-			String path = treeNode.getPath();
+			String path = treeNode.getPathStr();
 			
 			if (isInteresting==null) {
 				treeMap.remove(path);
@@ -350,7 +349,7 @@ class TreeNodes {
 			
 			HashMap<String, Boolean> treeMap = map.get(treeIDStr);
 			if (treeMap==null) return null;
-			String path = treeNode.getPath();
+			String path = treeNode.getPathStr();
 			
 			return treeMap.get(path);
 		}
@@ -459,14 +458,14 @@ class TreeNodes {
 			str += String.format("Class : %s%n", getClass().getCanonicalName());
 			str += !hasName()  ? String.format("Name : none%n")  : String.format("Name : \"%s\"%n", getName());
 			str += !hasValue() ? String.format("Value : none%n") : String.format("Value : %s%n", getValueStr());
-			str += String.format("Path : %s%n", getPath());
+			str += String.format("Path : %s%n", getPathStr());
 			str += String.format("AccessCall : %s%n", getAccessCall());
 			return str;
 		}
 		void doToAllNodesChildNodesAndFutureChildNodes(Consumer<DataTreeNode> action);
 		String getName();
 		String getValueStr();
-		String getPath();
+		String getPathStr();
 		String getAccessCall();
 		boolean hasName();
 		boolean hasValue();
@@ -516,7 +515,7 @@ class TreeNodes {
 			tree = null;
 			add(miName            = SteamInspector.createMenuItem("Copy Name"          , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getName())));
 			add(miValue           = SteamInspector.createMenuItem("Copy Value"         , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getValueStr())));
-			add(miPath            = SteamInspector.createMenuItem("Copy Path"          , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getPath())));
+			add(miPath            = SteamInspector.createMenuItem("Copy Path"          , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getPathStr())));
 			add(miAccessCall      = SteamInspector.createMenuItem("Copy Access Call"   , true, e->ClipboardTools.copyToClipBoard(clickedTreeNode.getAccessCall())));
 			add(miFullInfo        = SteamInspector.createMenuItem("Copy Full Info"     , true, e->ClipboardTools.copyToClipBoard(getFullInfo(clickedTreeNode))));
 			addSeparator();
@@ -549,7 +548,7 @@ class TreeNodes {
 		private String getFullInfo(DataTreeNode node) {
 			String str = node.getFullInfo();
 			str += String.format("TreeID: %s%n", treeIDStr);
-			str += String.format("TreeNodeID: %s // %s%n", treeIDStr, node.getPath());
+			str += String.format("TreeNodeID: %s // %s%n", treeIDStr, node.getPathStr());
 			return str;
 		}
 
@@ -672,7 +671,7 @@ class TreeNodes {
 		private static GroupingNode<Object> create(TreeNode parent, String title, Icon icon, BiConsumer<TreeNode,Vector<TreeNode>> createAllChildNodes) {
 			return new GroupingNode<>(parent, title, null, null, icon, null, createAllChildNodes);
 		}
-		private GroupingNode(TreeNode parent, String title, Collection<ValueType> values, Comparator<ValueType> sortOrder, Icon icon, NodeCreator1<ValueType> createChildNode, BiConsumer<TreeNode,Vector<TreeNode>> createAllChildNodes) {
+		protected GroupingNode(TreeNode parent, String title, Collection<ValueType> values, Comparator<ValueType> sortOrder, Icon icon, NodeCreator1<ValueType> createChildNode, BiConsumer<TreeNode,Vector<TreeNode>> createAllChildNodes) {
 			super(parent, title, areChildrenExpectable(values, createAllChildNodes), !areChildrenExpectable(values, createAllChildNodes), icon==null ? TreeIcons.Folder.getIcon() : icon);
 			this.values = values;
 			this.sortOrder = sortOrder;
@@ -999,7 +998,8 @@ class TreeNodes {
 		PrimitiveValueNode(TreeNode parent, String label, int     value) { super(parent, "%s: "+  "%d"  , label, value); }
 		PrimitiveValueNode(TreeNode parent, String label, long    value) { super(parent, "%s: "+  "%d"  , label, value); }
 		PrimitiveValueNode(TreeNode parent, String label, double  value) { super(parent, "%s: "+"%1.4f" , label, value); }
-		PrimitiveValueNode(TreeNode parent, String label, String  value) { super(parent, "%s: "+"\"%s\"", label, value); }
+		PrimitiveValueNode(TreeNode parent, String label, String  value) { super(parent, "%s: "+  "%s"  , label, value==null ? "<unset>" : "\""+value+"\""); }
+		PrimitiveValueNode(TreeNode parent, String label, Boolean value) { super(parent, "%s: "+  "%s"  , label, value==null ? "<unset>" : value); }
 	}
 	
 	@SuppressWarnings("unused")
@@ -1042,8 +1042,8 @@ class TreeNodes {
 
 	static class PlayersNGames {
 		
-		static final GameChangeListeners gameChangeListeners = new GameChangeListeners();
-		static class GameChangeListeners extends HashMap<Integer,Vector<GameChangeListeners.GameChangeListener>> {
+		static final GameTitleChangeListeners gameTitleChangeListeners = new GameTitleChangeListeners();
+		static class GameTitleChangeListeners extends HashMap<Integer,Vector<GameTitleChangeListeners.GameTitleChangeListener>> {
 			private static final long serialVersionUID = 374860814407569282L;
 			
 			private final HashMap<TreeNode,Integer> registeredTreeNodes = new HashMap<>();
@@ -1059,13 +1059,13 @@ class TreeNodes {
 			}
 			
 			boolean isRegistered(TreeNode node) {
-				return registeredTreeNodes.keySet().contains(node);
+				return registeredTreeNodes.containsKey(node);
 			}
 
-			void add(Integer gameID, GameChangeListener listener) {
+			void add(Integer gameID, GameTitleChangeListener listener) {
 				if (gameID==null) return;
 				if (listener==null) throw new IllegalArgumentException();
-				Vector<GameChangeListener> vector = get(gameID);
+				Vector<GameTitleChangeListener> vector = get(gameID);
 				if (vector==null) put(gameID,vector = new Vector<>());
 				vector.add(listener);
 				TreeNode treeNode = listener.getTreeNode();
@@ -1075,16 +1075,27 @@ class TreeNodes {
 			void gameTitleWasChanged(DefaultTreeModel treeModel, Integer gameID) {
 				if (gameID==null) throw new IllegalArgumentException();
 				if (treeModel==null) throw new IllegalArgumentException();
-				Vector<GameChangeListener> vector = get(gameID);
+				Vector<GameTitleChangeListener> vector = get(gameID);
 				if (vector!=null) {
-					for (GameChangeListener l:vector) {
+					for (GameTitleChangeListener l:vector) {
 						l.gameTitleWasChanged();
 						treeModel.nodeChanged(l.getTreeNode());
 					}
 				}
 			}
 			
-			interface GameChangeListener {
+			TreeNode findTreeNode(int gameID, Predicate<TreeNode> isOK) {
+				Vector<GameTitleChangeListener> gtcls = get(gameID);
+				if (gtcls != null)
+					for (GameTitleChangeListener gtcl : gtcls) {
+						TreeNode treeNode = gtcl.getTreeNode();
+						if (isOK.test(treeNode))
+							return treeNode;
+					}
+				return null;
+			}
+			
+			interface GameTitleChangeListener {
 				TreeNode getTreeNode();
 				void gameTitleWasChanged();
 			}
@@ -1095,7 +1106,7 @@ class TreeNodes {
 		}
 		private static TreeNode createGameScreenShotsNode(TreeNode parent, Integer gameID, ScreenShotLists.ScreenShotList screenShots) {
 			MultiPurposeNode node = createGameScreenShotsNode(parent, Data.getGameTitle(gameID), screenShots, Data.getGameIcon(gameID,TreeIcons.ImageFile));
-			gameChangeListeners.add(gameID, new GameChangeListener() {
+			gameTitleChangeListeners.add(gameID, new GameTitleChangeListener() {
 				@Override public TreeNode getTreeNode() { return node; }
 				@Override public void gameTitleWasChanged() { node.setTitle(Data.getGameTitle(gameID)); }
 			});
@@ -1136,7 +1147,7 @@ class TreeNodes {
 			}
 		}
 		
-		private static class GameNode extends BaseTreeNode<TreeNode,TreeNode> implements URLBasedNode, ExternViewableNode, CustomOutputSource {
+		static class GameNode extends BaseTreeNode<TreeNode,TreeNode> implements URLBasedNode, ExternViewableNode, CustomOutputSource {
 		
 			private final Game game;
 			private GameOverview overview;
@@ -1145,7 +1156,7 @@ class TreeNodes {
 				super(parent, game.getTitle(), true, false, game.getIcon());
 				this.game = game;
 				overview = null;
-				gameChangeListeners.add(this.game.appID, new GameChangeListener() {
+				gameTitleChangeListeners.add(this.game.appID, new GameTitleChangeListener() {
 					@Override public TreeNode getTreeNode() { return GameNode.this; }
 					@Override public void gameTitleWasChanged() { setTitle(GameNode.this.game.getTitle()); }
 				});
@@ -1306,9 +1317,9 @@ class TreeNodes {
 					));
 					groupingNode1.setFile(player.gameStateFolder);
 					groupingNode1.setFilter(GroupingNode.createMapFilter(
-							GameInfosFilterOptions.class,
-							GameInfosFilterOptions.values(),
-							GameInfosFilterOptions::cast,
+							GameInfos.GameInfosFilterOptions.class,
+							GameInfos.GameInfosFilterOptions.values(),
+							GameInfos.GameInfosFilterOptions::cast,
 							GameInfos::meetsFilterOption
 					));
 				}
@@ -1318,7 +1329,7 @@ class TreeNodes {
 
 			private static FolderNode createSteamCloudFolderNode(TreeNode parent, Integer gameID, File file) {
 				FileSystem.FolderNode node = new FileSystem.FolderNode(parent, Data.getGameTitle(gameID), file, Data.getGameIcon(gameID, TreeIcons.Folder));
-				gameChangeListeners.add(gameID, new GameChangeListener() {
+				gameTitleChangeListeners.add(gameID, new GameTitleChangeListener() {
 					@Override public TreeNode getTreeNode() { return node; }
 					@Override public void gameTitleWasChanged() { node.setTitle(Data.getGameTitle(gameID)); }
 				});
@@ -1363,7 +1374,7 @@ class TreeNodes {
 				
 				if (app.appID!=null) {
 					node.setURL(Data.getShopURL(app.appID), false, ExternalViewerInfo.Browser);
-					gameChangeListeners.add(app.appID, new GameChangeListener() {
+					gameTitleChangeListeners.add(app.appID, new GameTitleChangeListener() {
 						@Override public TreeNode getTreeNode() { return node; }
 						@Override public void gameTitleWasChanged() { node.setTitle(Data.getGameTitle(app.appID)); }
 					});
@@ -1575,7 +1586,7 @@ class TreeNodes {
 				public AchievementProgressInGameNode(TreeNode parent, Integer gameID, AchievementProgressInGame gameStatus) {
 					super(parent,Data.getGameTitle(gameID),true,false,Data.getGameIcon(gameID, TreeIcons.Folder));
 					if (gameStatus!=null) {
-						gameChangeListeners.add(gameID, new GameChangeListener() {
+						gameTitleChangeListeners.add(gameID, new GameTitleChangeListener() {
 							@Override public TreeNode getTreeNode() { return AchievementProgressInGameNode.this; }
 							@Override public void gameTitleWasChanged() { setTitle(Data.getGameTitle(gameID)); }
 						});
@@ -1633,7 +1644,7 @@ class TreeNodes {
 			}
 			GameInfosNode(TreeNode parent, Integer gameID, GameInfos gameInfos) {
 				super(parent, Data.getGameTitle(gameID)+generateExtraInfo(gameInfos), true, false, generateMergedIcon( Data.getGameIcon(gameID, TreeIcons.Folder), gameInfos ));
-				gameChangeListeners.add(gameID, new GameChangeListener() {
+				gameTitleChangeListeners.add(gameID, new GameTitleChangeListener() {
 					@Override public TreeNode getTreeNode() { return GameInfosNode.this; }
 					@Override public void gameTitleWasChanged() { setTitle(Data.getGameTitle(gameID)+generateExtraInfo(gameInfos)); }
 				});
@@ -1703,10 +1714,10 @@ class TreeNodes {
 				}
 				if (data.achievementMap!=null) {
 					if (data.achievementMap.hasParsedData) {
-						if (!data.achievementMap.entries.isEmpty() || !JSON_Data.isEmpty(data.achievementMap.parsedJsonValue))
+						if (!data.achievementMap.gameEntries.isEmpty() || !JSON_Data.isEmpty(data.achievementMap.parsedJsonValue))
 						children.add(
 							GroupingNode
-							.create(this, "Achievement Map", data.achievementMap.entries, null, TreeIcons.Achievement.getIcon(), AchievementMapEntryNode::new)
+							.create(this, "Achievement Map", data.achievementMap.gameEntries, null, TreeIcons.Achievement.getIcon(), AchievementMapGameEntriesNode::create)
 							.setDataTree(JSONHelper.createDataTreeRoot(data.achievementMap.getClass(), "ParsedJsonValue", data.achievementMap.parsedJsonValue,false))
 						);
 					} else
@@ -1972,16 +1983,16 @@ class TreeNodes {
 					this.data = data;
 				}
 
-				private static Icon getIcon(CommunityItem data) {
+				private static Icon getIcon(GameInfos.CommunityItems.CommunityItem data) {
 					//if (data.hasParsedData)
 					//	return Data.getGameIcon((int) data.appID, null);
 					return null;
 				}
 
-				private static String generateTitle(CommunityItem data) {
+				private static String generateTitle(GameInfos.CommunityItems.CommunityItem data) {
 					String str = "CommunityItem";
 					if (data.hasParsedData) {
-						String classLabel = CommunityItem.getClassLabel(data.itemClass);
+						String classLabel = GameInfos.CommunityItems.CommunityItem.getClassLabel(data.itemClass);
 						if (classLabel!=null) str = classLabel;
 						else str = "CommunityItem <Class "+data.itemClass+">";
 						
@@ -2066,7 +2077,7 @@ class TreeNodes {
 					return children;
 				}
 
-				private static void addKeyValues(TreeNode parent, Vector<TreeNode> children, CommunityItem data, CommunityItem.KeyValues values) {
+				private static void addKeyValues(TreeNode parent, Vector<TreeNode> children, GameInfos.CommunityItems.CommunityItem data, GameInfos.CommunityItems.CommunityItem.KeyValues values) {
 					if (values.hasParsedData) {
 						addImageUrlNode(parent, children, data, values.card_border_logo      , "Trading Card Border Logo"  );
 						addImageUrlNode(parent, children, data, values.item_image_border     , "Trading Card Border"       );
@@ -2074,7 +2085,7 @@ class TreeNodes {
 						
 						//log_ln(parent, "data.itemKeyValues.levels%s", values.levels==null ? " == <null>" : ".size() == "+values.levels.size());
 						if (values.levels!=null)
-							for (CommunityItem.KeyValues.Level level:values.levels) {
+							for (GameInfos.CommunityItems.CommunityItem.KeyValues.Level level:values.levels) {
 								String label = "Badge <Level "+level.id.toUpperCase()+">";
 								String levelname = level.getName();
 								if (levelname  !=null) label += " \""+levelname+"\"";
@@ -2089,7 +2100,7 @@ class TreeNodes {
 					}
 				}
 
-				private static boolean hasSubNodes(CommunityItem data) {
+				private static boolean hasSubNodes(GameInfos.CommunityItems.CommunityItem data) {
 					if (!data.hasParsedData) return false;
 					if (data.itemImageLarge       !=null && !data.itemImageLarge       .isEmpty()) return true;
 					if (data.itemImageSmall       !=null && !data.itemImageSmall       .isEmpty()) return true;
@@ -2109,7 +2120,7 @@ class TreeNodes {
 					return false;
 				}
 
-				private static void addImageUrlNode(TreeNode parent, Vector<TreeNode> children, CommunityItem data, String shortUrl, String label) {
+				private static void addImageUrlNode(TreeNode parent, Vector<TreeNode> children, GameInfos.CommunityItems.CommunityItem data, String shortUrl, String label) {
 					if (shortUrl!=null && !shortUrl.isEmpty()) {
 						String url = data.getURL(shortUrl);
 						children.add(
@@ -2120,7 +2131,7 @@ class TreeNodes {
 					}
 				}
 
-				private static void addUrlNode(TreeNode parent, Vector<TreeNode> children, CommunityItem data, String shortUrl, String label) {
+				private static void addUrlNode(TreeNode parent, Vector<TreeNode> children, GameInfos.CommunityItems.CommunityItem data, String shortUrl, String label) {
 					if (shortUrl!=null && !shortUrl.isEmpty()) {
 						String url = data.getURL(shortUrl);
 						children.add(
@@ -2182,7 +2193,10 @@ class TreeNodes {
 						String str = "Achievement";
 						if (achievement.hasParsedData) {
 							str = achievement.name;
-							if (achievement.isAchieved) str = "[+] "+str;
+							if (achievement.isAchieved)
+								str = "[+] "+str;
+							if (achievement.isHidden!=null && achievement.isHidden.booleanValue())
+								str += " (hidden)";
 						} else if (achievement.rawData!=null)
 							str += " [ Raw Data ]";
 						return str;
@@ -2203,11 +2217,13 @@ class TreeNodes {
 					public String getContentAsText() {
 						if (achievement.hasParsedData) {
 							String str = "";
-							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n" , "Name"       , achievement.name       );
-							str += String.format(Locale.ENGLISH, "%s: "+  "%s"   +"%n" , "Achieved"   , achievement.isAchieved);
-							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n" , "Description", achievement.description);
-							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n" , "ID"         , achievement.id         );
-							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n" , "Image"      , achievement.image      );
+							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n", "Name"       , achievement.name       );
+							str += String.format(Locale.ENGLISH, "%s: "+  "%s"   +"%n", "Achieved"   , achievement.isAchieved );
+							if (achievement.isHidden!=null)
+							str += String.format(Locale.ENGLISH, "%s: "+  "%s"   +"%n", "Hidden"     , achievement.isHidden   );
+							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n", "Description", achievement.description);
+							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n", "ID"         , achievement.id         );
+							str += String.format(Locale.ENGLISH, "%s: "+"\"%s\"" +"%n", "Image"      , achievement.image      );
 							str += String.format(Locale.ENGLISH, "%s: "+"%d (%s)"+"%n", "Unlocked"   , achievement.unlocked, achievement.unlocked==0 ? "not yet" : getTimeStr(achievement.unlocked*1000));
 							if (achievement.achievedRatio!=null)
 								str += String.format(Locale.ENGLISH, "%s: %f%n" , "Achieved Ratio", achievement.achievedRatio);
@@ -2241,6 +2257,28 @@ class TreeNodes {
 				}
 				
 			}
+			
+			static class AchievementMapGameEntriesNode extends GroupingNode<GameInfos.AchievementMap.Entry> {
+
+				AchievementMapGameEntriesNode(TreeNode parent, GameInfos.AchievementMap.GameEntries data) {
+					super(parent, generateTitle(data), data.entries, null, TreeIcons.Achievement.getIcon(), AchievementMapEntryNode::new, null);
+				}
+				
+				static TreeNode create(TreeNode parent, GameInfos.AchievementMap.GameEntries data) {
+					if (data==null)
+						return new SimpleLeafNode(parent, "Game == <null>");
+					
+					if (!data.hasParsedData)
+						return new RawJsonDataNode(parent, "Game [Raw Data]", data.rawData, data.getClass(), TreeIcons.Achievement.getIcon());
+					
+					return new AchievementMapGameEntriesNode(parent, data);
+				}
+
+				private static String generateTitle(GameInfos.AchievementMap.GameEntries data) {
+					return data==null || data.gameID<0 ? "Game" : String.format("Game %d", data.gameID);
+				}
+			}
+			
 			static class AchievementMapEntryNode extends BaseTreeNode<TreeNode,TreeNode> implements ImageNTextContentSource, TreeContentSource {
 				
 				private final GameInfos.AchievementMap.Entry data;
@@ -2256,6 +2294,7 @@ class TreeNodes {
 					if (data.hasParsedData) {
 						String str = data.name;
 						if (data.isAchieved) str = "[+] "+str;
+						if (data.isHidden!=null && data.isHidden.booleanValue()) str += " (hidden)";
 						return str;
 					}
 					if (data.rawData!=null)
@@ -2284,6 +2323,8 @@ class TreeNodes {
 						out.add(0, "Description", "\"%s\"", data.description);
 						out.add(0, "Is Achieved", "%s"    , data.isAchieved);
 						out.add(0, "Ratio"      , "%f"    , data.achievedRatio);
+						if (data.isHidden!=null)
+							out.add(0, "Is Hidden", "%s"  , data.isHidden);
 						return out.generateOutput();
 					}
 					return null;
@@ -2365,8 +2406,9 @@ class TreeNodes {
 					if (!tradingCard.hasParsedData)
 						return "Trading Card"+(tradingCard.rawData!=null ? " [Raw Data]" : "");
 					
-					String str = String.format("Trading Card \"%s\"", tradingCard.name);
-					if (tradingCard.owned!=0) str += String.format(" (%d)", tradingCard.owned);
+					String str = "Trading Card";
+					if (tradingCard.name !=null) str += String.format(" \"%s\"", tradingCard.name );
+					if (tradingCard.owned!=0   ) str += String.format(" (%d)"  , tradingCard.owned);
 					return str;
 				}
 

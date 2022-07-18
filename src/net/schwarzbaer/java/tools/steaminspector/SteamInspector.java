@@ -1185,6 +1185,7 @@ class SteamInspector {
 		private final JMenuItem miDetermineTitle;
 		private final JMenuItem miCollapseChildren;
 		private final JMenuItem miExpandChildren;
+		private final JMenuItem miJumpToGame;
 		private final JMenu     menuFilterChildren;
 		private final JMenu     menuReorderChildren;
 		private final ExtViewerChooseMenu extViewerChooseMenu;
@@ -1212,6 +1213,45 @@ class SteamInspector {
 			add(extViewerChooseMenu.createMenu());
 			add(miSetTitle       = createMenuItem("Set Title", true, e->changeGameTitle()));
 			add(miDetermineTitle = createMenuItem("Determine Title by Shop Page", true, e->determineGameTitleByShopPage()));
+			addSeparator();
+			add(miJumpToGame = createMenuItem("Jump to Game", true, e->{
+				boolean retry = true;
+				while (retry) {
+					retry = false;
+					
+					String valueStr = JOptionPane.showInputDialog(mainWindow, "Enter Game ID: ", "Game ID", JOptionPane.QUESTION_MESSAGE);
+					if (valueStr==null) return;
+					
+					int gameID;
+					try {
+						gameID = Integer.parseInt(valueStr);
+					} catch (NumberFormatException e1) {
+						String[] message = new String[] {
+							String.format("Can't parse \"%s\" as an interger value.", valueStr),
+							"Retry?"
+						};
+						String title = "Wrong Number Format";
+						retry = JOptionPane.showConfirmDialog(mainWindow, message, title, JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.ERROR_MESSAGE)==JOptionPane.YES_OPTION;
+						continue;
+					}
+					
+					TreeNode treeNode = TreeNodes.PlayersNGames.gameTitleChangeListeners.findTreeNode(gameID, tn->tn instanceof TreeNodes.PlayersNGames.GameNode);
+					if (treeNode instanceof TreeNodes.PlayersNGames.GameNode) {
+						TreeNodes.PlayersNGames.GameNode gameNode = (TreeNodes.PlayersNGames.GameNode) treeNode;
+						TreePath path = BaseTreeNode.getPath(gameNode);
+						tree.scrollPathToVisible(path);
+						tree.setSelectionPath(path);
+						
+					} else {
+						String[] message = new String[] {
+							String.format("Can't find a game with ID %d.", gameID),
+							"Retry?"
+						};
+						String title = "Can't find game";
+						retry = JOptionPane.showConfirmDialog(mainWindow, message, title, JOptionPane.YES_NO_CANCEL_OPTION)==JOptionPane.YES_OPTION;
+					}
+				}
+			}));
 			addSeparator();
 			add(miCollapseChildren  = createMenuItem("Collapse Children", true, e->expandCollapse(JTree::collapsePath)));
 			add(miExpandChildren    = createMenuItem("Expand Children"  , true, e->expandCollapse(JTree::expandPath  )));
@@ -1265,7 +1305,7 @@ class SteamInspector {
 			
 			if (clickedNode instanceof TreeNode) {
 				TreeNode treeNode = (TreeNode) clickedNode;
-				Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
+				Integer gameID = TreeNodes.PlayersNGames.gameTitleChangeListeners.getRegisteredGameID(treeNode);
 				Data.Game game = Data.games.get(gameID);
 				miSetTitle      .setEnabled(gameID!=null && (game==null || !game.hasAFixedTitle()));
 				miDetermineTitle.setEnabled(gameID!=null && (game==null || !game.hasAFixedTitle()));
@@ -1280,20 +1320,28 @@ class SteamInspector {
 						gameLabel = String.format("Game %d (\"%s\")%s", gameID, currentTitle, game!=null && game.hasAFixedTitle() ? " <fixed by AppManifest>" : "");
 					}
 					miSetTitle      .setText(String.format("%s Title of %s", setCmdStr, gameLabel));
-					miDetermineTitle.setText(String.format("Determine Title of %s", gameLabel));
+					miDetermineTitle.setText(String.format("Determine Title of %s by Shop Page", gameLabel));
 				} else {
 					miSetTitle      .setText("Set Title of Game");
-					miDetermineTitle.setText("Determine Title of Game");
+					miDetermineTitle.setText("Determine Title of Game by Shop Page");
 				}
 			} else {
 				miSetTitle.setEnabled(false);
 				miSetTitle.setText("Set Title of Game");
 				miDetermineTitle.setEnabled(true);
 				if (selectedPaths!=null && selectedPaths.length>1)
-					miDetermineTitle.setText("Determine Titles of All Selected Games");
+					miDetermineTitle.setText("Determine Titles of All Selected Games by Shop Page");
 				else
-					miDetermineTitle.setText("Determine Titles of All Untitled Games");
+					miDetermineTitle.setText("Determine Titles of All Untitled Games by Shop Page");
 			}
+			
+			miJumpToGame.setEnabled(clickedNode instanceof TreeNodes.PlayersNGames.GameNode);
+			//if (clickedNode instanceof TreeNodes.PlayersNGames.GameNode) {
+			//	TreeNodes.PlayersNGames.GameNode gameNode = (TreeNodes.PlayersNGames.GameNode) clickedNode;
+			//	miJumpToGame.setEnabled(true);
+			//} else {
+			//	miJumpToGame.setEnabled(false);
+			//}
 			
 			fillOptionMenu(
 				clickedFilter, menuFilterChildren, this.getCurrentTreeModel.get(), Filter::getFilterOptions,
@@ -1349,7 +1397,7 @@ class SteamInspector {
 			
 			if (clickedNode instanceof TreeNode) {
 				TreeNode treeNode = (TreeNode) clickedNode;
-				Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
+				Integer gameID = TreeNodes.PlayersNGames.gameTitleChangeListeners.getRegisteredGameID(treeNode);
 				if (gameID == null) return;
 				
 				ProgressDialog.runWithProgressDialog(mainWindow, "Determine Game Title By Shop Page", 300, pd->{
@@ -1364,7 +1412,7 @@ class SteamInspector {
 						if (path != null) {
 							Object pathComp = path.getLastPathComponent();
 							if (pathComp instanceof TreeNode) {
-								Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID((TreeNode) pathComp);
+								Integer gameID = TreeNodes.PlayersNGames.gameTitleChangeListeners.getRegisteredGameID((TreeNode) pathComp);
 								if (gameID!=null && !gameIDs.contains(gameID))
 									gameIDs.add(gameID);
 							}
@@ -1409,7 +1457,7 @@ class SteamInspector {
 				String newTitle = determineGameTitleByShopPage(gameID, pd, false, false);
 				if (newTitle!=null) {
 					Data.knownGameTitles.put(gameID, newTitle);
-					TreeNodes.PlayersNGames.gameChangeListeners.gameTitleWasChanged(treeModel, gameID);
+					TreeNodes.PlayersNGames.gameTitleChangeListeners.gameTitleWasChanged(treeModel, gameID);
 				}
 			}
 			
@@ -1629,7 +1677,7 @@ class SteamInspector {
 			if (!(clickedNode instanceof TreeNode)) return;
 			TreeNode treeNode = (TreeNode) clickedNode;
 			
-			Integer gameID = TreeNodes.PlayersNGames.gameChangeListeners.getRegisteredGameID(treeNode);
+			Integer gameID = TreeNodes.PlayersNGames.gameTitleChangeListeners.getRegisteredGameID(treeNode);
 			if (gameID == null) return;
 			
 			String currentTitle = Data.knownGameTitles.get(gameID);
@@ -1643,7 +1691,7 @@ class SteamInspector {
 		private static void setNewGameTitle(DefaultTreeModel treeModel, Integer gameID, String newTitle) {
 			Data.knownGameTitles.put(gameID, newTitle);
 			Data.knownGameTitles.writeToFile();
-			TreeNodes.PlayersNGames.gameChangeListeners.gameTitleWasChanged(treeModel, gameID);
+			TreeNodes.PlayersNGames.gameTitleChangeListeners.gameTitleWasChanged(treeModel, gameID);
 		}
 
 		private void expandCollapse(BiConsumer<JTree,TreePath> childFcn) {
@@ -2567,6 +2615,16 @@ class SteamInspector {
 		public void setTitle(String title) { this.title = title; }
 		@Override public String toString() { return title; }
 
+		TreePath getPath() {
+			return getPath(this);
+		}
+		static TreePath getPath(TreeNode treeNode) {
+			if (treeNode==null) return null;
+			TreeNode parent = treeNode.getParent();
+			if (parent==null) return new TreePath(treeNode);
+			return getPath(parent).pathByAddingChild(treeNode);
+		}
+		
 		@Override public ParentNodeType getParent() { return parent; }
 		@Override public boolean getAllowsChildren() { return allowsChildren; }
 		@Override public boolean isLeaf() { return isLeaf; }

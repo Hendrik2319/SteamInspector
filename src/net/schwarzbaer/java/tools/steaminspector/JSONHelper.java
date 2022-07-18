@@ -87,7 +87,7 @@ class JSONHelper {
 					childNode.doToAllNodesChildNodesAndFutureChildNodes(this.childNodeAction);
 		}
 
-		@Override public String getPath() {
+		@Override public String getPathStr() {
 			if (parent==null) {
 				if (name!=null)
 					return name;
@@ -96,7 +96,7 @@ class JSONHelper {
 			Value.Type parentType = parent.getValueType();
 			String indexInParent = parentType==Value.Type.Array ? "["+parent.getIndex(this)+"]" : "";
 			String nameRef = name!=null ? "."+name : "";
-			return parent.getPath()+indexInParent+nameRef;
+			return parent.getPathStr()+indexInParent+nameRef;
 		}
 		
 		Value<NV,V> getSubNodeValue(Object... path) {
