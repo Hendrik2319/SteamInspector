@@ -752,6 +752,24 @@ class TreeNodes {
 				}
 			};
 		}
+		
+		private static <VT, FilterOptType extends Enum<FilterOptType> & FilterOption> GroupingNodeFilter<VT,FilterOptType> createFilter(
+				Class<FilterOptType> filterOptionClass,
+				FilterOptType[] options,
+				Function<FilterOption,FilterOptType> cast,
+				BiPredicate<VT,FilterOptType> valueMeetsOption
+		) {
+			return new GroupingNodeFilter<VT,FilterOptType>(filterOptionClass, options) {
+				@Override protected FilterOptType cast(FilterOption opt) {
+					if (opt==null) return null;
+					return cast.apply(opt);
+				}
+				@Override protected boolean valueMeetsOption(VT value, FilterOptType option) {
+					if (value==null) return true;
+					return valueMeetsOption.test(value, option);
+				}
+			};
+		}
 
 		private static abstract class GroupingNodeFilter<ValueType, FilterOptType extends Enum<FilterOptType> & FilterOption> implements Filter {
 			
@@ -1178,18 +1196,18 @@ class TreeNodes {
 				if (game.appManifest!=null) {
 					children.add(new FileSystem.AppManifestNode(this, game.appManifest.file));
 				}
-				if (!game.gameInfos.isEmpty()) {
+				if (!game.gameInfos_LibCache.isEmpty()) {
 					children.add(GroupingNode.create(
-							this, "Game Infos",
-							game.gameInfos,
+							this, "Game Infos (LibraryCache)",
+							game.gameInfos_LibCache,
 							Data.createPlayerIdKeyOrder(),
 							GameInfosNode::new
 					));
 				}
-				if (!game.lastPlayedData.isEmpty()) {
+				if (!game.gameInfos_LocCfg.isEmpty()) {
 					children.add(GroupingNode.create(
-							this, "Last Played",
-							game.lastPlayedData,
+							this, "Game Infos (LocalConfig)",
+							game.gameInfos_LocCfg,
 							Data.createPlayerIdKeyOrder(),
 							(p,playerID,appData)->PlayerNode.createAppDataNode(p, appData, "by "+Data.getPlayerName(playerID), null)
 					));
@@ -1222,7 +1240,7 @@ class TreeNodes {
 				}
 				if (!game.steamCloudFolders.isEmpty()) {
 					children.add(GroupingNode.create(
-							this, "SteamCloud Shared Data",
+							this, "SteamCloud Shared Data (remotecache.vdf)",
 							game.steamCloudFolders,
 							Data.createPlayerIdKeyOrder(),
 							TreeIcons.Folder.getIcon(),
@@ -1298,19 +1316,16 @@ class TreeNodes {
 					else
 						children.add(new FileSystem.VDF_File(this, "LocalConfig (File)", player.localconfig.file,"LocalConfig<VDF>"));
 					
-					if (player.localconfig.softwareValveSteamApps!=null)
-						children.add(createSoftwareValveSteamAppsNode(this,player.localconfig.softwareValveSteamApps));
-					
 					if (player.localconfig.friendList!=null)
-						children.add(new FriendListNode(this, player.localconfig.friendList));
-				}
-				if (player.achievementProgress!=null) {
-					children.add(new AchievementProgressNode(this, player.achievementProgress));
+						children.add(new FriendListNode(this, "Friends (LocalConfig)", player.localconfig.friendList));
+					
+					if (player.localconfig.softwareValveSteamApps!=null)
+						children.add(createSoftwareValveSteamAppsNode(this,"Game Infos (LocalConfig)", player.localconfig.softwareValveSteamApps));
 				}
 				if (!player.gameInfos.isEmpty()) {
 					GroupingNode<Map.Entry<Integer, GameInfos>> groupingNode1;
 					children.add(groupingNode1 = GroupingNode.create(
-							this, "Game Infos",
+							this, "Game Infos (LibraryCache)",
 							player.gameInfos,
 							Data.createGameIdKeyOrder(),
 							GameInfosNode::new
@@ -1322,6 +1337,9 @@ class TreeNodes {
 							GameInfos.GameInfosFilterOptions::cast,
 							GameInfos::meetsFilterOption
 					));
+				}
+				if (player.achievementProgress!=null) {
+					children.add(new AchievementProgressNode(this, player.achievementProgress));
 				}
 				
 				return children;
@@ -1336,8 +1354,7 @@ class TreeNodes {
 				return node;
 			}
 
-			private static TreeNode createSoftwareValveSteamAppsNode(TreeNode parent, SoftwareValveSteamApps apps) {
-				String baseNodeTitle = "Last Play Times";
+			private static TreeNode createSoftwareValveSteamAppsNode(TreeNode parent, String title, SoftwareValveSteamApps apps) {
 				MultiPurposeNode baseNode;
 				if (apps.hasParsedData) {
 //					Comparator<SoftwareValveSteamApps.App> sortOrder = Comparator.comparing(app->app.appID,Comparator.nullsLast(Data.createGameIdOrder()));
@@ -1345,17 +1362,22 @@ class TreeNodes {
 					Comparator<SoftwareValveSteamApps.AppData> sortOrder = Comparator.comparing(app->app.lastPlayed_ks,Comparator.nullsLast(Comparator.reverseOrder()));
 					sortOrder = sortOrder.thenComparing(app->app.nodeName);
 					
-					// TODO: make SoftwareValveSteamAppsNode filterable
-					baseNode = GroupingNode.create(parent, baseNodeTitle, apps.apps, sortOrder, PlayerNode::createAppDataNode)
+					baseNode = GroupingNode
+							.create(parent, title, apps.apps, sortOrder, PlayerNode::createAppDataNode)
+							.setFilter(GroupingNode.createFilter(
+								SoftwareValveSteamApps.AppData.FilterOption.class,
+								SoftwareValveSteamApps.AppData.FilterOption.values(),
+								SoftwareValveSteamApps.AppData.FilterOption::cast,
+								SoftwareValveSteamApps.AppData::meetsFilterOption
+							))
 							.setTextSource(()->{
-						ValueListOutput out = new ValueListOutput();
-						addLine       (out,0,apps.playerLevel    , apps.str_playerLevel , "Player Level", "%d");
-						addDateLine_ks(out,0,apps.lastSyncTime_ks, apps.str_lastSyncTime, "Last Sync Time of \"Played Times\"");
-						return out.generateOutput();
-					});
-					
+								ValueListOutput out = new ValueListOutput();
+								addLine       (out,0,apps.playerLevel    , apps.str_playerLevel , "Player Level", "%d");
+								addDateLine_ks(out,0,apps.lastSyncTime_ks, apps.str_lastSyncTime, "Last Sync Time of \"Played Times\"");
+								return out.generateOutput();
+							});
 				} else {
-					baseNode = new SimpleLeafNode(parent, baseNodeTitle);
+					baseNode = new SimpleLeafNode(parent, title);
 					if (apps.rawData!=null)
 						baseNode.setDataTree(apps.rawData.createRawDataTreeRoot(apps.getClass()));
 				}
@@ -1390,17 +1412,55 @@ class TreeNodes {
 						ValueListOutput out = new ValueListOutput();
 						if (app.appID               !=null) out.add(0, "App ID   ", "%d%s", app.appID, Data.hasGameATitle(app.appID) ? "  ->  "+Data.getGameTitle(app.appID) : "");
 						else                                out.add(0, "Node Name", app.nodeName);
+						
 						addDateLine_ks (out, 0, app.lastPlayed_ks          , app.str_lastPlayed          , "Last Time Played"       );
 						addTimeLine_min(out, 0, app.playtime_min           , app.str_playtime            , "Playtime"               );
 						addTimeLine_min(out, 0, app.playtime_2weeks_min    , app.str_playtime_2wks       , "Playtime (last 2 Weeks)");
-						addDateLine_ks (out, 0, app.autocloud_lastlaunch_ks, app.str_autocloud_lastlaunch, "Autocloud > Last Launch");
-						addDateLine_ks (out, 0, app.autocloud_lastexit_ks  , app.str_autocloud_lastexit  , "Autocloud > Last Exit  ");
-						if (app.badgeData           !=null) out.add(0, "Badge Data          ", app.badgeData       );
-						if (app.news                !=null) out.add(0, "News                ", app.news            );
-						if (app.eula_1161580_0     !=null) out.add(0, "\"1161580_eula_0\"  ", app.eula_1161580_0 );
-						if (app.eula_47870          !=null) out.add(0, "\"eula_47870\"      ", app.eula_47870      );
-						if (app.viewedLaunchEULA    !=null) out.add(0, "\"viewedLaunchEULA\"", app.viewedLaunchEULA);
-						// TODO: add new values
+						
+						if (app.badgeData!=null) out.add(0, "Badge Data", app.badgeData);
+						if (app.news     !=null) out.add(0, "News"      , app.news     );
+						
+						if (app.str_autocloud_lastlaunch!=null || app.str_autocloud_lastexit!=null) {
+							out.add(0, "Autocloud");
+							addDateLine_ks (out, 1, app.autocloud_lastlaunch_ks, app.str_autocloud_lastlaunch, "Last Launch");
+							addDateLine_ks (out, 1, app.autocloud_lastexit_ks  , app.str_autocloud_lastexit  , "Last Exit"  );
+						}
+						
+						if (app.cloud_last_sync_state!=null
+								|| app.str_cloud_quota_bytes!=null
+								|| app.str_cloud_quota_files!=null
+								|| app.str_cloud_used_bytes !=null
+								|| app.str_cloud_used_files !=null
+							) {
+							out.add(0, "Cloud");
+							if (app.cloud_last_sync_state!=null) out.add(1, "Last Sync State", app.cloud_last_sync_state);
+							if (app.str_cloud_quota_bytes!=null || app.str_cloud_quota_files!=null) {
+								out.add(1, "Quota");
+								addLine(out, 2, app.cloud_quota_bytes, app.str_cloud_quota_bytes, null, "%d Bytes");
+								addLine(out, 2, app.cloud_quota_files, app.str_cloud_quota_files, null, "%d Files");
+							}
+							if (app.str_cloud_used_bytes !=null || app.str_cloud_used_files !=null) {
+								out.add(1, "Used");
+								addLine(out, 2, app.cloud_used_bytes , app.str_cloud_used_bytes , null, "%d Bytes");
+								addLine(out, 2, app.cloud_used_files , app.str_cloud_used_files , null, "%d Files");
+							}
+						}
+						
+						if (app.viewedLaunchEULA    !=null
+							|| app.eula_47870    !=null
+							|| app.eula_332310_1 !=null
+							|| app.eula_876160_0 !=null
+							|| app.eula_1161580_0!=null
+							|| app.eula_1465360_0!=null
+							) {
+							out.add(0, "EULAs");
+							if (app.viewedLaunchEULA!=null) out.add(1, "Launch EULA viewed", app.viewedLaunchEULA);
+							if (app.eula_47870      !=null) out.add(1, "47870"      , app.eula_47870    );
+							if (app.eula_332310_1   !=null) out.add(1, "332310 (1)" , app.eula_332310_1 );
+							if (app.eula_876160_0   !=null) out.add(1, "876160 (0)" , app.eula_876160_0 );
+							if (app.eula_1161580_0  !=null) out.add(1, "1161580 (0)", app.eula_1161580_0);
+							if (app.eula_1465360_0  !=null) out.add(1, "1465360 (0)", app.eula_1465360_0);
+						}
 						
 						return out.generateOutput();
 					});
@@ -1411,7 +1471,7 @@ class TreeNodes {
 				return node;
 			}
 
-			private static void addLine(ValueListOutput out, int indentLevel, Integer parsedValue, String rawStr, String label, String format) {
+			private static void addLine(ValueListOutput out, int indentLevel, Object parsedValue, String rawStr, String label, String format) {
 				if (parsedValue != null)
 					out.add(indentLevel, label, format, parsedValue);
 				else if (rawStr != null)
@@ -1435,8 +1495,8 @@ class TreeNodes {
 
 			private final FriendList data;
 
-			public FriendListNode(TreeNode parent, FriendList friendList) {
-				super(parent,"Friends",true,false);
+			public FriendListNode(TreeNode parent, String title, FriendList friendList) {
+				super(parent,title,true,false);
 				this.data = friendList;
 			}
 

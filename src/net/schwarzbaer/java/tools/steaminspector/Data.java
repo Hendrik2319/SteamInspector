@@ -1406,28 +1406,28 @@ class Data {
 
 				static class AppData {
 				    // Block "Data.Player.LocalConfig.SoftwareValveSteamApps.AppData"
-			        //     <Base>:[Array]
-			        //     <Base>.1161580_eula_0:[String, <unset>] { Values: Integer }
-			        //     <Base>.1465360_eula_0:[String, <unset>] { Values: Integer }
-			        //     <Base>.332310_eula_1:[Array, <unset>] or empty array
-			        //     <Base>.876160_eula_0:[String, <unset>] { Values: Integer }
-			        //     <Base>.autocloud:[Array, <unset>]
-			        //     <Base>.autocloud.lastexit:[String, <unset>] { Values: Integer }
-			        //     <Base>.autocloud.lastlaunch:[String] { Values: Integer }
-			        //     <Base>.BadgeData:[String, <unset>] { Values: String, Long, Float }
-			        //     <Base>.cloud:[Array, <unset>]
-			        //     <Base>.cloud.last_sync_state:[String] { Values: String }
-			        //     <Base>.cloud.quota_bytes:[String, <unset>] { Values: Long }
-			        //     <Base>.cloud.quota_files:[String, <unset>] { Values: Integer }
-			        //     <Base>.cloud.used_bytes:[String, <unset>] { Values: Integer }
-			        //     <Base>.cloud.used_files:[String, <unset>] { Values: Integer }
-			        //     <Base>.eula_47870:[String, <unset>] { Values: Integer }
-			        //     <Base>.LastPlayed:[String, <unset>] { Values: Integer }
-			        //     <Base>.News:[String, <unset>] { Values: Integer }
-			        //     <Base>.Playtime:[String, <unset>] { Values: Integer }
-			        //     <Base>.Playtime2wks:[String, <unset>] { Values: Integer }
-			        //     <Base>.ViewedLaunchEULA:[String, <unset>] { Values: Integer }
-					
+					//     <Base>:[Array]
+					//     <Base>.1161580_eula_0:[String, <unset>] { Values: Integer }
+					//     <Base>.1465360_eula_0:[String, <unset>] { Values: Integer }
+					//     <Base>.332310_eula_1:[Array, <unset>] or empty array
+					//     <Base>.876160_eula_0:[String, <unset>] { Values: Integer }
+					//     <Base>.autocloud:[Array, <unset>]
+					//     <Base>.autocloud.lastexit:[String, <unset>] { Values: Integer }
+					//     <Base>.autocloud.lastlaunch:[String] { Values: Integer }
+					//     <Base>.BadgeData:[String, <unset>] { Values: String, Long, Float }
+					//     <Base>.cloud:[Array, <unset>]
+					//     <Base>.cloud.last_sync_state:[String] { Values: String }
+					//     <Base>.cloud.quota_bytes:[String, <unset>] { Values: Long }
+					//     <Base>.cloud.quota_files:[String, <unset>] { Values: Integer }
+					//     <Base>.cloud.used_bytes:[String, <unset>] { Values: Integer }
+					//     <Base>.cloud.used_files:[String, <unset>] { Values: Integer }
+					//     <Base>.eula_47870:[String, <unset>] { Values: Integer }
+					//     <Base>.LastPlayed:[String, <unset>] { Values: Integer }
+					//     <Base>.News:[String, <unset>] { Values: Integer }
+					//     <Base>.Playtime:[String, <unset>] { Values: Integer }
+					//     <Base>.Playtime2wks:[String, <unset>] { Values: Integer }
+					//     <Base>.ViewedLaunchEULA:[String, <unset>] { Values: Integer }
+
 					private static final DevHelper.KnownVdfValuesRecursive KNOWN_VDF_VALUES = new DevHelper.KnownVdfValuesRecursive(AppData.class)
 							.add(VDFTreeNode.Type.Array )
 					        .add(VDFTreeNode.Type.String, "1161580_eula_0")
@@ -1585,6 +1585,52 @@ class Data {
 					private void showValue(String label, String value) {
 						if (value==null) return;
 						DevHelper.unknownValues.add(String.format("%s.%s = \"%s\"", "SoftwareValveSteamApps.Apps[]", label, value));
+					}
+					
+					static boolean meetsFilterOption(AppData appData, FilterOption option) {
+						if (appData==null) return true;
+						if (option==null) return true;
+						switch (option) {
+						case RawData: return !appData.hasParsedData;
+						case EULA:
+							return appData.viewedLaunchEULA!=null
+								|| appData.eula_47870    !=null
+								|| appData.eula_332310_1 !=null
+								|| appData.eula_876160_0 !=null
+								|| appData.eula_1161580_0!=null
+								|| appData.eula_1465360_0!=null;
+						case AutoCloud     : return appData.str_autocloud_lastexit!=null || appData.str_autocloud_lastlaunch!=null;
+						case CloudQuota    : return appData.str_cloud_quota_bytes !=null || appData.str_cloud_quota_files   !=null;
+						case CloudUsed     : return appData.str_cloud_used_bytes  !=null || appData.str_cloud_used_files    !=null;
+						case CloudSyncState: return appData.cloud_last_sync_state!=null;
+						case BadgeData     : return appData.badgeData!=null;
+						case NoBadgeData   : return appData.badgeData==null && appData.hasParsedData;
+						case News          : return appData.news!=null;
+						}
+						return true;
+					}
+					
+					enum FilterOption implements SteamInspector.MainTreeContextMenu.FilterOption {
+						RawData    ("can't be parsed"),
+						EULA       ("has EULA"),
+						BadgeData  ("has Badge Data"),
+						NoBadgeData("has NO Badge Data"),
+						News       ("has News"),
+						AutoCloud  ("has Auto Cloud value"),
+						CloudQuota ("has Cloud Quota"),
+						CloudUsed  ("has used Cloud"),
+						CloudSyncState("has Cloud Sync State"),
+						;
+						private final String label;
+						FilterOption(String label) { this.label = label; }
+						@Override public String toString() { return label; }
+
+						static FilterOption cast(SteamInspector.MainTreeContextMenu.FilterOption obj) {
+							//System.out.printf("FilterOptions.cast( [%s] obj=%s )%n", obj==null ? null : obj.getClass(), obj );
+							if (obj instanceof FilterOption)
+								return (FilterOption) obj;
+							return null;
+						}
 					}
 				
 				}
@@ -3803,9 +3849,9 @@ class Data {
 		final HashMap<String, File> imageFiles;
 		final HashMap<Long, File> steamCloudFolders;
 		final HashMap<Long, ScreenShotLists.ScreenShotList> screenShots;
-		final HashMap<Long, Player.GameInfos>  gameInfos;
+		final HashMap<Long, Player.GameInfos>  gameInfos_LibCache;
 		final HashMap<Long, Player.AchievementProgress.AchievementProgressInGame>  achievementProgress;
-		final HashMap<Long, Player.LocalConfig.SoftwareValveSteamApps.AppData>  lastPlayedData;
+		final HashMap<Long, Player.LocalConfig.SoftwareValveSteamApps.AppData>  gameInfos_LocCfg;
 		
 		Game(int appID, AppManifest appManifest, HashMap<String, File> imageFiles, HashMap<Long, Player> players) {
 			this.appID = appID;
@@ -3815,14 +3861,14 @@ class Data {
 			
 			steamCloudFolders = new HashMap<>();
 			screenShots = new HashMap<>();
-			gameInfos = new HashMap<>();
+			gameInfos_LibCache = new HashMap<>();
 			achievementProgress = new HashMap<>();
-			lastPlayedData = new HashMap<>();
+			gameInfos_LocCfg = new HashMap<>();
 			players.forEach((playerID,player)->{
 				if (playerID==null) return;
 				
 				copyValue(player.steamCloudFolders, steamCloudFolders, appID, playerID);
-				copyValue(player.gameInfos        , gameInfos        , appID, playerID);
+				copyValue(player.gameInfos        , gameInfos_LibCache, appID, playerID);
 				
 				if (player.screenShots!=null)
 					copyValue(player.screenShots, screenShots, appID, playerID, v->!v.isEmpty());
@@ -3832,7 +3878,7 @@ class Data {
 				
 				if (player.localconfig!=null) {
 					if (player.localconfig.softwareValveSteamApps!=null && player.localconfig.softwareValveSteamApps.appsWithID!=null)
-						copyValue(player.localconfig.softwareValveSteamApps.appsWithID, lastPlayedData, appID, playerID);
+						copyValue(player.localconfig.softwareValveSteamApps.appsWithID, gameInfos_LocCfg, appID, playerID);
 				}
 			});
 		}
@@ -3922,7 +3968,7 @@ class Data {
 
 			private static Long getLastPlayed(Game game, long playerID) {
 				if (game==null) return null;
-				Player.LocalConfig.SoftwareValveSteamApps.AppData appData = game.lastPlayedData.get(playerID);
+				Player.LocalConfig.SoftwareValveSteamApps.AppData appData = game.gameInfos_LocCfg.get(playerID);
 				if (appData==null) return null;
 				return appData.lastPlayed_ks;
 			}

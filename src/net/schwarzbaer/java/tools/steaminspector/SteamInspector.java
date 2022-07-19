@@ -1860,8 +1860,8 @@ class SteamInspector {
 			
 			HashMap<Long,String> fullDescriptions  = new HashMap<>();
 			HashMap<Long,String> shortDescriptions = new HashMap<>();
-			if (game.gameInfos!=null) {
-				game.gameInfos.forEach((playerrID,infos)->{
+			if (game.gameInfos_LibCache!=null) {
+				game.gameInfos_LibCache.forEach((playerrID,infos)->{
 					if (infos.fullDesc !=null) fullDescriptions .put(playerrID, infos.fullDesc);
 					if (infos.shortDesc!=null) shortDescriptions.put(playerrID, infos.shortDesc);
 				});
