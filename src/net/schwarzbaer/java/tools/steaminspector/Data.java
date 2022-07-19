@@ -18,6 +18,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -75,6 +76,12 @@ class Data {
 		static class OptionalVdfValues extends HashMap<String,OptionalVdfValues.NodeTypes> {
 			private static final long serialVersionUID = 4079411257348652398L;
 			
+			void scan(VDFTreeNode node, Class<?> dataClass, String annex) {
+				scan(node, getValueLabelFor(dataClass,annex));
+			}
+			void scan(VDFTreeNode node, Class<?> dataClass) {
+				scan(node, getValueLabelFor(dataClass));
+			}
 			void scan(VDFTreeNode node, String id) {
 				NodeTypes nodeTypes = get(id);
 				boolean nodeTypesNotNew;
@@ -92,10 +99,14 @@ class Data {
 					nodeTypes.types.add(null);
 				else {
 					VDFTreeNode.Type type = node.getType();
-					nodeTypes.types.add(type);
 					if (type==null) throw new IllegalStateException("VDFTreeNode.type == <null>");
+					nodeTypes.types.add(type);
 					switch(type) {
-					case String: break;
+					case String:
+						String str = node.getValue();
+						if (str==null) throw new IllegalStateException("VDFTreeNode.type == String, but VDFTreeNode.value == null");
+						nodeTypes.parsedValueTypes.add( NodeTypes.ParsedValueType.determine(str) );
+						break;
 					case Root:
 					case Array:
 						if (nodeTypes.arrayValues==null)
@@ -128,10 +139,9 @@ class Data {
 				if (isEmpty()) return;
 				out.printf("%s: %d blocks%n", label, size());
 				String indent = "    ";
-				String indent2 = indent+indent;
 				forEach_keySorted(this,(id,nodeTypes)->{
 					out.printf("%sBlock \"%s\"%n", indent, id);
-					nodeTypes.show(out,indent2,"<Base>");
+					nodeTypes.show(out, indent+indent, "<Base>");
 				});
 			}
 
@@ -146,12 +156,44 @@ class Data {
 			}
 			
 			static class NodeTypes {
+				enum ParsedValueType {
+					String, Bool, Integer, Long, Float;
+
+					static ParsedValueType determine(String value) {
+						if (value==null)
+							throw new IllegalArgumentException("ParsedValueType.determine( null ) is not allowed");
+						
+						try {
+							java.lang.Integer.parseInt(value);
+							return Integer;
+						} catch (NumberFormatException e) {}
+						
+						try {
+							java.lang.Long.parseLong(value);
+							return Long;
+						} catch (NumberFormatException e) {}
+						
+						try {
+							double d = java.lang.Double.parseDouble(value);
+							if (Double.isFinite(d)) return Float;
+						} catch (NumberFormatException e) {}
+						
+						java.lang.String value_lc = value.toLowerCase();
+						if (value_lc.equals("true") || value_lc.equals("false"))
+							return Bool;
+						
+						return String;
+					}
+				}
+				
+				
 				final HashSet<VDFTreeNode.Type> types = new HashSet<>();
+				final EnumSet<ParsedValueType> parsedValueTypes = EnumSet.noneOf(ParsedValueType.class);
 				HashMap<String,NodeTypes> arrayValues = null;
 				boolean isEmptyArrayPossible = false;
 				
 				void show(PrintStream out, String indent, String name) {
-					out.printf("%s%s:%s%s%n", indent, name, types, isEmptyArrayPossible ? " or empty array" : "");
+					out.printf("%s%s:%s%s%s%n", indent, name, getTypesStr(), isEmptyArrayPossible ? " or empty array" : "", parsedValueTypes.isEmpty() ? "" : " { Values: "+getParsedValueTypesStr()+" }");
 					if (arrayValues!=null) {
 						forEach_keySorted(arrayValues,(subName,subNodeTypes)->{
 							String name2 = name+"."+subName;
@@ -161,7 +203,7 @@ class Data {
 				}
 
 				void toString(StringBuilder sb, String indent, String name) {
-					sb.append(String.format("%s%s:%s%s", indent, name, types, isEmptyArrayPossible ? " | empty array" : ""));
+					sb.append(String.format("%s%s:%s%s%s", indent, name, getTypesStr(), isEmptyArrayPossible ? " | empty array" : "", parsedValueTypes.isEmpty() ? "" : " | {"+getParsedValueTypesStr()+"}"));
 					if (arrayValues == null)
 						sb.append(String.format("%n"));
 					else {
@@ -172,6 +214,22 @@ class Data {
 						});
 						sb.append(String.format("%s}%n", indent));
 					}
+				}
+
+				private String getTypesStr() {
+					Iterable<String> it = ()->types.stream()
+							.sorted(Comparator.nullsLast(Comparator.naturalOrder()))
+							.map(t->t==null ? "<unset>" : t.toString())
+							.iterator();
+					return String.format("[%s]", String.join(", ", it));
+				}
+
+				private String getParsedValueTypesStr() {
+					Iterable<String> it = ()->parsedValueTypes.stream()
+							.sorted(Comparator.nullsLast(Comparator.naturalOrder()))
+							.map(t->t==null ? "<null>" : t.toString())
+							.iterator();
+					return String.join(", ", it);
 				}
 
 				@Override public String toString() {
@@ -1242,7 +1300,7 @@ class Data {
 				final String  str_playerLevel;
 				final String  str_lastSyncTime;
 				final Integer playerLevel;
-				final Long    lastSyncTime_Ts;
+				final Long    lastSyncTime_ks;
 
 				SoftwareValveSteamApps(VDFTreeNode rawData) {
 					this.rawData = rawData;
@@ -1254,7 +1312,7 @@ class Data {
 					str_playerLevel  = null;
 					str_lastSyncTime = null;
 					playerLevel      = null;
-					lastSyncTime_Ts  = null;
+					lastSyncTime_ks  = null;
 				}
 				
 				SoftwareValveSteamApps(VDFTreeNode blockNode, String debugOutputPrefixStr, File file) throws VDFTraverseException {
@@ -1276,7 +1334,7 @@ class Data {
 					});
 					
 					this.playerLevel     = parseNumber    (str_playerLevel  = playerLevel .value);
-					this.lastSyncTime_Ts = parseLongNumber(str_lastSyncTime = lastSyncTime.value);
+					this.lastSyncTime_ks = parseLongNumber(str_lastSyncTime = lastSyncTime.value);
 				}
 
 				private boolean processBlockSubNode(
@@ -1347,33 +1405,51 @@ class Data {
 				}
 
 				static class AppData {
-					// Block "SoftwareValveSteamApps.Apps[]"
-					//     <Base>:[Array]
-					//     <Base>.autocloud:[null, Array]
-					//     <Base>.autocloud.lastexit:[null, String]
-					//     <Base>.autocloud.lastlaunch:[String]
-					//     <Base>.BadgeData:[null, String]
-					//     <Base>.LastPlayed:[String]
-					//     <Base>.Playtime:[null, String]
-					//     <Base>.Playtime2wks:[null, String]
-					//     <Base>.ViewedLaunchEULA:[null, String]
-					//     <Base>.1161580_eula_0:[null, String]
-					//     <Base>.eula_47870:[null, String]
-					//     <Base>.News:[null, String]
+				    // Block "Data.Player.LocalConfig.SoftwareValveSteamApps.AppData"
+			        //     <Base>:[Array]
+			        //     <Base>.1161580_eula_0:[String, <unset>] { Values: Integer }
+			        //     <Base>.1465360_eula_0:[String, <unset>] { Values: Integer }
+			        //     <Base>.332310_eula_1:[Array, <unset>] or empty array
+			        //     <Base>.876160_eula_0:[String, <unset>] { Values: Integer }
+			        //     <Base>.autocloud:[Array, <unset>]
+			        //     <Base>.autocloud.lastexit:[String, <unset>] { Values: Integer }
+			        //     <Base>.autocloud.lastlaunch:[String] { Values: Integer }
+			        //     <Base>.BadgeData:[String, <unset>] { Values: String, Long, Float }
+			        //     <Base>.cloud:[Array, <unset>]
+			        //     <Base>.cloud.last_sync_state:[String] { Values: String }
+			        //     <Base>.cloud.quota_bytes:[String, <unset>] { Values: Long }
+			        //     <Base>.cloud.quota_files:[String, <unset>] { Values: Integer }
+			        //     <Base>.cloud.used_bytes:[String, <unset>] { Values: Integer }
+			        //     <Base>.cloud.used_files:[String, <unset>] { Values: Integer }
+			        //     <Base>.eula_47870:[String, <unset>] { Values: Integer }
+			        //     <Base>.LastPlayed:[String, <unset>] { Values: Integer }
+			        //     <Base>.News:[String, <unset>] { Values: Integer }
+			        //     <Base>.Playtime:[String, <unset>] { Values: Integer }
+			        //     <Base>.Playtime2wks:[String, <unset>] { Values: Integer }
+			        //     <Base>.ViewedLaunchEULA:[String, <unset>] { Values: Integer }
 					
 					private static final DevHelper.KnownVdfValuesRecursive KNOWN_VDF_VALUES = new DevHelper.KnownVdfValuesRecursive(AppData.class)
 							.add(VDFTreeNode.Type.Array )
+					        .add(VDFTreeNode.Type.String, "1161580_eula_0")
+					        .add(VDFTreeNode.Type.String, "1465360_eula_0")
+					        .add(VDFTreeNode.Type.Array , "332310_eula_1")
+					        .add(VDFTreeNode.Type.String, "876160_eula_0")
 							.add(VDFTreeNode.Type.Array , "autocloud")
 							.add(VDFTreeNode.Type.String, "autocloud", "lastexit")
-							.add(VDFTreeNode.Type.String, "autocloud", "lastlaunch")
+							.add(VDFTreeNode.Type.String, "autocloud", "lastlaunch") // not optional
 							.add(VDFTreeNode.Type.String, "BadgeData")
+					        .add(VDFTreeNode.Type.Array , "cloud")
+					        .add(VDFTreeNode.Type.String, "cloud", "last_sync_state") // not optional
+					        .add(VDFTreeNode.Type.String, "cloud", "quota_bytes")
+					        .add(VDFTreeNode.Type.String, "cloud", "quota_files")
+					        .add(VDFTreeNode.Type.String, "cloud", "used_bytes")
+					        .add(VDFTreeNode.Type.String, "cloud", "used_files")
+					        .add(VDFTreeNode.Type.String, "eula_47870")
 							.add(VDFTreeNode.Type.String, "LastPlayed")
+							.add(VDFTreeNode.Type.String, "News")
 							.add(VDFTreeNode.Type.String, "Playtime")
 							.add(VDFTreeNode.Type.String, "Playtime2wks")
-							.add(VDFTreeNode.Type.String, "ViewedLaunchEULA")
-							.add(VDFTreeNode.Type.String, "1161580_eula_0")
-							.add(VDFTreeNode.Type.String, "eula_47870")
-							.add(VDFTreeNode.Type.String, "News");
+							.add(VDFTreeNode.Type.String, "ViewedLaunchEULA");
 					
 					final VDFTreeNode rawData;
 					final String nodeName;
@@ -1386,18 +1462,33 @@ class Data {
 					final String str_autocloud_lastexit;
 					final String str_autocloud_lastlaunch;
 
-					final Long lastPlayed_Ts;
+					final Long    lastPlayed_ks;
 					final Integer playtime_min;
-					final Integer playtime_min_2weeks;
-					final Long autocloud_lastexit_Ts;
-					final Long autocloud_lastlaunch_Ts;
+					final Integer playtime_2weeks_min;
+					final Long    autocloud_lastexit_ks;
+					final Long    autocloud_lastlaunch_ks;
 					
 					final String badgeData;
-					final String viewedLaunchEULA;
-					final String _1161580_eula_0;
-					final String eula_47870;
 					final String news;
+					
+					final String viewedLaunchEULA;
+					final String eula_47870;
+					final String eula_332310_1;
+					final String eula_876160_0;
+					final String eula_1161580_0;
+					final String eula_1465360_0;
 
+					final String str_cloud_quota_bytes;
+					final String str_cloud_quota_files;
+					final String str_cloud_used_bytes;
+					final String str_cloud_used_files;
+					
+					final String cloud_last_sync_state;
+					final Long   cloud_quota_bytes;
+					final Long   cloud_quota_files;
+					final Long   cloud_used_bytes;
+					final Long   cloud_used_files;
+					
 					AppData(String nodeName, VDFTreeNode rawData) {
 						this.rawData = rawData;
 						appID = parseNumber(this.nodeName = nodeName);
@@ -1409,17 +1500,33 @@ class Data {
 						str_autocloud_lastexit   = null;
 						str_autocloud_lastlaunch = null;
 						
-						lastPlayed_Ts           = null;
+						lastPlayed_ks           = null;
 						playtime_min            = null;
-						playtime_min_2weeks     = null;
-						autocloud_lastexit_Ts   = null;
-						autocloud_lastlaunch_Ts = null;
+						playtime_2weeks_min     = null;
+						autocloud_lastexit_ks   = null;
+						autocloud_lastlaunch_ks = null;
 						
-						badgeData        = null;
+						str_cloud_quota_bytes = null;
+						str_cloud_quota_files = null;
+						str_cloud_used_bytes  = null;
+						str_cloud_used_files  = null;
+						
+						cloud_last_sync_state = null;
+						cloud_quota_bytes = null;
+						cloud_quota_files = null;
+						cloud_used_bytes  = null;
+						cloud_used_files  = null;
+						
+						
+						badgeData = null;
+						news      = null;
+						
 						viewedLaunchEULA = null;
-						_1161580_eula_0  = null;
 						eula_47870       = null;
-						news             = null;
+						eula_332310_1    = null;
+						eula_876160_0    = null;
+						eula_1161580_0   = null;
+						eula_1465360_0   = null;
 					}
 					
 					AppData(String nodeName, VDFTreeNode node, String debugOutputPrefixStr) throws VDFTraverseException {
@@ -1431,19 +1538,39 @@ class Data {
 						appID = parseNumber(this.nodeName = nodeName);
 						hasParsedData = true;
 						
-						//DevHelper.optional.vdfValues.scan(node, "SoftwareValveSteamApps.Apps[]");
+						//DevHelper.optional.vdfValues.scan(node, getClass());
 						
-						lastPlayed_Ts           = parseLongNumber(str_lastPlayed           = node.getString_optional("LastPlayed"            ));
-						playtime_min            = parseNumber    (str_playtime             = node.getString_optional("Playtime"              ));
-						playtime_min_2weeks     = parseNumber    (str_playtime_2wks        = node.getString_optional("Playtime2wks"          ));
-						autocloud_lastexit_Ts   = parseLongNumber(str_autocloud_lastexit   = node.getString_optional("autocloud","lastexit"  ));
-						autocloud_lastlaunch_Ts = parseLongNumber(str_autocloud_lastlaunch = node.getString_optional("autocloud","lastlaunch"));
+						lastPlayed_ks       = parseLongNumber(str_lastPlayed    = node.getString_optional("LastPlayed"  ));
+						playtime_min        = parseNumber    (str_playtime      = node.getString_optional("Playtime"    ));
+						playtime_2weeks_min = parseNumber    (str_playtime_2wks = node.getString_optional("Playtime2wks"));
 						
-						badgeData        = node.getString_optional("BadgeData"             );
-						viewedLaunchEULA = node.getString_optional("ViewedLaunchEULA"      );
-						_1161580_eula_0  = node.getString_optional("1161580_eula_0"        );
-						eula_47870       = node.getString_optional("eula_47870"            );
-						news             = node.getString_optional("News"                  );
+						autocloud_lastexit_ks   = parseLongNumber(str_autocloud_lastexit   = node.getString_optional("autocloud","lastexit"  ));
+						autocloud_lastlaunch_ks = parseLongNumber(str_autocloud_lastlaunch = node.getString_optional("autocloud","lastlaunch"));
+						
+						cloud_last_sync_state =                                     node.getString_optional("cloud", "last_sync_state");
+						cloud_quota_bytes = parseLongNumber(str_cloud_quota_bytes = node.getString_optional("cloud", "quota_bytes"));
+						cloud_quota_files = parseLongNumber(str_cloud_quota_files = node.getString_optional("cloud", "quota_files"));
+						cloud_used_bytes  = parseLongNumber(str_cloud_used_bytes  = node.getString_optional("cloud", "used_bytes" ));
+						cloud_used_files  = parseLongNumber(str_cloud_used_files  = node.getString_optional("cloud", "used_files" ));
+						
+						badgeData = node.getString_optional("BadgeData");
+						news      = node.getString_optional("News"     );
+						
+						VDFTreeNode eula_332310_1_Arr;
+						viewedLaunchEULA = node.getString_optional("ViewedLaunchEULA");
+						eula_47870       = node.getString_optional("eula_47870"    );
+						eula_332310_1_Arr = node.getArray_optional("332310_eula_1" );
+						eula_876160_0    = node.getString_optional("876160_eula_0" );
+						eula_1161580_0   = node.getString_optional("1161580_eula_0");
+						eula_1465360_0   = node.getString_optional("1465360_eula_0");
+						
+						if (eula_332310_1_Arr==null)
+							eula_332310_1 = null;
+						else if (eula_332310_1_Arr.isEmptyArray())
+							eula_332310_1 = "<empty array>";
+						else
+							eula_332310_1 = "<non empty array>";
+							
 						
 						//showValue("BadgeData"       , badgeData       );
 						//showValue("ViewedLaunchEULA", viewedLaunchEULA);
@@ -3797,7 +3924,7 @@ class Data {
 				if (game==null) return null;
 				Player.LocalConfig.SoftwareValveSteamApps.AppData appData = game.lastPlayedData.get(playerID);
 				if (appData==null) return null;
-				return appData.lastPlayed_Ts;
+				return appData.lastPlayed_ks;
 			}
 			
 		}

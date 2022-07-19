@@ -510,6 +510,7 @@ class VDFParser {
 		@Override public boolean hasName() { return name!=null; }
 		@Override public String  getName() { return name; }
 		@Override public boolean hasValue() { return value!=null || (valuePairArray!=null && !valuePairArray.isEmpty()); }
+		                 String  getValue() { return value; }
 		@Override public String getValueStr() {
 			if (value!=null) return String.format("\"%s\"", value);
 			if (valuePairArray!=null) return String.format("Array[%d]", valuePairArray.size());

@@ -1342,14 +1342,15 @@ class TreeNodes {
 				if (apps.hasParsedData) {
 //					Comparator<SoftwareValveSteamApps.App> sortOrder = Comparator.comparing(app->app.appID,Comparator.nullsLast(Data.createGameIdOrder()));
 //					sortOrder = sortOrder.thenComparing(app->app.nodeName);
-					Comparator<SoftwareValveSteamApps.AppData> sortOrder = Comparator.comparing(app->app.lastPlayed_Ts,Comparator.nullsLast(Comparator.reverseOrder()));
+					Comparator<SoftwareValveSteamApps.AppData> sortOrder = Comparator.comparing(app->app.lastPlayed_ks,Comparator.nullsLast(Comparator.reverseOrder()));
 					sortOrder = sortOrder.thenComparing(app->app.nodeName);
 					
+					// TODO: make SoftwareValveSteamAppsNode filterable
 					baseNode = GroupingNode.create(parent, baseNodeTitle, apps.apps, sortOrder, PlayerNode::createAppDataNode)
 							.setTextSource(()->{
 						ValueListOutput out = new ValueListOutput();
-						addLine      (out,0,apps.playerLevel    , apps.str_playerLevel , "Player Level", "%d");
-						addDateLine_s(out,0,apps.lastSyncTime_Ts, apps.str_lastSyncTime, "Last Sync Time of \"Played Times\"");
+						addLine       (out,0,apps.playerLevel    , apps.str_playerLevel , "Player Level", "%d");
+						addDateLine_ks(out,0,apps.lastSyncTime_ks, apps.str_lastSyncTime, "Last Sync Time of \"Played Times\"");
 						return out.generateOutput();
 					});
 					
@@ -1389,16 +1390,17 @@ class TreeNodes {
 						ValueListOutput out = new ValueListOutput();
 						if (app.appID               !=null) out.add(0, "App ID   ", "%d%s", app.appID, Data.hasGameATitle(app.appID) ? "  ->  "+Data.getGameTitle(app.appID) : "");
 						else                                out.add(0, "Node Name", app.nodeName);
-						addDateLine_s  (out, 0, app.lastPlayed_Ts          , app.str_lastPlayed          , "Last Time Played"       );
+						addDateLine_ks (out, 0, app.lastPlayed_ks          , app.str_lastPlayed          , "Last Time Played"       );
 						addTimeLine_min(out, 0, app.playtime_min           , app.str_playtime            , "Playtime"               );
-						addTimeLine_min(out, 0, app.playtime_min_2weeks    , app.str_playtime_2wks       , "Playtime (last 2 Weeks)");
-						addDateLine_s  (out, 0, app.autocloud_lastlaunch_Ts, app.str_autocloud_lastlaunch, "Autocloud > Last Launch");
-						addDateLine_s  (out, 0, app.autocloud_lastexit_Ts  , app.str_autocloud_lastexit  , "Autocloud > Last Exit  ");
+						addTimeLine_min(out, 0, app.playtime_2weeks_min    , app.str_playtime_2wks       , "Playtime (last 2 Weeks)");
+						addDateLine_ks (out, 0, app.autocloud_lastlaunch_ks, app.str_autocloud_lastlaunch, "Autocloud > Last Launch");
+						addDateLine_ks (out, 0, app.autocloud_lastexit_ks  , app.str_autocloud_lastexit  , "Autocloud > Last Exit  ");
 						if (app.badgeData           !=null) out.add(0, "Badge Data          ", app.badgeData       );
 						if (app.news                !=null) out.add(0, "News                ", app.news            );
-						if (app._1161580_eula_0     !=null) out.add(0, "\"1161580_eula_0\"  ", app._1161580_eula_0 );
+						if (app.eula_1161580_0     !=null) out.add(0, "\"1161580_eula_0\"  ", app.eula_1161580_0 );
 						if (app.eula_47870          !=null) out.add(0, "\"eula_47870\"      ", app.eula_47870      );
 						if (app.viewedLaunchEULA    !=null) out.add(0, "\"viewedLaunchEULA\"", app.viewedLaunchEULA);
+						// TODO: add new values
 						
 						return out.generateOutput();
 					});
@@ -1421,9 +1423,9 @@ class TreeNodes {
 				else if (rawStr != null)
 					out.add(indentLevel, label, rawStr);
 			}
-			private static void addDateLine_s(ValueListOutput out, int indentLevel, Long parsedValue_s, String rawStr, String label) {
-				if (parsedValue_s != null)
-					out.add(indentLevel, label, "%d  ( %s )", parsedValue_s, getTimeStr(parsedValue_s*1000));
+			private static void addDateLine_ks(ValueListOutput out, int indentLevel, Long parsedValue_ks, String rawStr, String label) {
+				if (parsedValue_ks != null)
+					out.add(indentLevel, label, "%d  ( %s )", parsedValue_ks, getTimeStr(parsedValue_ks*1000));
 				else if (rawStr != null)
 					out.add(indentLevel, label, rawStr);
 			}
