@@ -814,29 +814,16 @@ class Data {
 		DevHelper.optional.show(System.err);
 	}
 	static String getPlayerName(Long playerID) {
-		if (playerID==null) return "Player ???";
-		Player player = players.get(playerID);
-		if (player==null) return "Player "+playerID;
-		return player.getName();
+		return Player.getName(playerID);
 	}
 	static Icon getGameIcon(Integer gameID, TreeIcons defaultIcon) {
-		if (gameID==null) return defaultIcon==null ? null : defaultIcon.getIcon();
-		Game game = games.get(gameID);
-		if (game==null) return defaultIcon==null ? null : defaultIcon.getIcon();
-		return game.getIcon();
+		return Game.getIcon(gameID, defaultIcon);
 	}
 	static String getGameTitle(Integer gameID) {
 		return Game.getTitle(gameID);
 	}
 	static boolean hasGameATitle(Integer gameID) {
-		if (gameID==null) return false;
-		Game game = games.get(gameID);
-		boolean hasATitle = game==null ? false : game.hasAFixedTitle();
-		if (!hasATitle) {
-			String storedTitle = knownGameTitles.get(gameID);
-			hasATitle = storedTitle!=null && !storedTitle.isEmpty();
-		}
-		return hasATitle;
+		return Game.hasGameATitle(gameID);
 	}
 	static Comparator<String> createNumberStringOrder() {
 		return Comparator.<String,Long>comparing(str->parseLongNumber(str), Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(Comparator.naturalOrder());
@@ -1215,8 +1202,11 @@ class Data {
 			return null;
 		}
 
-		String getName() {
-			return getName(false);
+		static String getName(Long playerID) {
+			if (playerID==null) return "Player ???";
+			Player player = players.get(playerID);
+			if (player==null) return "Player "+playerID;
+			return player.getName(false);
 		}
 		
 		String getName(boolean addPlayerID) {
@@ -3895,24 +3885,46 @@ class Data {
 			if (value!=null && isOK.test(value)) target.put(targetKey, value);
 		}
 
+		static boolean hasGameATitle(Integer gameID) {
+			if (gameID==null) return false;
+			Game game = games.get(gameID);
+			boolean hasATitle = game==null ? false : game.hasAFixedTitle();
+			if (!hasATitle) {
+				String storedTitle = knownGameTitles.get(gameID);
+				hasATitle = storedTitle!=null && !storedTitle.isEmpty();
+			}
+			return hasATitle;
+		}
+
 		boolean hasAFixedTitle() {
 			return title!=null;
+		}
+
+		String getTitle() {
+			if (title!=null && !title.isEmpty()) return title+" ["+appID+"]";
+			return getStoredTitle(appID);
 		}
 
 		static String getTitle(Integer gameID) {
 			if (gameID==null) return "Game ???";
 			Game game = games.get(gameID);
-			if (game!=null && game.title!=null) return game.title+" ["+game.appID+"]";
+			if (game!=null) return game.getTitle();
+			return getStoredTitle(gameID);
+		}
+
+		static String getStoredTitle(int gameID) {
 			String storedTitle = knownGameTitles.get(gameID);
 			if (storedTitle!=null && !storedTitle.isEmpty()) return storedTitle+" ["+gameID+"]";
 			return "Game "+gameID;
 		}
 
-		String getTitle() {
-			if (title!=null) return title+" ["+appID+"]";
-			String storedTitle = knownGameTitles.get(appID);
-			if (storedTitle!=null) return storedTitle+" ["+appID+"]";
-			return "Game "+appID;
+		static Icon getIcon(Integer gameID, TreeIcons defaultIcon) {
+			if (gameID != null) {
+				Game game = games.get(gameID);
+				if (game != null)
+					return game.getIcon();
+			}
+			return defaultIcon==null ? null : defaultIcon.getIcon();
 		}
 
 		Icon getIcon() {

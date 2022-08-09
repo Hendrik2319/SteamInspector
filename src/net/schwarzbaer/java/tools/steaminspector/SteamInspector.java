@@ -109,7 +109,6 @@ class SteamInspector {
 		try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
 		catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {}
 		
-		TreeNodes.loadIcons();
 		TreeNodes.interestingNodes.readfile();
 		
 		executableFileChooser.setMultiSelectionEnabled(false);
@@ -704,7 +703,7 @@ class SteamInspector {
 			SteamClientFolder, SteamLibraryFolders,
 			SelectedTreeType,
 			SSCU_WindowX, SSCU_WindowY, SSCU_WindowWidth, SSCU_WindowHeight,
-			SSCU_GeneralScreenshotFolder,
+			SSCU_GeneralScreenshotFolder, SSCU_ViewType,
 		}
 	
 		enum ValueGroup implements Settings.GroupKeys<ValueKey> {
