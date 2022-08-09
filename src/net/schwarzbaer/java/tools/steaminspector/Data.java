@@ -712,6 +712,10 @@ class Data {
 	static final HashMap<Integer,Game> games = new HashMap<>();
 	static final HashMap<Long,Player> players = new HashMap<>();
 	
+	static boolean isEmpty() {
+		return games.isEmpty() && players.isEmpty();
+	}
+	
 	static void loadData() {
 		DevHelper.unknownValues.clear();
 		DevHelper.optional.clear();

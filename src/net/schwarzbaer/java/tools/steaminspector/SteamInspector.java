@@ -7,11 +7,8 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-import java.awt.Point;
 import java.awt.Window;
 import java.awt.event.ActionListener;
-import java.awt.event.ComponentEvent;
-import java.awt.event.ComponentListener;
 import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
 import java.awt.event.MouseAdapter;
@@ -104,27 +101,33 @@ import net.schwarzbaer.system.ClipboardTools;
 import net.schwarzbaer.system.Settings;
 
 class SteamInspector {
+
+	static final AppSettings settings = new AppSettings();
+	private static final JFileChooser executableFileChooser = new JFileChooser("./");
 	
 	public static void main(String[] args) {
-		// SoftwareValveSteamApps
-		new SteamInspector().createGUI();
-	}
-
-	private static final AppSettings settings;
-	private static final JFileChooser executableFileChooser;
-	
-	static {
 		try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
 		catch (ClassNotFoundException | InstantiationException | IllegalAccessException | UnsupportedLookAndFeelException e) {}
 		
 		TreeNodes.loadIcons();
 		TreeNodes.interestingNodes.readfile();
 		
-		settings = new AppSettings();
-		executableFileChooser = new JFileChooser("./");
 		executableFileChooser.setMultiSelectionEnabled(false);
 		executableFileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
 		executableFileChooser.addChoosableFileFilter(new FileNameExtensionFilter("Executables (*.exe)", "exe"));
+		
+		boolean startSteamScreenshotsCleanUp = false;
+		for (String arg : args) {
+			if (arg.equalsIgnoreCase("SteamScreenshotsCleanUp") || arg.equalsIgnoreCase("ScreenshotsCleanUp"))
+				startSteamScreenshotsCleanUp = true;
+		}
+		
+		if (startSteamScreenshotsCleanUp) {
+			SteamScreenshotsCleanUp.startStandAlone();
+			return;
+		}
+		
+		new SteamInspector().initialize();
 	}
 
 	static final String INTERESTING_NODES_INI = "SteamInspector.InterestingNodes.ini";
@@ -182,21 +185,16 @@ class SteamInspector {
 		}
 
 		static File[] getSteamLibraryFolders() {
-			AppSettings.ValueKey key = AppSettings.ValueKey.SteamLibraryFolders;
-			return settings.getFiles(key);
+			return settings.getFiles(AppSettings.ValueKey.SteamLibraryFolders);
 		}
 
 		static File getSteamClientFolder() {
-			AppSettings.ValueKey folderKey = AppSettings.ValueKey.SteamClientFolder;
-			return settings.getFile(folderKey, null);
+			return settings.getFile(AppSettings.ValueKey.SteamClientFolder, null);
 		}
 	}
 	
-	private StandardMainWindow mainWindow = null;
-	private JTree tree = null;
-	private DefaultTreeModel treeModel = null;
-	private TreeType selectedTreeType = null;
-	private JPanel fileContentPanel = null;
+	private final StandardMainWindow mainWindow;
+	private final JPanel fileContentPanel;
 	private final CombinedOutput hexTableOutput;
 	private final CombinedOutput plainTextOutput;
 	private final CombinedOutput extendedTextOutput;
@@ -206,6 +204,9 @@ class SteamInspector {
 	private final ImageOutput imageOutput;
 	private final OutputDummy outputDummy;
 	private FileContentOutput lastFileContentOutput;
+	private final JTree tree;
+	private DefaultTreeModel treeModel;
+	private TreeType selectedTreeType;
 	
 	private SteamInspector() {
 		hexTableOutput     = new CombinedOutput(BaseTreeNode.ContentType.Bytes);
@@ -217,52 +218,8 @@ class SteamInspector {
 		imageOutput = new ImageOutput();
 		outputDummy = new OutputDummy();
 		lastFileContentOutput = outputDummy;
-	}
-
-	private static class AppSettings extends Settings<AppSettings.ValueGroup,AppSettings.ValueKey> {
-		private enum ValueKey {
-			WindowX, WindowY, WindowWidth, WindowHeight, TextEditor, ImageViewer, Browser, SteamClientFolder, SteamLibraryFolders, SelectedTreeType, ZipViewer,
-		}
-
-		private enum ValueGroup implements Settings.GroupKeys<ValueKey> {
-			WindowPos (ValueKey.WindowX, ValueKey.WindowY),
-			WindowSize(ValueKey.WindowWidth, ValueKey.WindowHeight),
-			;
-			ValueKey[] keys;
-			ValueGroup(ValueKey...keys) { this.keys = keys;}
-			@Override public ValueKey[] getKeys() { return keys; }
-		}
 		
-		public AppSettings() { super(SteamInspector.class); }
-		public Point     getWindowPos (              ) { return getPoint(ValueKey.WindowX,ValueKey.WindowY); }
-		public void      setWindowPos (Point location) {        putPoint(ValueKey.WindowX,ValueKey.WindowY,location); }
-		public Dimension getWindowSize(              ) { return getDimension(ValueKey.WindowWidth,ValueKey.WindowHeight); }
-		public void      setWindowSize(Dimension size) {        putDimension(ValueKey.WindowWidth,ValueKey.WindowHeight,size); }
-	}
-	
-	private enum TreeType {
-		FilesNFolders("Discovered Folders, Some Simple Extracts", TreeNodes.FileSystem.Root::new, false),
-		GamesNPlayers("Discovered Players & Games", ()-> {
-			Data.loadData();
-			return new TreeNodes.PlayersNGames.Root();
-		}, true),
-		;
-		private final String label;
-		private final Supplier<TreeNode> createRoot;
-		private final boolean isRootVisible;
-
-		TreeType(String label, Supplier<TreeNode> createRoot, boolean isRootVisible) {
-			this.label = label;
-			this.createRoot = createRoot;
-			this.isRootVisible = isRootVisible;
-		}
-		
-		@Override public String toString() {
-			return label;
-		}
-	}
-	
-	private void createGUI() {
+		mainWindow = new StandardMainWindow("Steam Inspector");
 		
 		JComboBox<TreeType> cmbbxTreeType = new JComboBox<>(TreeType.values());
 		selectedTreeType = settings.getEnum(AppSettings.ValueKey.SelectedTreeType,TreeType.class);
@@ -285,10 +242,7 @@ class SteamInspector {
 		c.weightx = 0;
 		dataTopPanel.add(createButton("Reload", true, e->rebuildTree()),c);
 		
-		TreeNode treeRoot = selectedTreeType==null || selectedTreeType.createRoot==null ? null : selectedTreeType.createRoot.get();
-		boolean isRootVisible = selectedTreeType==null ? true : selectedTreeType.isRootVisible;
-		tree = new JTree(treeModel = treeRoot==null ? null : new DefaultTreeModel(treeRoot));
-		tree.setRootVisible(isRootVisible);
+		tree = new JTree(treeModel = null);
 		tree.setCellRenderer(new BaseTreeNodeRenderer());
 		tree.getSelectionModel().setSelectionMode(TreeSelectionModel.DISCONTIGUOUS_TREE_SELECTION);
 		tree.addTreeSelectionListener(e->{
@@ -296,6 +250,7 @@ class SteamInspector {
 			if (path==null) return;
 			showContent(path.getLastPathComponent());
 		});
+		new MainTreeContextMenu(mainWindow,tree,()->treeModel);
 		
 		JScrollPane treePanel = new JScrollPane(tree);
 		treePanel.setPreferredSize(new Dimension(500, 800));
@@ -313,20 +268,15 @@ class SteamInspector {
 		JSplitPane contentPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, dataPanel, fileContentPanel);
 		contentPane.setBorder(BorderFactory.createEmptyBorder(2,2,2,2));
 		
-		mainWindow = new StandardMainWindow("Steam Inspector");
 		mainWindow.startGUI(contentPane,createMenuBar());
-		mainWindow.setIconImagesFromResource("/images/","Logo016.png","Logo024.png","Logo032.png","Logo048.png","Logo286.png");
-		
-		new MainTreeContextMenu(mainWindow,tree,()->treeModel);
-		
-		if (settings.isSet(AppSettings.ValueGroup.WindowPos )) mainWindow.setLocation(settings.getWindowPos ());
-		if (settings.isSet(AppSettings.ValueGroup.WindowSize)) mainWindow.setSize    (settings.getWindowSize());
-		
-		mainWindow.addComponentListener(new ComponentListener() {
-			@Override public void componentShown  (ComponentEvent e) {}
-			@Override public void componentHidden (ComponentEvent e) {}
-			@Override public void componentResized(ComponentEvent e) { settings.setWindowSize( mainWindow.getSize() ); }
-			@Override public void componentMoved  (ComponentEvent e) { settings.setWindowPos ( mainWindow.getLocation() ); }
+		mainWindow.setIconImagesFromResource("/images/Logo%03d.png",16,24,32,48,286);
+		settings.registerAppWindow(mainWindow);
+	}
+
+	private void initialize() {
+		ProgressDialog.runWithProgressDialog(mainWindow, "Initialize", 300, pd->{
+			showIndeterminateTask(pd, "Build Tree");
+			rebuildTree();
 		});
 	}
 
@@ -342,6 +292,9 @@ class SteamInspector {
 
 	private JMenuBar createMenuBar() {
 		JMenuBar menuBar = new JMenuBar();
+		
+		JMenu toolsMenu = menuBar.add(new JMenu("Tools"));
+		toolsMenu.add(createMenuItem("SteamScreenshots CleanUp", true, e->SteamScreenshotsCleanUp.startAsDialog(mainWindow)));
 		
 		JMenu settingsMenu = menuBar.add(new JMenu("Settings"));
 		for (ExternalViewerInfo evi:ExternalViewerInfo.values())
@@ -485,6 +438,14 @@ class SteamInspector {
 		fileContentPanel.repaint();
 	}
 
+
+	static void showIndeterminateTask(ProgressDialog pd, String taskTitle) {
+		SwingUtilities.invokeLater(()->{
+			pd.setTaskTitle(taskTitle);
+			pd.setIndeterminate(true);
+		});
+	}
+	
 	private static <BTN extends AbstractButton> BTN configure(BTN comp, boolean isEnabled, ButtonGroup bg, ActionListener al) {
 		return configure(comp, isEnabled, false, bg, al);
 	}
@@ -713,6 +674,47 @@ class SteamInspector {
 		}
 		
 		return text.toString();
+	}
+
+	private enum TreeType {
+		FilesNFolders("Discovered Folders, Some Simple Extracts", TreeNodes.FileSystem.Root::new, false),
+		GamesNPlayers("Discovered Players & Games", ()-> {
+			Data.loadData();
+			return new TreeNodes.PlayersNGames.Root();
+		}, true),
+		;
+		private final String label;
+		private final Supplier<TreeNode> createRoot;
+		private final boolean isRootVisible;
+	
+		TreeType(String label, Supplier<TreeNode> createRoot, boolean isRootVisible) {
+			this.label = label;
+			this.createRoot = createRoot;
+			this.isRootVisible = isRootVisible;
+		}
+		
+		@Override public String toString() {
+			return label;
+		}
+	}
+
+	static class AppSettings extends Settings.DefaultAppSettings<AppSettings.ValueGroup,AppSettings.ValueKey> {
+		enum ValueKey {
+			TextEditor, ImageViewer, Browser, ZipViewer,
+			SteamClientFolder, SteamLibraryFolders,
+			SelectedTreeType,
+			SSCU_WindowX, SSCU_WindowY, SSCU_WindowWidth, SSCU_WindowHeight,
+			SSCU_GeneralScreenshotFolder,
+		}
+	
+		enum ValueGroup implements Settings.GroupKeys<ValueKey> {
+			;
+			ValueKey[] keys;
+			ValueGroup(ValueKey...keys) { this.keys = keys;}
+			@Override public ValueKey[] getKeys() { return keys; }
+		}
+		
+		public AppSettings() { super(SteamInspector.class, ValueKey.values()); }
 	}
 
 	private static class FolderSettingsDialog extends StandardDialog {
@@ -1110,6 +1112,28 @@ class SteamInspector {
 			} else
 				return null;
 		}
+
+		void openFile(Component parent, String filePath) {
+			File viewer = getExecutable(parent);
+			if (viewer==null) return;
+			
+			String viewerPath = viewer.getAbsolutePath();
+			
+			openInViewer(viewerPath, filePath);
+		}
+		
+		static void openInViewer(String viewerPath, String filePath) {
+			if (viewerPath!=null && filePath!=null)
+				try {
+					System.out.printf("Execute in Shell: \"%s\" \"%s\"%n", viewerPath, filePath);
+					Runtime.getRuntime().exec(new String[] { viewerPath, filePath });
+				} catch (IOException ex) {
+					System.err.println("Exception occured while opening selected file in an external viewer:");
+					System.err.printf ("    external viewer: \"%s\"%n", viewerPath);
+					System.err.printf ("    parameter: \"%s\"%n", filePath);
+					ex.printStackTrace();
+				}
+		}
 	}
 	
 	private static class AbstractComponentContextMenu extends JPopupMenu {
@@ -1438,10 +1462,7 @@ class SteamInspector {
 		private static void determineGameTitleByShopPage(DefaultTreeModel treeModel, ProgressDialog pd, Vector<Integer> gameIDs) {
 			for (Integer gameID:gameIDs) {
 				//System.out.printf("Determine Game Title By ShopPage: %d%n", gameID);
-				SwingUtilities.invokeLater(()->{
-					pd.setTaskTitle("["+gameID+"] Check Game");
-					pd.setIndeterminate(true);
-				});
+				showIndeterminateTask(pd,"["+gameID+"] Check Game");
 				
 				Game game = Data.games.get(gameID);
 				if (game!=null && game.hasAFixedTitle()) continue;
@@ -1461,10 +1482,7 @@ class SteamInspector {
 				}
 			}
 			
-			SwingUtilities.invokeLater(()->{
-				pd.setTaskTitle("Write Known Game Titles to file");
-				pd.setIndeterminate(true);
-			});
+			showIndeterminateTask(pd,"Write Known Game Titles to file");
 			Data.knownGameTitles.writeToFile();
 		}
 
@@ -1528,10 +1546,7 @@ class SteamInspector {
 		}
 		
 		private static Result determineGameTitleByShopPage(Integer gameID, ProgressDialog pd, boolean writeHtmlIfCantFindName, boolean verbose, String urlStr) {
-			SwingUtilities.invokeLater(()->{
-				pd.setTaskTitle("["+gameID+"] Get Connection to Server");
-				pd.setIndeterminate(true);
-			});
+			showIndeterminateTask(pd,"["+gameID+"] Get Connection to Server");
 			
 			URL url;
 			try { url = new URL(urlStr); }
@@ -1554,10 +1569,7 @@ class SteamInspector {
 			catch (IOException e) { System.err.printf("IOException while connecting to server: %s (URL:%s)", e.getMessage(), urlStr); return null; }
 			if (Thread.currentThread().isInterrupted()) return null;
 			
-			SwingUtilities.invokeLater(()->{
-				pd.setTaskTitle("["+gameID+"] Read Response");
-				pd.setIndeterminate(true);
-			});
+			showIndeterminateTask(pd,"["+gameID+"] Read Response");
 			
 			try {
 				int responseCode = conn.getResponseCode();
@@ -1717,16 +1729,7 @@ class SteamInspector {
 			String viewerPath = viewer.getAbsolutePath();
 			String filePath = viewableItem.getItemPath();
 			
-			if (viewerPath!=null && filePath!=null)
-				try {
-					System.out.printf("Execute in Shell: \"%s\" \"%s\"%n", viewerPath, filePath);
-					Runtime.getRuntime().exec(new String[] { viewerPath, filePath });
-				} catch (IOException ex) {
-					System.err.println("Exception occured while opening selected file in an external viewer:");
-					System.err.printf ("    external viewer: \"%s\"%n", viewerPath);
-					System.err.printf ("    parameter: \"%s\"%n", filePath);
-					ex.printStackTrace();
-				}
+			ExternalViewerInfo.openInViewer(viewerPath, filePath);
 		}
 
 		private class ExtViewerChooseMenu {
@@ -1765,7 +1768,7 @@ class SteamInspector {
 		}
 		
 	}
-	
+
 	private static abstract class FileContentOutput {
 
 		abstract Component getMainComponent();
@@ -2550,7 +2553,7 @@ class SteamInspector {
 		}
 	}
 	
-	private final static class BaseTreeNodeRenderer extends DefaultTreeCellRenderer {
+	final static class BaseTreeNodeRenderer extends DefaultTreeCellRenderer {
 		private static final long serialVersionUID = -7291286788678796516L;
 //		private Icon icon;
 		
