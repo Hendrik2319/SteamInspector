@@ -1,34 +1,46 @@
 package net.schwarzbaer.java.tools.steaminspector;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Window;
+import java.awt.event.KeyEvent;
+import java.awt.event.KeyListener;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Vector;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import javax.imageio.ImageIO;
+import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
+import javax.swing.JToolBar;
 import javax.swing.JTree;
 import javax.swing.ListSelectionModel;
+import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
+import javax.swing.table.TableCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
@@ -67,6 +79,7 @@ class SteamScreenshotsCleanUp {
 	private final GuiVariant<? extends Window> gui;
 	private final HashSet<Integer> gamesWithScreenshots;
 	private final ImageListPanel imageListPanel;
+	private JSplitPane rightPanel;
 
 	SteamScreenshotsCleanUp(Window parent) {
 		//ImageViewPanel.ImageVariant.test();
@@ -96,10 +109,17 @@ class SteamScreenshotsCleanUp {
 		JScrollPane treeScrollPane = new JScrollPane(tree);
 		treeScrollPane.setPreferredSize(new Dimension(500, 800));
 		
-		ImageViewPanel imageViewPanel = new ImageViewPanel();
-		imageListPanel = new ImageListPanel(this, imageViewPanel);
+		int orientation = SteamInspector.settings.getInt(ValueKey.SSCU_RightSplitPaneOrientation, JSplitPane.VERTICAL_SPLIT);
+		rightPanel = new JSplitPane(orientation, true);
+		ButtonGroup bg = new ButtonGroup();
+		Component[] extraOptions = new Component[] {
+				SteamInspector.createRadioButton("Vertical Split"  , orientation==JSplitPane.VERTICAL_SPLIT  , true, bg, b->setRightPanelOrientation(JSplitPane.VERTICAL_SPLIT  )),
+				SteamInspector.createRadioButton("Horizontal Split", orientation==JSplitPane.HORIZONTAL_SPLIT, true, bg, b->setRightPanelOrientation(JSplitPane.HORIZONTAL_SPLIT))
+		};
 		
-		JSplitPane rightPanel = new JSplitPane(JSplitPane.VERTICAL_SPLIT, true);
+		ImageViewPanel imageViewPanel = new ImageViewPanel();
+		imageListPanel = new ImageListPanel(this, imageViewPanel, extraOptions);
+		
 		rightPanel.setTopComponent   (imageListPanel);
 		rightPanel.setBottomComponent(imageViewPanel);
 		
@@ -109,8 +129,48 @@ class SteamScreenshotsCleanUp {
 		
 		gui.createGUI(contentPane);
 		SteamInspector.settings.registerExtraWindow(mainWindow, ValueKey.SSCU_WindowX, ValueKey.SSCU_WindowY, ValueKey.SSCU_WindowWidth, ValueKey.SSCU_WindowHeight);
+		
+		boolean showDividerLoc = false;
+		SwingUtilities.invokeLater(()->{
+			int dividerLoc1 = SteamInspector.settings.getInt(ValueKey.SSCU_MainSplitPaneDivider, -1);
+			if (dividerLoc1>=0) contentPane.setDividerLocation(dividerLoc1);
+			int dividerLoc2 = SteamInspector.settings.getInt(ValueKey.SSCU_RightSplitPaneDivider, -1);
+			if (dividerLoc2>=0) rightPanel .setDividerLocation(dividerLoc2);
+			if (showDividerLoc) {
+				System.out.printf("initDividerLocations     (%d, %d)%n", dividerLoc1, dividerLoc2);
+				System.out.printf("checkDividerLocations    (%d, %d)%n", contentPane.getDividerLocation(), rightPanel .getDividerLocation());
+			}
+			
+			SwingUtilities.invokeLater(()->{
+				if (showDividerLoc) System.out.printf("checkDividerLocations 1a (%d, %d)%n", contentPane.getDividerLocation(), rightPanel .getDividerLocation());
+				if (dividerLoc1>=0 && dividerLoc1!=contentPane.getDividerLocation()) contentPane.setDividerLocation(dividerLoc1);
+				if (dividerLoc2>=0 && dividerLoc2!=rightPanel .getDividerLocation()) rightPanel .setDividerLocation(dividerLoc2);
+				if (showDividerLoc) System.out.printf("checkDividerLocations 1b (%d, %d)%n", contentPane.getDividerLocation(), rightPanel .getDividerLocation());
+				
+				if (showDividerLoc) 
+					SwingUtilities.invokeLater(()->{
+						System.out.printf("checkDividerLocations 2  (%d, %d)%n", contentPane.getDividerLocation(), rightPanel .getDividerLocation());
+					});
+			});
+		});
+		
+		mainWindow.addWindowListener(new WindowAdapter() {
+			@Override public void windowClosing(WindowEvent e) { saveDividerLocations("Closing"); }
+			@Override public void windowClosed (WindowEvent e) { saveDividerLocations("Closed" ); }
+
+			private void saveDividerLocations(String label) {
+				if (showDividerLoc) System.out.printf("saveDividerLocations(\"%s\", %d, %d)%n", label, contentPane.getDividerLocation(), rightPanel .getDividerLocation());
+				SteamInspector.settings.putInt(ValueKey.SSCU_MainSplitPaneDivider , contentPane.getDividerLocation());
+				SteamInspector.settings.putInt(ValueKey.SSCU_RightSplitPaneDivider, rightPanel .getDividerLocation());
+			}
+		});
 	}
 	
+	private void setRightPanelOrientation(int value) {
+		rightPanel.setOrientation(value);
+		SteamInspector.settings.putInt(ValueKey.SSCU_RightSplitPaneOrientation, value);
+	}
+
 	private void showGUI() {
 		gui.showGUI();
 	}
@@ -202,12 +262,16 @@ class SteamScreenshotsCleanUp {
 		
 		static class StandAlone extends GuiVariant<StandardMainWindow> {
 			StandAlone(String title) { super(new StandardMainWindow(title)); }
-			@Override public void createGUI(JComponent contentPane) { mainWindow.startGUI(contentPane); }
+			@Override public void createGUI(JComponent contentPane) {
+				contentPane.setBorder(BorderFactory.createEmptyBorder(5,5,5,5));
+				mainWindow.startGUI(contentPane);
+			}
 			@Override public void showGUI() {}
 		}
 		static class Dialog extends GuiVariant<StandardDialog> {
 			Dialog(Window parent, String title) { super(new StandardDialog(parent, title)); }
-			@Override void createGUI(JComponent contentPane) { mainWindow.createGUI(contentPane, SteamInspector.createButton("Close", true, e->mainWindow.closeDialog())); }
+			@Override void createGUI(JComponent contentPane) {
+				mainWindow.createGUI(contentPane, SteamInspector.createButton("Close", true, e->mainWindow.closeDialog())); }
 			@Override void showGUI() { mainWindow.showDialog(); }
 		}
 	}
@@ -467,7 +531,12 @@ class SteamScreenshotsCleanUp {
 		private static final long serialVersionUID = 7167176806130750722L;
 
 		enum ViewType {
-			Details, ImageGrid
+			Details  (ViewContainer.Details::new),
+			ImageGrid(null),
+			;
+			private final Function<ImageListPanel,ViewContainer> createVC;
+			ViewType(Function<ImageListPanel,ViewContainer> createVC) { this.createVC = createVC;}
+			ViewContainer createViewContainer(ImageListPanel main) { return createVC==null ? null : createVC.apply(main); }
 		}
 		
 		private final SteamScreenshotsCleanUp main;
@@ -476,8 +545,12 @@ class SteamScreenshotsCleanUp {
 		private ViewType currentViewType;
 		private HashMap<String, File> generalScreenshots;
 		private HashMap<Long, ScreenShotList> gameScreenshots;
+		private ViewContainer currentViewContainer;
 		
-		ImageListPanel(SteamScreenshotsCleanUp main, ImageViewPanel imageViewPanel) {
+		ImageListPanel(SteamScreenshotsCleanUp main, ImageViewPanel imageViewPanel, Component... extraOptions) {
+			this(main, imageViewPanel, new Component[][] { extraOptions });
+		}
+		ImageListPanel(SteamScreenshotsCleanUp main, ImageViewPanel imageViewPanel, Component[][] extraOptions) {
 			super(new BorderLayout());
 			this.main = main;
 			this.imageViewPanel = imageViewPanel;
@@ -485,86 +558,284 @@ class SteamScreenshotsCleanUp {
 			generalScreenshots = null;
 			gameScreenshots = null;
 			currentViewType = SteamInspector.settings.getEnum(ValueKey.SSCU_ViewType, ViewType.Details, ViewType.class);
+			currentViewContainer = null;
 			
-			JPanel optionsPanel = new JPanel(new GridBagLayout());
-			GridBagConstraints c = new GridBagConstraints();
-			c.fill = GridBagConstraints.HORIZONTAL;
-			c.weightx = 0;
+			JToolBar optionsPanel = new JToolBar();
+			optionsPanel.setFloatable(false);
+			
+			optionsPanel.add(SteamInspector.createButton("Remove marked images", true , e->{
+				if (currentViewContainer==null) return;
+				if (!currentViewContainer.hasMarkedScreenshots()) return;
+				
+				String msg = "Do you really want to delete the marked screenshots?";
+				String title = "Are you sure?";
+				if (JOptionPane.YES_OPTION!=JOptionPane.showConfirmDialog(main.mainWindow, msg, title, JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE))
+					return;
+				
+				currentViewContainer.forEachMarkedScreenshot(new ImageListPanel.ViewContainer.MarkedScreenshotAction() {
+					@Override public boolean processGeneralScreenshot(File screenshot) {
+						boolean success = screenshot.isFile() ? screenshot.delete() : true;
+						if (success) return false;
+						else         return true;
+					}
+					@Override public boolean processGameScreenshots(HashMap<Long, ScreenShot> screenshots) {
+						boolean allSuccessful = true;
+						for (ScreenShot screenshot : screenshots.values()) {
+							if (screenshot.image.isFile()) {
+								boolean success = screenshot.image.delete();
+								if (!success) allSuccessful = false;
+							}
+						}
+						if (allSuccessful) return false;
+						else               return true;
+					}
+				});
+				currentViewContainer.updateView();
+			}));
+			optionsPanel.addSeparator();
+			
 			ButtonGroup bg = new ButtonGroup();
-			optionsPanel.add(SteamInspector.createRadioButton("Details"   , currentViewType==ViewType.Details  , true, bg, b->setViewType(ViewType.Details  )), c);
-			optionsPanel.add(SteamInspector.createRadioButton("Image Grid", currentViewType==ViewType.ImageGrid, true, bg, b->setViewType(ViewType.ImageGrid)), c);
-			c.weightx = 1;
-			optionsPanel.add(new JLabel(), c);
+			optionsPanel.add(SteamInspector.createRadioButton("Details"   , currentViewType==ViewType.Details  , true , bg, b->setViewType(ViewType.Details  )));
+			optionsPanel.add(SteamInspector.createRadioButton("Image Grid", currentViewType==ViewType.ImageGrid, false, bg, b->setViewType(ViewType.ImageGrid)));
+			
+			if (extraOptions!=null && extraOptions.length>0) {
+				for (Component[] group : extraOptions ) {
+					optionsPanel.addSeparator();
+					for (Component option : group )
+						optionsPanel.add(option);
+				}
+			}
 			
 			scrollPane = new JScrollPane();
 			
-			add(optionsPanel, BorderLayout.NORTH);
+			add(optionsPanel, BorderLayout.PAGE_START);
 			add(scrollPane, BorderLayout.CENTER);
 			buildView();
 		}
-	
+
 		private void setViewType(ViewType viewType) {
-			currentViewType = viewType;
-			buildView();
-		}
-
-		void setData(int gameID) {
-			generalScreenshots = main.generalScreenshots.get(gameID);
-			Game game = Data.games.get(gameID);
-			gameScreenshots = game==null ? null : game.screenShots;
-			buildView();
-		}
-
-		void clearData() {
-			generalScreenshots = null;
-			gameScreenshots = null;
-			buildView();
-		}
-
-		private void buildView() {
-			switch (currentViewType) {
-			case Details:
-				scrollPane.setViewportView(createTable());
-				
-				break;
-			case ImageGrid:
-				scrollPane.setViewportView(null);
-				// TODO: build ImageGrid
-				break;
+			boolean changeAllowed = checkUnsavedChanges();
+			if (changeAllowed) {
+				currentViewType = viewType;
+				SteamInspector.settings.putEnum(ValueKey.SSCU_ViewType, viewType);
+				buildView();
 			}
 		}
 
-		private JTable createTable() {
-			DetailsTableModel tableModel = new DetailsTableModel(generalScreenshots,gameScreenshots);
+		void setData(int gameID) {
+			boolean changeAllowed = checkUnsavedChanges();
+			if (changeAllowed) {
+				generalScreenshots = main.generalScreenshots.get(gameID);
+				Game game = Data.games.get(gameID);
+				gameScreenshots = game==null ? null : game.screenShots;
+				buildView();
+			}
+		}
+
+		void clearData() {
+			boolean changeAllowed = checkUnsavedChanges();
+			if (changeAllowed) {
+				generalScreenshots = null;
+				gameScreenshots = null;
+				buildView();
+			}
+		}
+
+		private boolean checkUnsavedChanges() {
+			if (currentViewContainer==null) return true;
+			if (!currentViewContainer.hasMarkedScreenshots()) return true;
 			
-			JTable table = new JTable(tableModel);
-			table.setRowSorter(new Tables.SimplifiedRowSorter(tableModel));
-			table.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
-			table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-			table.getSelectionModel().addListSelectionListener(e->{
-				int rowCount = table.getSelectedRowCount();
-				if (rowCount != 1)
-					imageViewPanel.clearData();
-				else {
-					int selectedRowV = table.getSelectedRow();
-					int selectedRowM = selectedRowV<0 ? -1 : table.convertRowIndexToModel(selectedRowV);
-					DetailsTableModel.Row row = selectedRowM<0 ? null : tableModel.getRow(selectedRowM);
-					if (row==null)
-						imageViewPanel.clearData();
-					else
-						imageViewPanel.setData(row.generalScreenshot, row.gameScreenShots);
-				}
-			});
-			
-			tableModel.setTable(table);
-			tableModel.setColumnWidths(table);
-			//tableModel.setDefaultCellEditorsAndRenderers();
-			
-			new TableContextMenu(table, tableModel);
-			
-			return table;
+			String[] msg = new String[] {
+					"There are unsaved changes in current view?",
+					"Do you really want to change the view without saving them?"
+			};
+			String title = "Unsaved Changes";
+			return JOptionPane.YES_OPTION==JOptionPane.showConfirmDialog(main.mainWindow, msg, title, JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
 		}
 		
+		private void buildView() {
+			currentViewContainer = currentViewType.createViewContainer(this);
+			if (currentViewContainer!=null) {
+				scrollPane.setViewportView( currentViewContainer.createComponent());
+				imageViewPanel.clearData();
+			}
+		}
+		
+		private static abstract class ViewContainer {
+			protected final ImageListPanel parent;
+			ViewContainer(ImageListPanel parent) {
+				this.parent = parent;
+			}
+			abstract void updateView();
+			abstract void forEachMarkedScreenshot(MarkedScreenshotAction action);
+			abstract boolean hasMarkedScreenshots();
+			abstract Component createComponent();
+			
+			interface MarkedScreenshotAction {
+				boolean processGeneralScreenshot(File screenshot);
+				boolean processGameScreenshots  (HashMap<Long, ScreenShot> screenshots);
+			}
+			
+			private static class Details extends ViewContainer {
+
+				private DetailsTableModel tableModel;
+				private JTable table;
+
+				Details(ImageListPanel parent) {
+					super(parent);
+					table = null;
+					tableModel = null;
+				}
+
+				@Override
+				void updateView() {
+					tableModel.fireTableUpdate();
+				}
+
+				@Override
+				void forEachMarkedScreenshot(MarkedScreenshotAction action) {
+					tableModel.forEachMarkedScreenshot(action);
+				}
+
+				@Override boolean hasMarkedScreenshots() {
+					return tableModel.hasMarkedScreenshots();
+				}
+
+				@Override
+				Component createComponent() {
+					tableModel = new DetailsTableModel(parent.generalScreenshots, parent.gameScreenshots);
+					
+					table = new JTable(tableModel);
+					table.setRowSorter(new Tables.SimplifiedRowSorter(tableModel));
+					table.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+					table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+					table.getSelectionModel().addListSelectionListener(e->{
+						int rowCount = table.getSelectedRowCount();
+						if (rowCount != 1)
+							parent.imageViewPanel.clearData();
+						else {
+							DetailsTableModel.Row row = getSelectedRow(table, tableModel);
+							if (row==null)
+								parent.imageViewPanel.clearData();
+							else
+								parent.imageViewPanel.setData(row.generalScreenshot, row.gameScreenShots);
+						}
+					});
+					//table.addKeyListener(createTestKeyListener());
+					table.addKeyListener(new TableKeyListener(tableModel, table));
+					
+					tableModel.setTable(table);
+					tableModel.setColumnWidths(table);
+					tableModel.setDefaultCellEditorsAndRenderers();
+					
+					new TableContextMenu(table, tableModel);
+					
+					return table;
+				}
+				
+			}
+		}
+
+		private static DetailsTableModel.Row getSelectedRow(JTable table, DetailsTableModel tableModel) {
+			int selectedRowV = table.getSelectedRow();
+			int selectedRowM = selectedRowV<0 ? -1 : table.convertRowIndexToModel(selectedRowV);
+			return selectedRowM<0 ? null : tableModel.getRow(selectedRowM);
+		}
+
+		@SuppressWarnings("unused")
+		private KeyListener createTestKeyListener() {
+			return new KeyListener() {
+				
+				@Override public void keyTyped   (KeyEvent e) { print("Typed"   ,e); }
+				@Override public void keyReleased(KeyEvent e) { print("Released",e); }
+				@Override public void keyPressed (KeyEvent e) { print("Pressed" ,e); }
+
+				private void print(String label, KeyEvent e) {
+					System.out.printf("Key%s: %s%n", label, toString(e));
+				}
+				private String toString(KeyEvent e) {
+					StringBuilder sb = new StringBuilder();
+					sb.append(String.format("ID=%d[%s], ", e.getID(), getIDstr(e.getID())));
+					sb.append(String.format("Ch=%s[%d], ", e.getKeyChar(), (int)e.getKeyChar()));
+					sb.append(String.format("KC=%d[%s]%s, ", e.getKeyCode(), KeyEvent.getKeyText(e.getKeyCode()), e.getKeyCode()==KeyEvent.VK_1));
+					sb.append(String.format("ExKC=%d[%s]%s, ", e.getExtendedKeyCode(), KeyEvent.getKeyText(e.getExtendedKeyCode()), e.getExtendedKeyCode()==KeyEvent.VK_1));
+					return sb.toString();
+				}
+				private String getIDstr(int id) {
+					switch (id) {
+					case KeyEvent.KEY_TYPED   : return "KEY_TYPED";
+					case KeyEvent.KEY_PRESSED : return "KEY_PRESSED";
+					case KeyEvent.KEY_RELEASED: return "KEY_RELEASED";
+					}
+					return String.format("KeyID[%d]", id);
+				}
+			};
+		}
+		
+		private static class TableKeyListener implements KeyListener {
+			private enum Target { General, Game }
+			
+			private final DetailsTableModel tableModel;
+			private final JTable table;
+		
+			private TableKeyListener(DetailsTableModel tableModel, JTable table) {
+				this.tableModel = tableModel;
+				this.table = table;
+			}
+		
+			@Override public void keyTyped(KeyEvent e) {}
+			@Override public void keyPressed(KeyEvent e) {}
+			@Override public void keyReleased(KeyEvent e) {
+				if (e.isConsumed()) return;
+				
+				switch (e.getKeyCode()) {
+				case KeyEvent.VK_1: toggleMarker(e,Target.General); break;
+				case KeyEvent.VK_2: toggleMarker(e,Target.Game   ); break;
+				}
+			}
+		
+			private void toggleMarker(KeyEvent e, Target target) {
+				
+				int rowCount = table.getSelectedRowCount();
+				if (rowCount!=1) return;
+				
+				int selectedRowV = table.getSelectedRow();
+				int selectedRowM = selectedRowV<0 ? -1 : table.convertRowIndexToModel(selectedRowV);
+				DetailsTableModel.Row row = selectedRowM<0 ? null : tableModel.getRow(selectedRowM);
+				if (row==null) return;
+				
+				switch (target) {
+				case General:
+					setValues(
+							e, selectedRowM,
+							row::canSetDeleteGeneralScreenshot,
+							row::isDeleteGeneralScreenshot,
+							row::setDeleteGeneralScreenshot,
+							DetailsTableModel.ColumnID.DeleteGeneral);
+					break;
+					
+				case Game:
+					setValues(
+							e, selectedRowM,
+							row::canSetDeleteGameScreenshot,
+							row::isDeleteGameScreenshot,
+							row::setDeleteGameScreenshot,
+							DetailsTableModel.ColumnID.DeleteGame);
+					break;
+				}
+			}
+
+			private void setValues(KeyEvent e, int selectedRowM, Supplier<Boolean> can, Supplier<Boolean> is, Consumer<Boolean> set, DetailsTableModel.ColumnID columnID) {
+				if (can.get()) {
+					System.out.printf("SetDeleteScreenshot(%d, %s, %s->%s)%n", selectedRowM, columnID, is.get(), !is.get());
+					// TODO
+					e.consume();
+					set.accept(!is.get());
+					tableModel.fireTableCellUpdate(selectedRowM, columnID);
+				} 
+			}
+		}
+
 		private static class TableContextMenu extends ContextMenu {
 			private static final long serialVersionUID = 6571205991872222664L;
 			private int[] selectedRows;
@@ -620,6 +891,62 @@ class SteamScreenshotsCleanUp {
 			
 		}
 		
+		private static class DetailsTableCellRenderer implements TableCellRenderer {
+
+			private static final Color COLOR_DELETED_ITEM = new Color(0xFF5A5A);
+			private final DetailsTableModel tableModel;
+			private final Tables.LabelRendererComponent labelComp;
+			private final Tables.CheckBoxRendererComponent checkboxComp;
+			
+			private DetailsTableCellRenderer(DetailsTableModel tableModel) {
+				this.tableModel = tableModel;
+				labelComp    = new Tables.LabelRendererComponent();
+				checkboxComp = new Tables.CheckBoxRendererComponent();
+				labelComp   .setHorizontalAlignment(SwingConstants.LEFT);
+				checkboxComp.setHorizontalAlignment(SwingConstants.CENTER);
+			}
+
+			@Override
+			public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int rowV, int columnV) {
+				int    rowM =    rowV<0 ? -1 : table.   convertRowIndexToModel(   rowV);
+				int columnM = columnV<0 ? -1 : table.convertColumnIndexToModel(columnV);
+				DetailsTableModel.Row  row = rowM<0 ? null : tableModel.getRow(rowM);
+				DetailsTableModel.ColumnID columnID = columnM<0 ? null : tableModel.getColumnID(columnM);
+				
+				Supplier<Color> getCustomBackground = ()->{
+					if (row==null) return null;
+					switch (columnID) {
+					case Name: break;
+						
+					case InGeneral:
+					case DeleteGeneral:
+						return row.isDeleteGeneralScreenshot() ? COLOR_DELETED_ITEM : null;
+						
+					case InGame:
+					case Player:
+					case DeleteGame:
+						return row.isDeleteGameScreenshot() ? COLOR_DELETED_ITEM : null;
+					}
+					return null;
+				};
+				Component rendererComp;
+				
+				if (value instanceof Boolean) {
+					Boolean bValue = (Boolean) value;
+					checkboxComp.configureAsTableCellRendererComponent(table, bValue, null, isSelected, hasFocus, null, getCustomBackground);
+					rendererComp = checkboxComp;
+					
+				} else {
+					String valueStr = value==null ? null : value.toString();
+					labelComp.configureAsTableCellRendererComponent(table, null, valueStr, isSelected, hasFocus, getCustomBackground, null);
+					rendererComp = labelComp;
+				}
+				
+				return rendererComp;
+			}
+			
+		}
+
 		private static class DetailsTableModel extends Tables.SimplifiedTableModel<DetailsTableModel.ColumnID> {
 
 			enum ColumnID implements Tables.SimplifiedColumnIDInterface {
@@ -627,8 +954,8 @@ class SteamScreenshotsCleanUp {
 				InGeneral    ("General"       , Boolean.class,  50),
 				InGame       ("Game"          , Boolean.class,  50),
 				Player       ("Player"        , String .class, 100),
-				DeleteGeneral("Delete General", Boolean.class,  50),
-				DeleteGame   ("Delete Game"   , Boolean.class,  50),
+				DeleteGeneral("Delete General", Boolean.class, 100),
+				DeleteGame   ("Delete Game"   , Boolean.class, 100),
 				;
 				private final SimplifiedColumnConfig cfg;
 				ColumnID(String name, Class<?> columnClass, int width) { cfg = new SimplifiedColumnConfig(name, columnClass, 20, -1, width, width); }
@@ -652,13 +979,13 @@ class SteamScreenshotsCleanUp {
 				
 				if (gameScreenshots!=null) {
 					gameScreenshots.forEach((playerID,list)->{
-						for (ScreenShot scrsht : list) {
-							String name = scrsht.image.getName();
+						for (ScreenShot screenShot : list) {
+							String name = screenShot.image.getName();
 							int pos = name.lastIndexOf(".");
 							if (pos>0) name = name.substring(0, pos);
 							Row row = rowMap.get(name);
 							if (row==null) rowMap.put(name, row = new Row(name));
-							row.gameScreenShots.put(playerID,scrsht);
+							row.gameScreenShots.put(playerID,screenShot);
 						}
 					});
 				}
@@ -667,6 +994,32 @@ class SteamScreenshotsCleanUp {
 				rows.sort(Comparator.<Row,String>comparing(row->row.filename));
 			}
 			
+			public void forEachMarkedScreenshot(ViewContainer.MarkedScreenshotAction action) {
+				for (Row row : rows) {
+					if (row.isDeleteGeneralScreenshot()) {
+						boolean result = action.processGeneralScreenshot(row.generalScreenshot);
+						row.setDeleteGeneralScreenshot(result);
+					}
+					if (row.isDeleteGameScreenshot()) {
+						boolean result = action.processGameScreenshots(row.gameScreenShots);
+						row.setDeleteGameScreenshot(result);
+					}
+				}
+			}
+
+			boolean hasMarkedScreenshots() {
+				for (Row row : rows) {
+					if (row.isDeleteGeneralScreenshot()) return true;
+					if (row.isDeleteGameScreenshot   ()) return true;
+				}
+				return false;
+			}
+
+			void setDefaultCellEditorsAndRenderers() {
+				DetailsTableCellRenderer tcr = new DetailsTableCellRenderer(this);
+				setAllDefaultRenderers(columnClass->tcr);
+			}
+
 			private static class Row {
 				
 				final String filename;
@@ -682,9 +1035,23 @@ class SteamScreenshotsCleanUp {
 					deleteGeneralScreenshot = false;
 					deleteGameScreenshot    = false;
 				}
+				
+				boolean hasAGeneralScreenshot() {
+					if (generalScreenshot==null) return false;
+					if (!generalScreenshot.isFile()) return false;
+					return true;
+				}
+				
+				boolean hasAGameScreenshot() {
+					if (gameScreenShots.isEmpty()) return false;
+					for (ScreenShot screenShot : gameScreenShots.values())
+						if (screenShot.image!=null && screenShot.image.isFile())
+							return true;
+					return false;
+				}
 
-				boolean canSetDeleteGeneralScreenshot() { return generalScreenshot!=null && generalScreenshot.isFile(); }
-				boolean canSetDeleteGameScreenshot   () { return !gameScreenShots.isEmpty(); }
+				boolean canSetDeleteGeneralScreenshot() { return hasAGeneralScreenshot(); }
+				boolean canSetDeleteGameScreenshot   () { return hasAGameScreenshot(); }
 				boolean isDeleteGeneralScreenshot    () { return deleteGeneralScreenshot; }
 				boolean isDeleteGameScreenshot       () { return deleteGameScreenshot; }
 
@@ -701,6 +1068,11 @@ class SteamScreenshotsCleanUp {
 					else
 						this.deleteGameScreenshot = false;
 				}
+
+				String getPlayerNames() {
+					Iterable<String> it = ()->gameScreenShots.keySet().stream().map(Data::getPlayerName).sorted().iterator();
+					return String.join(", ", it);
+				}
 			}
 			
 			
@@ -708,6 +1080,10 @@ class SteamScreenshotsCleanUp {
 			@Override
 			public void fireTableColumnUpdate(ColumnID columnID) {
 				super.fireTableColumnUpdate(columnID);
+			}
+
+			public void fireTableCellUpdate(int rowIndex, ColumnID columnID) {
+				super.fireTableCellUpdate(rowIndex, getColumn(columnID));
 			}
 
 			@Override public int getRowCount() {
@@ -720,9 +1096,9 @@ class SteamScreenshotsCleanUp {
 				
 				switch (columnID) {
 				case Name     : return row.filename;
-				case InGeneral: return row.generalScreenshot!=null;
-				case InGame   : return !row.gameScreenShots.isEmpty();
-				case Player   : return getPlayerNames(row.gameScreenShots.keySet());
+				case InGeneral: return row.hasAGeneralScreenshot();
+				case InGame   : return row.hasAGameScreenshot();
+				case Player   : return row.getPlayerNames();
 				case DeleteGeneral: return !row.canSetDeleteGeneralScreenshot() ? null : row.isDeleteGeneralScreenshot();
 				case DeleteGame   : return !row.canSetDeleteGameScreenshot   () ? null : row.isDeleteGameScreenshot   ();
 				}
@@ -746,14 +1122,18 @@ class SteamScreenshotsCleanUp {
 				
 				switch (columnID) {
 				case InGame: case InGeneral: case Name: case Player: break;
-				case DeleteGeneral: if (aValue instanceof Boolean) row.setDeleteGeneralScreenshot(((Boolean) aValue).booleanValue()); break;
-				case DeleteGame   : if (aValue instanceof Boolean) row.setDeleteGameScreenshot   (((Boolean) aValue).booleanValue()); break;
+				case DeleteGeneral: setMarker(aValue, rowIndex, columnID, row::setDeleteGeneralScreenshot); break;
+				case DeleteGame   : setMarker(aValue, rowIndex, columnID, row::setDeleteGameScreenshot   ); break;
 				}
 			}
-
-			private String getPlayerNames(Collection<Long> set) {
-				Iterable<String> it = ()->set.stream().map(Data::getPlayerName).sorted().iterator();
-				return String.join(", ", it);
+			
+			private void setMarker(Object aValue, int rowIndex, ColumnID columnID, Consumer<Boolean> setValue) {
+				if (aValue instanceof Boolean) {
+					boolean value = ((Boolean) aValue).booleanValue();
+					System.out.printf("DetailsTableModel.setMarker(%d, %s, ??->%s)%n", rowIndex, columnID, value);
+					// TODO
+					setValue.accept(value);
+				}
 			}
 
 			private Row getRow(int rowIndex) {
