@@ -40,6 +40,7 @@ import javax.swing.JTree;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.table.TableCellEditor;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
@@ -827,8 +828,9 @@ class SteamScreenshotsCleanUp {
 
 			private void setValues(KeyEvent e, int selectedRowM, Supplier<Boolean> can, Supplier<Boolean> is, Consumer<Boolean> set, DetailsTableModel.ColumnID columnID) {
 				if (can.get()) {
-					System.out.printf("SetDeleteScreenshot(%d, %s, %s->%s)%n", selectedRowM, columnID, is.get(), !is.get());
-					// TODO
+					//System.out.printf("SetDeleteScreenshot(%d, %s, %s->%s)%n", selectedRowM, columnID, is.get(), !is.get());
+					TableCellEditor cellEditor = table.getCellEditor();
+					if (cellEditor!=null) cellEditor.cancelCellEditing();
 					e.consume();
 					set.accept(!is.get());
 					tableModel.fireTableCellUpdate(selectedRowM, columnID);
@@ -1130,8 +1132,7 @@ class SteamScreenshotsCleanUp {
 			private void setMarker(Object aValue, int rowIndex, ColumnID columnID, Consumer<Boolean> setValue) {
 				if (aValue instanceof Boolean) {
 					boolean value = ((Boolean) aValue).booleanValue();
-					System.out.printf("DetailsTableModel.setMarker(%d, %s, ??->%s)%n", rowIndex, columnID, value);
-					// TODO
+					//System.out.printf("DetailsTableModel.setMarker(%d, %s, ??->%s)%n", rowIndex, columnID, value);
 					setValue.accept(value);
 				}
 			}
