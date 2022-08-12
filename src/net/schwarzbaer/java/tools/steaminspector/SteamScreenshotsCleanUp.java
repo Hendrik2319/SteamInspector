@@ -4,8 +4,6 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
 import java.awt.Window;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
@@ -29,7 +27,6 @@ import javax.swing.DefaultComboBoxModel;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
-import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -113,13 +110,15 @@ class SteamScreenshotsCleanUp {
 		int orientation = SteamInspector.settings.getInt(ValueKey.SSCU_RightSplitPaneOrientation, JSplitPane.VERTICAL_SPLIT);
 		rightPanel = new JSplitPane(orientation, true);
 		ButtonGroup bg = new ButtonGroup();
+		String titleV = "below table"; // "Vertical Split";
+		String titleH = "right of table"; // "Horizontal Split";
 		Component[] extraOptions = new Component[] {
-				SteamInspector.createRadioButton("Vertical Split"  , orientation==JSplitPane.VERTICAL_SPLIT  , true, bg, b->setRightPanelOrientation(JSplitPane.VERTICAL_SPLIT  )),
-				SteamInspector.createRadioButton("Horizontal Split", orientation==JSplitPane.HORIZONTAL_SPLIT, true, bg, b->setRightPanelOrientation(JSplitPane.HORIZONTAL_SPLIT))
+				SteamInspector.createRadioButton(titleV, orientation==JSplitPane.VERTICAL_SPLIT  , true, bg, b->setRightPanelOrientation(JSplitPane.VERTICAL_SPLIT  )),
+				SteamInspector.createRadioButton(titleH, orientation==JSplitPane.HORIZONTAL_SPLIT, true, bg, b->setRightPanelOrientation(JSplitPane.HORIZONTAL_SPLIT))
 		};
 		
-		ImageViewPanel imageViewPanel = new ImageViewPanel();
-		imageListPanel = new ImageListPanel(this, imageViewPanel, extraOptions);
+		ImageViewPanel imageViewPanel = new ImageViewPanel(extraOptions);
+		imageListPanel = new ImageListPanel(this, imageViewPanel);
 		
 		rightPanel.setTopComponent   (imageListPanel);
 		rightPanel.setBottomComponent(imageViewPanel);
@@ -252,6 +251,16 @@ class SteamScreenshotsCleanUp {
 		return folder;
 	}
 
+	private static void addExtraOptionsToToolbar(Component[][] extraOptions, JToolBar optionsPanel) {
+		if (extraOptions!=null)
+			for (Component[] group : extraOptions )
+				if (group!=null && group.length>0) {
+					optionsPanel.addSeparator();
+					for (Component option : group )
+						optionsPanel.add(option);
+				}
+	}
+
 	private static abstract class GuiVariant<MainWindow extends Window> {
 		protected final MainWindow mainWindow;
 		GuiVariant(MainWindow mainWindow) {
@@ -342,7 +351,10 @@ class SteamScreenshotsCleanUp {
 		private File generalScreenshot;
 		private HashMap<Long, ScreenShot> gameScreenShots;
 
-		ImageViewPanel() {
+		ImageViewPanel(Component... extraOptions) {
+			this(new Component[][] { extraOptions });
+		}
+		ImageViewPanel(Component[][] extraOptions) {
 			super(new BorderLayout());
 			preferredVariant = null;
 			selectionIsCausedByApp = false;
@@ -360,15 +372,13 @@ class SteamScreenshotsCleanUp {
 					imageView.setImage(getImage(selectedVariant));
 			});
 			
-			JPanel optionsPanel = new JPanel(new GridBagLayout());
-			GridBagConstraints c = new GridBagConstraints();
-			c.fill = GridBagConstraints.HORIZONTAL;
-			c.weightx = 0;
-			optionsPanel.add(comboBox, c);
-			c.weightx = 1;
-			optionsPanel.add(new JLabel(), c);
+			JToolBar options = new JToolBar();
+			options.setFloatable(false);
+			options.add(comboBox);
 			
-			add(optionsPanel, BorderLayout.NORTH);
+			addExtraOptionsToToolbar(extraOptions, options);
+			
+			add(options, BorderLayout.PAGE_START);
 			add(imageView, BorderLayout.CENTER);
 			
 		}
@@ -561,10 +571,10 @@ class SteamScreenshotsCleanUp {
 			currentViewType = SteamInspector.settings.getEnum(ValueKey.SSCU_ViewType, ViewType.Details, ViewType.class);
 			currentViewContainer = null;
 			
-			JToolBar optionsPanel = new JToolBar();
-			optionsPanel.setFloatable(false);
+			JToolBar options = new JToolBar();
+			options.setFloatable(false);
 			
-			optionsPanel.add(SteamInspector.createButton("Remove marked images", true , e->{
+			options.add(SteamInspector.createButton("Remove marked images", true , e->{
 				if (currentViewContainer==null) return;
 				if (!currentViewContainer.hasMarkedScreenshots()) return;
 				
@@ -593,27 +603,20 @@ class SteamScreenshotsCleanUp {
 				});
 				currentViewContainer.updateView();
 			}));
-			optionsPanel.addSeparator();
+			options.addSeparator();
 			
 			ButtonGroup bg = new ButtonGroup();
-			optionsPanel.add(SteamInspector.createRadioButton("Details"   , currentViewType==ViewType.Details  , true , bg, b->setViewType(ViewType.Details  )));
-			optionsPanel.add(SteamInspector.createRadioButton("Image Grid", currentViewType==ViewType.ImageGrid, false, bg, b->setViewType(ViewType.ImageGrid)));
+			options.add(SteamInspector.createRadioButton("Details"   , currentViewType==ViewType.Details  , true , bg, b->setViewType(ViewType.Details  )));
+			options.add(SteamInspector.createRadioButton("Image Grid", currentViewType==ViewType.ImageGrid, false, bg, b->setViewType(ViewType.ImageGrid)));
 			
-			if (extraOptions!=null && extraOptions.length>0) {
-				for (Component[] group : extraOptions ) {
-					optionsPanel.addSeparator();
-					for (Component option : group )
-						optionsPanel.add(option);
-				}
-			}
+			addExtraOptionsToToolbar(extraOptions, options);
 			
 			scrollPane = new JScrollPane();
 			
-			add(optionsPanel, BorderLayout.PAGE_START);
+			add(options, BorderLayout.PAGE_START);
 			add(scrollPane, BorderLayout.CENTER);
 			buildView();
 		}
-
 		private void setViewType(ViewType viewType) {
 			boolean changeAllowed = checkUnsavedChanges();
 			if (changeAllowed) {
