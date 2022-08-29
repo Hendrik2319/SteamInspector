@@ -7,8 +7,6 @@ import java.awt.Dimension;
 import java.awt.Window;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
@@ -36,7 +34,6 @@ import javax.swing.JToolBar;
 import javax.swing.JTree;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
 import javax.swing.table.TableCellEditor;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
@@ -56,6 +53,7 @@ import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShot;
 import net.schwarzbaer.java.tools.steaminspector.Data.ScreenShotLists.ScreenShotList;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.AppSettings.ValueKey;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
+import net.schwarzbaer.system.Settings.DefaultAppSettings.SplitPaneDividersDefinition;
 
 class SteamScreenshotsCleanUp {
 	
@@ -129,41 +127,12 @@ class SteamScreenshotsCleanUp {
 		
 		gui.createGUI(contentPane);
 		SteamInspector.settings.registerExtraWindow(mainWindow, ValueKey.SSCU_WindowX, ValueKey.SSCU_WindowY, ValueKey.SSCU_WindowWidth, ValueKey.SSCU_WindowHeight);
-		
-		boolean showDividerLoc = false;
-		SwingUtilities.invokeLater(()->{
-			int dividerLoc1 = SteamInspector.settings.getInt(ValueKey.SSCU_MainSplitPaneDivider, -1);
-			if (dividerLoc1>=0) contentPane.setDividerLocation(dividerLoc1);
-			int dividerLoc2 = SteamInspector.settings.getInt(ValueKey.SSCU_RightSplitPaneDivider, -1);
-			if (dividerLoc2>=0) rightPanel .setDividerLocation(dividerLoc2);
-			if (showDividerLoc) {
-				System.out.printf("initDividerLocations     (%d, %d)%n", dividerLoc1, dividerLoc2);
-				System.out.printf("checkDividerLocations    (%d, %d)%n", contentPane.getDividerLocation(), rightPanel .getDividerLocation());
-			}
-			
-			SwingUtilities.invokeLater(()->{
-				if (showDividerLoc) System.out.printf("checkDividerLocations 1a (%d, %d)%n", contentPane.getDividerLocation(), rightPanel .getDividerLocation());
-				if (dividerLoc1>=0 && dividerLoc1!=contentPane.getDividerLocation()) contentPane.setDividerLocation(dividerLoc1);
-				if (dividerLoc2>=0 && dividerLoc2!=rightPanel .getDividerLocation()) rightPanel .setDividerLocation(dividerLoc2);
-				if (showDividerLoc) System.out.printf("checkDividerLocations 1b (%d, %d)%n", contentPane.getDividerLocation(), rightPanel .getDividerLocation());
-				
-				if (showDividerLoc) 
-					SwingUtilities.invokeLater(()->{
-						System.out.printf("checkDividerLocations 2  (%d, %d)%n", contentPane.getDividerLocation(), rightPanel .getDividerLocation());
-					});
-			});
-		});
-		
-		mainWindow.addWindowListener(new WindowAdapter() {
-			@Override public void windowClosing(WindowEvent e) { saveDividerLocations("Closing"); }
-			@Override public void windowClosed (WindowEvent e) { saveDividerLocations("Closed" ); }
-
-			private void saveDividerLocations(String label) {
-				if (showDividerLoc) System.out.printf("saveDividerLocations(\"%s\", %d, %d)%n", label, contentPane.getDividerLocation(), rightPanel .getDividerLocation());
-				SteamInspector.settings.putInt(ValueKey.SSCU_MainSplitPaneDivider , contentPane.getDividerLocation());
-				SteamInspector.settings.putInt(ValueKey.SSCU_RightSplitPaneDivider, rightPanel .getDividerLocation());
-			}
-		});
+		SteamInspector.settings.registerSplitPaneDividers(
+				new SplitPaneDividersDefinition<>(mainWindow, ValueKey.class)
+				.add(contentPane, ValueKey.SSCU_MainSplitPaneDivider)
+				.add(rightPanel, ValueKey.SSCU_RightSplitPaneDivider),
+				false
+		);
 	}
 	
 	private void setRightPanelOrientation(int value) {
