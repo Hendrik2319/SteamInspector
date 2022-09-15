@@ -2,6 +2,7 @@ package net.schwarzbaer.java.tools.steaminspector;
 
 import java.awt.Color;
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.Vector;
 import java.util.function.Consumer;
@@ -29,18 +30,17 @@ class JSONHelper {
 		@Override public V  createValueExtra     (Value.Type type) { return new V(type); }
 	}
 
-	private static Value<NV, V> parseJson(JSON_Parser<NV, V> parser) throws ParseException {
-		Value<NV, V> result = parser.parse_withParseException();
+	private static Value<NV, V> postProcess(Value<NV, V> result)
+	{
 		JSON_Data.traverseAllValues(result, false, null, (path,v)->v.extra.setHost(v));
 		return result;
 	}
 
-	static Value<NV, V> parseJsonFile(File   file) throws ParseException { return parseJson(new JSON_Parser<>(file,new FactoryForExtras())); }
-
-	static Value<NV, V> parseJsonText(String text) throws ParseException { return parseJson(new JSON_Parser<>(text,new FactoryForExtras())); }
+	static Value<NV, V> parseJsonFile(File   file) throws ParseException { return postProcess(JSON_Parser.parse_withParseException(file,StandardCharsets.UTF_8,new FactoryForExtras(),null)); }
+	static Value<NV, V> parseJsonText(String text) throws ParseException { return postProcess(JSON_Parser.parse_withParseException(text                       ,new FactoryForExtras(),null)); }
 	static Value<NV, V> parseJsonText(String text, String debugOutputPrefixStr) throws TraverseException {
 		try {
-			return JSONHelper.parseJsonText(text);
+			return parseJsonText(text);
 		} catch (ParseException e) {
 			throw new TraverseException("%s isn't a well formed JSON text: %s", (String)debugOutputPrefixStr, e.getMessage());
 		}
