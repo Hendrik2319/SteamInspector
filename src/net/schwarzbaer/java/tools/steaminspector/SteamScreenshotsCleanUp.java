@@ -1056,8 +1056,9 @@ class SteamScreenshotsCleanUp {
 				super.fireTableColumnUpdate(columnID);
 			}
 
+			@Override
 			public void fireTableCellUpdate(int rowIndex, ColumnID columnID) {
-				super.fireTableCellUpdate(rowIndex, getColumn(columnID));
+				super.fireTableCellUpdate(rowIndex, columnID);
 			}
 
 			@Override public int getRowCount() {
