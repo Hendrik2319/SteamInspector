@@ -14,6 +14,7 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Vector;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -209,6 +210,20 @@ class SteamScreenshotsCleanUp {
 					for (Component option : group )
 						optionsPanel.add(option);
 				}
+	}
+
+	private Vector<Integer> getGameIDs_sorted()
+	{
+		
+		HashSet<Integer> gameIDs = new HashSet<>(gamesWithScreenshots);
+		gameIDs.addAll(generalScreenshots.keySet());
+		
+		Vector<Integer> gameIDs_sorted = new Vector<>(gameIDs);
+		gameIDs_sorted.sort(Comparator
+				.comparing(Data::getGameTitle)
+				.thenComparing(Comparator.naturalOrder()));
+		
+		return gameIDs_sorted;
 	}
 
 	private static abstract class GuiVariant<MainWindow extends Window> {
@@ -472,35 +487,7 @@ class SteamScreenshotsCleanUp {
 			JToolBar options = new JToolBar();
 			options.setFloatable(false);
 			
-			options.add(SteamInspector.createButton("Remove marked images", true , e->{
-				if (currentViewContainer==null) return;
-				if (!currentViewContainer.hasMarkedScreenshots()) return;
-				
-				String msg = "Do you really want to delete the marked screenshots?";
-				String title = "Are you sure?";
-				if (JOptionPane.YES_OPTION!=JOptionPane.showConfirmDialog(main.mainWindow, msg, title, JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE))
-					return;
-				
-				currentViewContainer.forEachMarkedScreenshot(new ImageListPanel.ViewContainer.MarkedScreenshotAction() {
-					@Override public boolean processGeneralScreenshot(File screenshot) {
-						boolean success = screenshot.isFile() ? screenshot.delete() : true;
-						if (success) return false;
-						else         return true;
-					}
-					@Override public boolean processGameScreenshots(HashMap<Long, ScreenShot> screenshots) {
-						boolean allSuccessful = true;
-						for (ScreenShot screenshot : screenshots.values()) {
-							if (screenshot.image.isFile()) {
-								boolean success = screenshot.image.delete();
-								if (!success) allSuccessful = false;
-							}
-						}
-						if (allSuccessful) return false;
-						else               return true;
-					}
-				});
-				currentViewContainer.updateView();
-			}));
+			options.add(SteamInspector.createButton("Remove marked images", true , e->removeMarkedImages()));
 			options.addSeparator();
 			
 			ButtonGroup bg = new ButtonGroup();
@@ -514,6 +501,38 @@ class SteamScreenshotsCleanUp {
 			add(options, BorderLayout.PAGE_START);
 			add(scrollPane, BorderLayout.CENTER);
 			buildView();
+		}
+		
+		private void removeMarkedImages()
+		{
+			if (currentViewContainer==null) return;
+			if (!currentViewContainer.hasMarkedScreenshots()) return;
+			
+			String msg = "Do you really want to delete the marked screenshots?";
+			String title = "Are you sure?";
+			if (JOptionPane.YES_OPTION!=JOptionPane.showConfirmDialog(main.mainWindow, msg, title, JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE))
+				return;
+			
+			currentViewContainer.forEachMarkedScreenshot(new ImageListPanel.ViewContainer.MarkedScreenshotAction() {
+				@Override public boolean processGeneralScreenshot(File screenshot) {
+					boolean success = screenshot.isFile() ? screenshot.delete() : true;
+					if (success) return false;
+					else         return true;
+				}
+				@Override public boolean processGameScreenshots(HashMap<Long, ScreenShot> screenshots) {
+					boolean allSuccessful = true;
+					for (ScreenShot screenshot : screenshots.values()) {
+						if (screenshot.image.isFile()) {
+							boolean success = screenshot.image.delete();
+							if (!success) allSuccessful = false;
+						}
+					}
+					if (allSuccessful) return false;
+					else               return true;
+				}
+			});
+			currentViewContainer.updateView();
+			main.leftPanel.updateContent();
 		}
 		private void setViewType(ViewType viewType) {
 			boolean changeAllowed = checkUnsavedChanges();
@@ -1069,7 +1088,7 @@ class SteamScreenshotsCleanUp {
 		
 		enum Variant
 		{
-			Table("Table", null),
+			Table("Table", GamesTable::new),
 			Tree ("Tree" , GamesTree::new),
 			;
 			private final Function<SteamScreenshotsCleanUp, GamesPanelContent> createGuiComp;
@@ -1179,14 +1198,7 @@ class SteamScreenshotsCleanUp {
 		
 			@Override protected Vector<GameNode> createChildren() {
 				Vector<GameNode> children = new Vector<>();
-				
-				HashSet<Integer> gameIDs = new HashSet<>(base.gamesWithScreenshots);
-				gameIDs.addAll(base.generalScreenshots.keySet());
-				
-				Vector<Integer> gameIDs_sorted = new Vector<>(gameIDs);
-				gameIDs_sorted.sort(Comparator
-						.comparing(Data::getGameTitle)
-						.thenComparing(Comparator.naturalOrder()));
+				Vector<Integer> gameIDs_sorted = base.getGameIDs_sorted();
 				
 				for (Integer gameID : gameIDs_sorted)
 					if (gameID!=null)
@@ -1207,6 +1219,208 @@ class SteamScreenshotsCleanUp {
 		
 			@Override protected Vector<? extends TreeNode> createChildren() {
 				throw new UnsupportedOperationException();
+			}
+		}
+	}
+
+	private static class GamesTable extends JTable implements GamesPanel.GamesPanelContent
+	{
+		private static final long serialVersionUID = -7887162543386461974L;
+		private final SteamScreenshotsCleanUp base;
+		private final GamesTableModel tableModel;
+
+		GamesTable(SteamScreenshotsCleanUp base)
+		{
+			this.base = base;
+			
+			tableModel = new GamesTableModel();
+			setModel(tableModel);
+			setRowSorter(new Tables.SimplifiedRowSorter(tableModel));
+			setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+			setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+			getSelectionModel().addListSelectionListener(e->{
+				int rowV = getSelectedRow();
+				int rowM = rowV<0 ? -1 : convertRowIndexToModel(rowV);
+				
+				Game game = tableModel.getRow(rowM);
+				if (game!=null)
+					this.base.imageListPanel.setData(game.gameID);
+				else
+					this.base.imageListPanel.clearData();
+			});
+			
+			tableModel.setTable(this);
+			tableModel.setColumnWidths(this);
+			tableModel.setDefaultCellEditorsAndRenderers();
+		}
+
+		@Override public Component getComponent() { return this; }
+
+		@Override
+		public void update()
+		{
+			tableModel.rebuildData();
+			//repaint();
+		}
+
+		private class Game
+		{
+			final int gameID;
+			final Data.Game game;
+			final String name;
+			
+			int  generalScreenshotsCount;
+			long generalScreenshotsSize;
+			int  gameScreenshotsCount;
+			long gameScreenshotsSize;
+			
+			Game(int gameID)
+			{
+				this.gameID = gameID;
+				name = Data.getGameTitle(gameID);
+				game = Data.games.get(gameID);
+				
+				generalScreenshotsCount = 0;
+				generalScreenshotsSize = 0;
+				gameScreenshotsCount = 0;
+				gameScreenshotsSize = 0;
+				
+				HashMap<String, File> generalScreenshots = base.generalScreenshots.get(gameID);
+				if (generalScreenshots!=null)
+					generalScreenshots.forEach((name,file)->{
+						if (file!=null && file.exists())
+						{
+							generalScreenshotsCount++;
+							generalScreenshotsSize += file.length();
+						}
+					});
+				
+				HashMap<Long, ScreenShotList> gameScreenshots = game==null ? null : game.screenShots;
+				if (gameScreenshots!=null)
+				{
+					gameScreenshots.forEach((playerID, screenshots)->{
+						if (screenshots!=null)
+							screenshots.forEach(screenshot->{
+								if (screenshot!=null && screenshot.image!=null && screenshot.image.exists())
+								{
+									gameScreenshotsCount++;
+									gameScreenshotsSize += screenshot.image.length();
+								}
+							});
+					});
+				}
+			}
+		}
+		
+		private static class GamesTableCellRenderer implements TableCellRenderer {
+
+			private final GamesTableModel tableModel;
+			private final Tables.LabelRendererComponent labelComp;
+			
+			private GamesTableCellRenderer(GamesTableModel tableModel) {
+				this.tableModel = tableModel;
+				labelComp    = new Tables.LabelRendererComponent();
+			}
+
+			@Override
+			public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int rowV, int columnV) {
+				//int    rowM =    rowV<0 ? -1 : table.   convertRowIndexToModel(   rowV);
+				int columnM = columnV<0 ? -1 : table.convertColumnIndexToModel(columnV);
+				// Game  row = rowM<0 ? null : tableModel.getRow(rowM);
+				GamesTableModel.ColumnID columnID = columnM<0 ? null : tableModel.getColumnID(columnM);
+				
+				String valueStr = value==null ? null : value.toString();
+				
+				if (value instanceof Long && columnID == GamesTableModel.ColumnID.InGeneralSize || columnID == GamesTableModel.ColumnID.InGameSize)
+					valueStr = getSizeStr((Long) value);
+				
+				labelComp.configureAsTableCellRendererComponent(table, null, valueStr, isSelected, hasFocus);
+				
+				int alignment = SwingConstants.LEFT;
+				if (value instanceof Number)
+					alignment = SwingConstants.RIGHT;
+				labelComp.setHorizontalAlignment(alignment);
+				
+				return labelComp;
+			}
+			
+			private String getSizeStr(long size)
+			{
+				double sizeD = size;
+				if (sizeD < 1024) return String.format(Locale.ENGLISH, "%d B", size);
+				sizeD = sizeD / 1024;
+				if (sizeD < 1024) return String.format(Locale.ENGLISH, "%1.2f kB", sizeD);
+				sizeD = sizeD / 1024;
+				if (sizeD < 1024) return String.format(Locale.ENGLISH, "%1.2f MB", sizeD);
+				sizeD = sizeD / 1024;
+				if (sizeD < 1024) return String.format(Locale.ENGLISH, "%1.2f GB", sizeD);
+				sizeD = sizeD / 1024;
+				return String.format(Locale.ENGLISH, "%1.2f TB", sizeD);
+			}
+		}
+
+		private class GamesTableModel extends Tables.SimplifiedTableModel<GamesTableModel.ColumnID> {
+
+			enum ColumnID implements Tables.SimplifiedColumnIDInterface {
+				ID           ("ID"          , Integer.class,  55),
+				Name         ("Name"        , String .class, 280),
+				InGeneral    ("In General"  , Integer.class,  65),
+				InGeneralSize("(Size)"      , Long   .class,  65),
+				InGame       ("In Game"     , Integer.class,  55),
+				InGameSize   ("(Size)"      , Long   .class,  65),
+				;
+				private final SimplifiedColumnConfig cfg;
+				ColumnID(String name, Class<?> columnClass, int width) { cfg = new SimplifiedColumnConfig(name, columnClass, 20, -1, width, width); }
+				@Override public SimplifiedColumnConfig getColumnConfig() { return cfg; }
+				
+			}
+
+			private Vector<Game> data;
+
+			GamesTableModel()
+			{
+				super(ColumnID.values());
+				data = null;
+				rebuildData();
+			}
+			
+			void rebuildData()
+			{
+				data = new Vector<Game>();
+				for (int gameID : base.getGameIDs_sorted())
+					data.add(new Game(gameID));
+				fireTableUpdate();
+			}
+
+			void setDefaultCellEditorsAndRenderers() {
+				GamesTableCellRenderer tcr = new GamesTableCellRenderer(this);
+				setAllDefaultRenderers(columnClass->tcr);
+			}
+
+			@Override public int getRowCount() { return data==null ? 0 : data.size(); }
+			
+			Game getRow(int rowIndex)
+			{
+				if (data==null) return null;
+				if (rowIndex<0 || rowIndex>=data.size()) return null;
+				return data.get(rowIndex);
+			}
+
+			@Override
+			public Object getValueAt(int rowIndex, int columnIndex, ColumnID columnID)
+			{
+				Game row = getRow(rowIndex);
+				if (row==null) return null;
+				switch (columnID)
+				{
+					case ID  : return row.gameID;
+					case Name: return row.name;
+					case InGeneral    : return row.generalScreenshotsCount;
+					case InGeneralSize: return row.generalScreenshotsSize;
+					case InGame       : return row.gameScreenshotsCount;
+					case InGameSize   : return row.gameScreenshotsSize;
+				}
+				return null;
 			}
 		}
 	}
