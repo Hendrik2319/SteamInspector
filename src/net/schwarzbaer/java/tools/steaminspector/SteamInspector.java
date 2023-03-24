@@ -703,7 +703,7 @@ class SteamInspector {
 			SteamClientFolder, SteamLibraryFolders,
 			SelectedTreeType,
 			SSCU_WindowX, SSCU_WindowY, SSCU_WindowWidth, SSCU_WindowHeight,
-			SSCU_GeneralScreenshotFolder, SSCU_ViewType, SSCU_RightSplitPaneOrientation, SSCU_RightSplitPaneDivider, SSCU_MainSplitPaneDivider,
+			SSCU_GeneralScreenshotFolder, SSCU_ViewType, SSCU_RightSplitPaneOrientation, SSCU_RightSplitPaneDivider, SSCU_MainSplitPaneDivider, SSCU_GamesPanelView,
 		}
 	
 		enum ValueGroup implements Settings.GroupKeys<ValueKey> {

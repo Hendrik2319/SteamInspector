@@ -11,6 +11,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Vector;
@@ -37,6 +38,7 @@ import javax.swing.SwingConstants;
 import javax.swing.table.TableCellEditor;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
@@ -67,15 +69,13 @@ class SteamScreenshotsCleanUp {
 
 	private final Window mainWindow;
 	private final JFileChooser folderChooser;
-	private final JTree tree;
-	@SuppressWarnings("unused")
-	private DefaultTreeModel treeModel;
 	private File generalScreenshotFolder;
 	private final HashMap<Integer,HashMap<String,File>> generalScreenshots;
 	private final GuiVariant<? extends Window> gui;
 	private final HashSet<Integer> gamesWithScreenshots;
 	private final ImageListPanel imageListPanel;
 	private JSplitPane rightPanel;
+	private GamesPanel leftPanel;
 
 	SteamScreenshotsCleanUp(Window parent) {
 		//ImageViewPanel.ImageVariant.test();
@@ -91,19 +91,6 @@ class SteamScreenshotsCleanUp {
 		folderChooser = new JFileChooser("./");
 		folderChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
 		folderChooser.setMultiSelectionEnabled(false);
-		
-		tree = new JTree(treeModel = null);
-		tree.setRootVisible(false);
-		tree.setCellRenderer(new SteamInspector.BaseTreeNodeRenderer());
-		tree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
-		tree.addTreeSelectionListener(e->{
-			TreePath path = e.getNewLeadSelectionPath();
-			if (path==null) return;
-			showTreeNodeContent(path.getLastPathComponent());
-		});
-		
-		JScrollPane treeScrollPane = new JScrollPane(tree);
-		treeScrollPane.setPreferredSize(new Dimension(500, 800));
 		
 		int orientation = SteamInspector.settings.getInt(ValueKey.SSCU_RightSplitPaneOrientation, JSplitPane.VERTICAL_SPLIT);
 		rightPanel = new JSplitPane(orientation, true);
@@ -121,8 +108,10 @@ class SteamScreenshotsCleanUp {
 		rightPanel.setTopComponent   (imageListPanel);
 		rightPanel.setBottomComponent(imageViewPanel);
 		
+		leftPanel = new GamesPanel(this, 500, 800);
+		
 		JSplitPane contentPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, true);
-		contentPane.setLeftComponent (treeScrollPane);
+		contentPane.setLeftComponent (leftPanel);
 		contentPane.setRightComponent(rightPanel);
 		
 		gui.createGUI(contentPane);
@@ -144,14 +133,6 @@ class SteamScreenshotsCleanUp {
 		gui.showGUI();
 	}
 	
-	private void showTreeNodeContent(Object treeNodeObj) {
-		if (treeNodeObj instanceof GamesGroupTreeNode.GameTreeNode) {
-			GamesGroupTreeNode.GameTreeNode gameTreeNode = (GamesGroupTreeNode.GameTreeNode) treeNodeObj;
-			imageListPanel.setData(gameTreeNode.gameID);
-		} else
-			imageListPanel.clearData();
-	}
-
 	SteamScreenshotsCleanUp initialize() {
 		ProgressDialog.runWithProgressDialog(mainWindow, "Initialize", 300, pd->{
 			generalScreenshotFolder = getFolder(pd, "Determine General Screenshot Folder", ValueKey.SSCU_GeneralScreenshotFolder);
@@ -172,7 +153,7 @@ class SteamScreenshotsCleanUp {
 			
 			
 			SteamInspector.showIndeterminateTask(pd, "Update GUI");
-			tree.setModel(treeModel = new DefaultTreeModel(new RootTreeNode()));
+			leftPanel.updateContent();
 			
 		});
 		return this;
@@ -252,59 +233,6 @@ class SteamScreenshotsCleanUp {
 			@Override void createGUI(JComponent contentPane) {
 				mainWindow.createGUI(contentPane, SteamInspector.createButton("Close", true, e->mainWindow.closeDialog())); }
 			@Override void showGUI() { mainWindow.showDialog(); }
-		}
-	}
-
-	private class RootTreeNode extends SteamInspector.BaseTreeNode<TreeNode, TreeNode> {
-
-		RootTreeNode() {
-			super(null, "<Root>", true, false);
-		}
-
-		@Override protected Vector<TreeNode> createChildren() {
-			Vector<TreeNode> children = new Vector<>();
-			children.add(new GamesGroupTreeNode(this));
-			return children;
-		}
-		
-	}
-
-	private class GamesGroupTreeNode extends SteamInspector.BaseTreeNode<RootTreeNode, GamesGroupTreeNode.GameTreeNode> {
-		
-		protected GamesGroupTreeNode(RootTreeNode parent) {
-			super(parent, "Games", true, false);
-		}
-
-		@Override protected Vector<GameTreeNode> createChildren() {
-			Vector<GameTreeNode> children = new Vector<>();
-			
-			HashSet<Integer> gameIDs = new HashSet<>(gamesWithScreenshots);
-			gameIDs.addAll(generalScreenshots.keySet());
-			
-			Vector<Integer> gameIDs_sorted = new Vector<>(gameIDs);
-			gameIDs_sorted.sort(Comparator
-					.comparing(Data::getGameTitle)
-					.thenComparing(Comparator.naturalOrder()));
-			
-			for (Integer gameID : gameIDs_sorted)
-				if (gameID!=null)
-					children.add(new GameTreeNode(this, gameID));
-			
-			return children;
-		}
-
-		private class GameTreeNode extends SteamInspector.BaseTreeNode<GamesGroupTreeNode, TreeNode> {
-			
-			private final int gameID;
-
-			protected GameTreeNode(GamesGroupTreeNode parent, int gameID) {
-				super(parent, Data.getGameTitle(gameID), false, true, Data.getGameIcon(gameID, TreeIcons.Folder));
-				this.gameID = gameID;
-			}
-
-			@Override protected Vector<? extends TreeNode> createChildren() {
-				throw new UnsupportedOperationException();
-			}
 		}
 	}
 
@@ -511,11 +439,12 @@ class SteamScreenshotsCleanUp {
 		private static final long serialVersionUID = 7167176806130750722L;
 
 		enum ViewType {
-			Details  (ViewContainer.Details::new),
-			ImageGrid(null),
+			Details  ("Details"   , ViewContainer.Details::new),
+			ImageGrid("Image Grid", null),
 			;
 			private final Function<ImageListPanel,ViewContainer> createVC;
-			ViewType(Function<ImageListPanel,ViewContainer> createVC) { this.createVC = createVC;}
+			private final String label;
+			ViewType(String label, Function<ImageListPanel,ViewContainer> createVC) { this.label = label; this.createVC = createVC;}
 			ViewContainer createViewContainer(ImageListPanel main) { return createVC==null ? null : createVC.apply(main); }
 		}
 		
@@ -575,8 +504,8 @@ class SteamScreenshotsCleanUp {
 			options.addSeparator();
 			
 			ButtonGroup bg = new ButtonGroup();
-			options.add(SteamInspector.createRadioButton("Details"   , currentViewType==ViewType.Details  , true , bg, b->setViewType(ViewType.Details  )));
-			options.add(SteamInspector.createRadioButton("Image Grid", currentViewType==ViewType.ImageGrid, false, bg, b->setViewType(ViewType.ImageGrid)));
+			for (ViewType vt : ViewType.values())
+				options.add(SteamInspector.createRadioButton(vt.label, currentViewType==vt, vt.createVC!=null, bg, b->setViewType(vt)));
 			
 			addExtraOptionsToToolbar(extraOptions, options);
 			
@@ -868,6 +797,7 @@ class SteamScreenshotsCleanUp {
 		private static class DetailsTableCellRenderer implements TableCellRenderer {
 
 			private static final Color COLOR_DELETED_ITEM = new Color(0xFF5A5A);
+			private static final Color COLOR_EDITABLE     = new Color(0xFFF9ED);
 			private final DetailsTableModel tableModel;
 			private final Tables.LabelRendererComponent labelComp;
 			private final Tables.CheckBoxRendererComponent checkboxComp;
@@ -889,19 +819,28 @@ class SteamScreenshotsCleanUp {
 				
 				Supplier<Color> getCustomBackground = ()->{
 					if (row==null) return null;
-					switch (columnID) {
-					case Name: break;
+					Color bgColor = null;
+					switch (columnID)
+					{
+						case Name:
+							break;
 						
-					case InGeneral:
-					case DeleteGeneral:
-						return row.isDeleteGeneralScreenshot() ? COLOR_DELETED_ITEM : null;
+						case InGeneral:
+						case DeleteGeneral:
+							if (row.isDeleteGeneralScreenshot())
+								bgColor = COLOR_DELETED_ITEM;
+							break;
 						
-					case InGame:
-					case Player:
-					case DeleteGame:
-						return row.isDeleteGameScreenshot() ? COLOR_DELETED_ITEM : null;
+						case InGame:
+						case Player:
+						case DeleteGame:
+							if (row.isDeleteGameScreenshot())
+								bgColor = COLOR_DELETED_ITEM;
+							break;
 					}
-					return null;
+					if (bgColor==null && tableModel.isCellEditable(rowM, columnM, columnID))
+						bgColor = COLOR_EDITABLE;
+					return bgColor;
 				};
 				Component rendererComp;
 				
@@ -924,12 +863,12 @@ class SteamScreenshotsCleanUp {
 		private static class DetailsTableModel extends Tables.SimplifiedTableModel<DetailsTableModel.ColumnID> {
 
 			enum ColumnID implements Tables.SimplifiedColumnIDInterface {
-				Name         ("Name"          , String .class, 150),
-				InGeneral    ("General"       , Boolean.class,  50),
-				InGame       ("Game"          , Boolean.class,  50),
-				Player       ("Player"        , String .class, 100),
-				DeleteGeneral("Delete General", Boolean.class, 100),
-				DeleteGame   ("Delete Game"   , Boolean.class, 100),
+				Name         ("File Name"        , String .class, 110),
+				InGeneral    ("In General"       , Boolean.class,  65),
+				InGame       ("In Game"          , Boolean.class,  55),
+				Player       ("By Player"        , String .class, 100),
+				DeleteGeneral("Delete in General", Boolean.class, 100),
+				DeleteGame   ("Delete in Game"   , Boolean.class, 100),
 				;
 				private final SimplifiedColumnConfig cfg;
 				ColumnID(String name, Class<?> columnClass, int width) { cfg = new SimplifiedColumnConfig(name, columnClass, 20, -1, width, width); }
@@ -1116,6 +1055,159 @@ class SteamScreenshotsCleanUp {
 				return rows.get(rowIndex);
 			}
 			
+		}
+	}
+	
+	private static class GamesPanel extends JPanel
+	{
+		private static final long serialVersionUID = -7570230016344351538L;
+		interface GamesPanelContent
+		{
+			void update();
+			Component getComponent();
+		}
+		
+		enum Variant
+		{
+			Table("Table", null),
+			Tree ("Tree" , GamesTree::new),
+			;
+			private final Function<SteamScreenshotsCleanUp, GamesPanelContent> createGuiComp;
+			Variant(String label, Function<SteamScreenshotsCleanUp, GamesPanelContent> createGuiComp)
+			{
+				this.createGuiComp = createGuiComp;
+			}
+		}
+	
+		private final EnumMap<GamesPanel.Variant, GamesPanelContent> variants;
+
+		GamesPanel(SteamScreenshotsCleanUp base, int width, int height) {
+			super(new BorderLayout());
+			
+			Variant selected = SteamInspector.settings.getEnum(ValueKey.SSCU_GamesPanelView, Variant.Tree, Variant.class);
+			
+			JScrollPane scrollPane = new JScrollPane();
+			scrollPane.setPreferredSize(new Dimension(width, height));
+			
+			JToolBar options = new JToolBar();
+			options.setFloatable(false);
+			
+			variants = new EnumMap<>(GamesPanel.Variant.class);
+			ButtonGroup bg = new ButtonGroup();
+			for (Variant variant : Variant.values())
+			{
+				GamesPanelContent content = variant.createGuiComp == null ? null : variant.createGuiComp.apply(base);
+				if (content != null)
+					variants.put(variant, content);
+				
+				options.add(SteamInspector.createRadioButton(
+					variant.toString(),
+					selected==variant,
+					content!=null, bg,
+					b->{
+						if (b && content!=null)
+						{
+							SteamInspector.settings.putEnum(ValueKey.SSCU_GamesPanelView, variant);
+							scrollPane.setViewportView(content.getComponent());
+						}
+					}
+				));
+			}
+			
+			add(options, BorderLayout.PAGE_START);
+			add(scrollPane, BorderLayout.CENTER);
+			
+			GamesPanelContent content = variants.get(selected);
+			if (content!=null)
+				scrollPane.setViewportView(content.getComponent());
+		}
+
+		void updateContent()
+		{
+			variants.forEach((variant, content)->{
+				content.update();
+			});
+		}
+	}
+
+	private static class GamesTree extends JTree implements GamesPanel.GamesPanelContent
+	{
+		private static final long serialVersionUID = -7883640944049248020L;
+		private final SteamScreenshotsCleanUp base;
+	
+		GamesTree(SteamScreenshotsCleanUp base)
+		{
+			super((TreeModel)null);
+			this.base = base;
+			setRootVisible(false);
+			setCellRenderer(new SteamInspector.BaseTreeNodeRenderer());
+			getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
+			addTreeSelectionListener(e->{
+				TreePath path = e.getNewLeadSelectionPath();
+				if (path==null) return;
+				Object treeNodeObj = path.getLastPathComponent();
+				if (treeNodeObj instanceof GameNode) {
+					GameNode gameTreeNode = (GameNode) treeNodeObj;
+					this.base.imageListPanel.setData(gameTreeNode.gameID);
+				} else
+					this.base.imageListPanel.clearData();
+			});
+		}
+	
+		@Override public Component getComponent() { return this; }
+		@Override public void update() { setModel(new DefaultTreeModel(new RootNode())); }
+	
+		private class RootNode extends SteamInspector.BaseTreeNode<TreeNode, TreeNode> {
+		
+			RootNode() {
+				super(null, "<Root>", true, false);
+			}
+		
+			@Override protected Vector<TreeNode> createChildren() {
+				Vector<TreeNode> children = new Vector<>();
+				children.add(new GamesGroupNode(this));
+				return children;
+			}
+			
+		}
+	
+		private class GamesGroupNode extends SteamInspector.BaseTreeNode<RootNode, GameNode> {
+			
+			protected GamesGroupNode(RootNode parent) {
+				super(parent, "Games", true, false);
+			}
+		
+			@Override protected Vector<GameNode> createChildren() {
+				Vector<GameNode> children = new Vector<>();
+				
+				HashSet<Integer> gameIDs = new HashSet<>(base.gamesWithScreenshots);
+				gameIDs.addAll(base.generalScreenshots.keySet());
+				
+				Vector<Integer> gameIDs_sorted = new Vector<>(gameIDs);
+				gameIDs_sorted.sort(Comparator
+						.comparing(Data::getGameTitle)
+						.thenComparing(Comparator.naturalOrder()));
+				
+				for (Integer gameID : gameIDs_sorted)
+					if (gameID!=null)
+						children.add(new GameNode(this, gameID));
+				
+				return children;
+			}
+		}
+	
+		private class GameNode extends SteamInspector.BaseTreeNode<GamesGroupNode, TreeNode> {
+			
+			private final int gameID;
+		
+			protected GameNode(GamesGroupNode parent, int gameID) {
+				super(parent, Data.getGameTitle(gameID), false, true, Data.getGameIcon(gameID, TreeIcons.Folder));
+				this.gameID = gameID;
+			}
+		
+			@Override protected Vector<? extends TreeNode> createChildren() {
+				throw new UnsupportedOperationException();
+			}
 		}
 	}
 
