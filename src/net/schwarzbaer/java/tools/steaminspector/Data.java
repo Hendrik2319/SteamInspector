@@ -822,6 +822,9 @@ class Data {
 	static String getGameTitle(Integer gameID) {
 		return Game.getTitle(gameID);
 	}
+	static String getGameTitle(Integer gameID, boolean attachGameID) {
+		return Game.getTitle(gameID, attachGameID);
+	}
 	static boolean hasGameATitle(Integer gameID) {
 		return Game.hasGameATitle(gameID);
 	}
@@ -3901,21 +3904,39 @@ class Data {
 		}
 
 		String getTitle() {
-			if (title!=null && !title.isEmpty()) return title+" ["+appID+"]";
-			return getStoredTitle(appID);
+			return getTitle(true);
+		}
+
+		String getTitle(boolean attachGameID) {
+			if (title == null || title.isEmpty())
+				return getStoredTitle(appID, attachGameID);
+			if (!attachGameID)
+				return title;
+			return title+" ["+appID+"]";
 		}
 
 		static String getTitle(Integer gameID) {
+			return getTitle(gameID, true);
+		}
+
+		static String getTitle(Integer gameID, boolean attachGameID) {
 			if (gameID==null) return "Game ???";
 			Game game = games.get(gameID);
-			if (game!=null) return game.getTitle();
-			return getStoredTitle(gameID);
+			if (game!=null) return game.getTitle( attachGameID );
+			return getStoredTitle(gameID, attachGameID);
 		}
 
 		static String getStoredTitle(int gameID) {
+			return getStoredTitle(gameID, true);
+		}
+
+		static String getStoredTitle(int gameID, boolean attachGameID) {
 			String storedTitle = knownGameTitles.get(gameID);
-			if (storedTitle!=null && !storedTitle.isEmpty()) return storedTitle+" ["+gameID+"]";
-			return "Game "+gameID;
+			if (storedTitle == null || storedTitle.isEmpty())
+				return "Game "+gameID;
+			if (!attachGameID)
+				return storedTitle;
+			return storedTitle+" ["+gameID+"]";
 		}
 
 		static Icon getIcon(Integer gameID, TreeIcons defaultIcon) {

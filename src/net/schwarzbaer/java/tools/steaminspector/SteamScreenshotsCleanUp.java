@@ -24,6 +24,7 @@ import javax.imageio.ImageIO;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.DefaultComboBoxModel;
+import javax.swing.Icon;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
@@ -45,6 +46,7 @@ import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 
 import net.schwarzbaer.gui.ContextMenu;
+import net.schwarzbaer.gui.GeneralIcons;
 import net.schwarzbaer.gui.ImageView;
 import net.schwarzbaer.gui.ProgressDialog;
 import net.schwarzbaer.gui.StandardDialog;
@@ -68,6 +70,12 @@ class SteamScreenshotsCleanUp {
 		new SteamScreenshotsCleanUp(parent).initialize().showGUI();
 	}
 
+	private static final Icon ICON_DELETE_DISABLED = GeneralIcons.GrayCommandIcons.Delete_Dis.getIcon();
+	private static final Icon ICON_DELETE          = GeneralIcons.GrayCommandIcons.Delete.getIcon();
+	private static final Icon ICON_RELOAD_DISABLED = GeneralIcons.GrayCommandIcons.Reload_Dis.getIcon();
+	private static final Icon ICON_RELOAD          = GeneralIcons.GrayCommandIcons.Reload.getIcon();
+	
+	private final boolean isStandAlone;
 	private final Window mainWindow;
 	private final JFileChooser folderChooser;
 	private File generalScreenshotFolder;
@@ -80,12 +88,13 @@ class SteamScreenshotsCleanUp {
 
 	SteamScreenshotsCleanUp(Window parent) {
 		//ImageViewPanel.ImageVariant.test();
+		isStandAlone = parent==null;
 		
 		generalScreenshotFolder = null;
 		generalScreenshots = new HashMap<>();
 		gamesWithScreenshots = new HashSet<>();
 		
-		if (parent==null) gui = new GuiVariant.StandAlone(    "SteamScreenshots CleanUp");
+		if (isStandAlone) gui = new GuiVariant.StandAlone(    "SteamScreenshots CleanUp");
 		else              gui = new GuiVariant.Dialog(parent, "SteamScreenshots CleanUp");
 		mainWindow = gui.getWindow();
 		
@@ -111,6 +120,10 @@ class SteamScreenshotsCleanUp {
 		
 		leftPanel = new GamesPanel(this, 500, 800);
 		
+		leftPanel     .setBorder(BorderFactory.createTitledBorder("Games"));
+		imageListPanel.setBorder(BorderFactory.createTitledBorder("Screenshots"));
+		imageViewPanel.setBorder(BorderFactory.createTitledBorder("Image"));
+		
 		JSplitPane contentPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, true);
 		contentPane.setLeftComponent (leftPanel);
 		contentPane.setRightComponent(rightPanel);
@@ -135,12 +148,18 @@ class SteamScreenshotsCleanUp {
 	}
 	
 	SteamScreenshotsCleanUp initialize() {
-		ProgressDialog.runWithProgressDialog(mainWindow, "Initialize", 300, pd->{
+		loadData("Initialize", false);
+		return this;
+	}
+
+	private void loadData(String title, boolean forceReload)
+	{
+		ProgressDialog.runWithProgressDialog(mainWindow, title, 300, pd->{
 			generalScreenshotFolder = getFolder(pd, "Determine General Screenshot Folder", ValueKey.SSCU_GeneralScreenshotFolder);
 			if (generalScreenshotFolder==null) return;
 			
 			SteamInspector.showIndeterminateTask(pd, "Load Game Data");
-			if (Data.isEmpty())
+			if (Data.isEmpty() || (forceReload && isStandAlone))
 				Data.loadData();
 			gamesWithScreenshots.clear();
 			Data.games.forEach((gameID,game)->{
@@ -151,13 +170,10 @@ class SteamScreenshotsCleanUp {
 			SteamInspector.showIndeterminateTask(pd, "Scan General Screenshot Folder");
 			scanGeneralScreenshotFolder();
 			
-			
-			
-			SteamInspector.showIndeterminateTask(pd, "Update GUI");
-			leftPanel.updateContent();
-			
+			SteamInspector.showIndeterminateTask(pd, "Update GUI", ()->{
+				leftPanel.updateContent();
+			});
 		});
-		return this;
 	}
 
 	private void scanGeneralScreenshotFolder() {
@@ -220,10 +236,24 @@ class SteamScreenshotsCleanUp {
 		
 		Vector<Integer> gameIDs_sorted = new Vector<>(gameIDs);
 		gameIDs_sorted.sort(Comparator
-				.comparing(Data::getGameTitle)
+				.<Integer,String>comparing(Data::getGameTitle)
 				.thenComparing(Comparator.naturalOrder()));
 		
 		return gameIDs_sorted;
+	}
+
+	private static String getSizeStr(long size)
+	{
+		double sizeD = size;
+		if (sizeD < 1024) return String.format(Locale.ENGLISH, "%d B", size);
+		sizeD = sizeD / 1024;
+		if (sizeD < 1024) return String.format(Locale.ENGLISH, "%1.2f kB", sizeD);
+		sizeD = sizeD / 1024;
+		if (sizeD < 1024) return String.format(Locale.ENGLISH, "%1.2f MB", sizeD);
+		sizeD = sizeD / 1024;
+		if (sizeD < 1024) return String.format(Locale.ENGLISH, "%1.2f GB", sizeD);
+		sizeD = sizeD / 1024;
+		return String.format(Locale.ENGLISH, "%1.2f TB", sizeD);
 	}
 
 	private static abstract class GuiVariant<MainWindow extends Window> {
@@ -466,6 +496,7 @@ class SteamScreenshotsCleanUp {
 		private final SteamScreenshotsCleanUp main;
 		private final ImageViewPanel imageViewPanel;
 		private final JScrollPane scrollPane;
+		private int currentGameID;
 		private ViewType currentViewType;
 		private HashMap<String, File> generalScreenshots;
 		private HashMap<Long, ScreenShotList> gameScreenshots;
@@ -478,6 +509,7 @@ class SteamScreenshotsCleanUp {
 			super(new BorderLayout());
 			this.main = main;
 			this.imageViewPanel = imageViewPanel;
+			currentGameID = -1;
 			
 			generalScreenshots = null;
 			gameScreenshots = null;
@@ -487,7 +519,10 @@ class SteamScreenshotsCleanUp {
 			JToolBar options = new JToolBar();
 			options.setFloatable(false);
 			
-			options.add(SteamInspector.createButton("Remove marked images", true , e->removeMarkedImages()));
+			//options.add( SteamInspector.createButton("Reload Data", ICON_RELOAD, ICON_RELOAD_DISABLED, true, false, e->{
+			//	// TO/DO
+			//}) );
+			options.add(SteamInspector.createButton("Remove marked images", ICON_DELETE, ICON_DELETE_DISABLED, true, false, e->removeMarkedImages()));
 			options.addSeparator();
 			
 			ButtonGroup bg = new ButtonGroup();
@@ -532,7 +567,7 @@ class SteamScreenshotsCleanUp {
 				}
 			});
 			currentViewContainer.updateView();
-			main.leftPanel.updateContent();
+			main.leftPanel.updateGame(currentGameID);
 		}
 		private void setViewType(ViewType viewType) {
 			boolean changeAllowed = checkUnsavedChanges();
@@ -546,6 +581,7 @@ class SteamScreenshotsCleanUp {
 		void setData(int gameID) {
 			boolean changeAllowed = checkUnsavedChanges();
 			if (changeAllowed) {
+				this.currentGameID = gameID;
 				generalScreenshots = main.generalScreenshots.get(gameID);
 				Game game = Data.games.get(gameID);
 				gameScreenshots = game==null ? null : game.screenShots;
@@ -1082,8 +1118,9 @@ class SteamScreenshotsCleanUp {
 		private static final long serialVersionUID = -7570230016344351538L;
 		interface GamesPanelContent
 		{
-			void update();
+			void updateGame(int gameID);
 			Component getComponent();
+			void updateContent();
 		}
 		
 		enum Variant
@@ -1098,10 +1135,13 @@ class SteamScreenshotsCleanUp {
 			}
 		}
 	
+		private final SteamScreenshotsCleanUp main;
 		private final EnumMap<GamesPanel.Variant, GamesPanelContent> variants;
+		//private final JLabel statusOut;
 
-		GamesPanel(SteamScreenshotsCleanUp base, int width, int height) {
+		GamesPanel(SteamScreenshotsCleanUp main, int width, int height) {
 			super(new BorderLayout());
+			this.main = main;
 			
 			Variant selected = SteamInspector.settings.getEnum(ValueKey.SSCU_GamesPanelView, Variant.Tree, Variant.class);
 			
@@ -1111,11 +1151,34 @@ class SteamScreenshotsCleanUp {
 			JToolBar options = new JToolBar();
 			options.setFloatable(false);
 			
+			options.add( SteamInspector.createButton("Reload Data", ICON_RELOAD, ICON_RELOAD_DISABLED, true, false, e->{
+				this.main.loadData("Reload Data", true);
+			}) );
+			options.addSeparator();
+			
 			variants = new EnumMap<>(GamesPanel.Variant.class);
+			addVariants(this.main, variants, selected, scrollPane, options);
+			
+			//statusOut = new JLabel();
+			//statusOut.setBorder(BorderFactory.createLoweredBevelBorder());
+			//options.add( statusOut );
+			
+			add(options, BorderLayout.PAGE_START);
+			add(scrollPane, BorderLayout.CENTER);
+			
+			GamesPanelContent content = variants.get(selected);
+			if (content!=null)
+				scrollPane.setViewportView(content.getComponent());
+			
+			//fillStatusOut();
+		}
+
+		private static void addVariants(SteamScreenshotsCleanUp main, EnumMap<Variant, GamesPanelContent> variants, Variant selected, JScrollPane scrollPane, JToolBar options)
+		{
 			ButtonGroup bg = new ButtonGroup();
 			for (Variant variant : Variant.values())
 			{
-				GamesPanelContent content = variant.createGuiComp == null ? null : variant.createGuiComp.apply(base);
+				GamesPanelContent content = variant.createGuiComp == null ? null : variant.createGuiComp.apply(main);
 				if (content != null)
 					variants.put(variant, content);
 				
@@ -1132,32 +1195,75 @@ class SteamScreenshotsCleanUp {
 					}
 				));
 			}
+		}
+		
+		/*
+		private void fillStatusOut()
+		{
+			int  generalScreenshotsCount = 0;
+			long generalScreenshotsSize = 0;
+			int  gameScreenshotsCount = 0;
+			long gameScreenshotsSize = 0;
 			
-			add(options, BorderLayout.PAGE_START);
-			add(scrollPane, BorderLayout.CENTER);
+			for (HashMap<String, File> generalScreenshots : main.generalScreenshots.values())
+				if (generalScreenshots!=null)
+					for (File file : generalScreenshots.values())
+						if (file!=null && file.exists())
+						{
+							generalScreenshotsCount++;
+							generalScreenshotsSize += file.length();
+						}
 			
-			GamesPanelContent content = variants.get(selected);
-			if (content!=null)
-				scrollPane.setViewportView(content.getComponent());
+			for (Data.Game game : Data.games.values())
+			{
+				HashMap<Long, ScreenShotList> gameScreenshots = game==null ? null : game.screenShots;
+				if (gameScreenshots!=null)
+					for (ScreenShotList screenshots : gameScreenshots.values())
+						if (screenshots!=null)
+							for (ScreenShot screenshot : screenshots)
+								if (screenshot!=null && screenshot.image!=null && screenshot.image.exists())
+								{
+									gameScreenshotsCount++;
+									gameScreenshotsSize += screenshot.image.length();
+								}
+			}
+			
+			statusOut.setText(String.format(
+					"In General: %d, %s | In Games: %d, %s"
+					, generalScreenshotsCount
+					, getSizeStr(generalScreenshotsSize) 
+					, gameScreenshotsCount   
+					, getSizeStr(gameScreenshotsSize)    
+			));
+		}
+		*/
+
+		void updateGame(int gameID)
+		{
+			variants.forEach((variant, content)->{
+				content.updateGame(gameID);
+			});
+			//fillStatusOut();
 		}
 
 		void updateContent()
 		{
 			variants.forEach((variant, content)->{
-				content.update();
+				content.updateContent();
 			});
+			//fillStatusOut();
 		}
 	}
 
 	private static class GamesTree extends JTree implements GamesPanel.GamesPanelContent
 	{
 		private static final long serialVersionUID = -7883640944049248020L;
-		private final SteamScreenshotsCleanUp base;
+		private final SteamScreenshotsCleanUp main;
 	
-		GamesTree(SteamScreenshotsCleanUp base)
+		GamesTree(SteamScreenshotsCleanUp main)
 		{
 			super((TreeModel)null);
-			this.base = base;
+			this.main = main;
 			setRootVisible(false);
 			setCellRenderer(new SteamInspector.BaseTreeNodeRenderer());
 			getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
@@ -1167,15 +1273,16 @@ class SteamScreenshotsCleanUp {
 				Object treeNodeObj = path.getLastPathComponent();
 				if (treeNodeObj instanceof GameNode) {
 					GameNode gameTreeNode = (GameNode) treeNodeObj;
-					this.base.imageListPanel.setData(gameTreeNode.gameID);
+					this.main.imageListPanel.setData(gameTreeNode.gameID);
 				} else
-					this.base.imageListPanel.clearData();
+					this.main.imageListPanel.clearData();
 			});
 		}
 	
 		@Override public Component getComponent() { return this; }
-		@Override public void update() { setModel(new DefaultTreeModel(new RootNode())); }
-	
+		@Override public void updateGame(int gameID) { updateContent(); }
+		@Override public void updateContent() { setModel(new DefaultTreeModel(new RootNode())); }
+
 		private class RootNode extends SteamInspector.BaseTreeNode<TreeNode, TreeNode> {
 		
 			RootNode() {
@@ -1198,7 +1305,7 @@ class SteamScreenshotsCleanUp {
 		
 			@Override protected Vector<GameNode> createChildren() {
 				Vector<GameNode> children = new Vector<>();
-				Vector<Integer> gameIDs_sorted = base.getGameIDs_sorted();
+				Vector<Integer> gameIDs_sorted = main.getGameIDs_sorted();
 				
 				for (Integer gameID : gameIDs_sorted)
 					if (gameID!=null)
@@ -1226,12 +1333,12 @@ class SteamScreenshotsCleanUp {
 	private static class GamesTable extends JTable implements GamesPanel.GamesPanelContent
 	{
 		private static final long serialVersionUID = -7887162543386461974L;
-		private final SteamScreenshotsCleanUp base;
+		private final SteamScreenshotsCleanUp main;
 		private final GamesTableModel tableModel;
 
-		GamesTable(SteamScreenshotsCleanUp base)
+		GamesTable(SteamScreenshotsCleanUp main)
 		{
-			this.base = base;
+			this.main = main;
 			
 			tableModel = new GamesTableModel();
 			setModel(tableModel);
@@ -1244,9 +1351,9 @@ class SteamScreenshotsCleanUp {
 				
 				Game game = tableModel.getRow(rowM);
 				if (game!=null)
-					this.base.imageListPanel.setData(game.gameID);
+					this.main.imageListPanel.setData(game.gameID);
 				else
-					this.base.imageListPanel.clearData();
+					this.main.imageListPanel.clearData();
 			});
 			
 			tableModel.setTable(this);
@@ -1255,19 +1362,15 @@ class SteamScreenshotsCleanUp {
 		}
 
 		@Override public Component getComponent() { return this; }
-
-		@Override
-		public void update()
-		{
-			tableModel.rebuildData();
-			//repaint();
-		}
+		@Override public void updateGame(int gameID) { tableModel.rebuildGame(gameID); }
+		@Override public void updateContent() { tableModel.rebuildData(); }
 
 		private class Game
 		{
 			final int gameID;
 			final Data.Game game;
 			final String name;
+			final Icon icon;
 			
 			int  generalScreenshotsCount;
 			long generalScreenshotsSize;
@@ -1277,15 +1380,16 @@ class SteamScreenshotsCleanUp {
 			Game(int gameID)
 			{
 				this.gameID = gameID;
-				name = Data.getGameTitle(gameID);
+				name = Data.getGameTitle(gameID, false);
 				game = Data.games.get(gameID);
+				icon = Data.getGameIcon(gameID, null);
 				
 				generalScreenshotsCount = 0;
 				generalScreenshotsSize = 0;
 				gameScreenshotsCount = 0;
 				gameScreenshotsSize = 0;
 				
-				HashMap<String, File> generalScreenshots = base.generalScreenshots.get(gameID);
+				HashMap<String, File> generalScreenshots = main.generalScreenshots.get(gameID);
 				if (generalScreenshots!=null)
 					generalScreenshots.forEach((name,file)->{
 						if (file!=null && file.exists())
@@ -1330,11 +1434,18 @@ class SteamScreenshotsCleanUp {
 				GamesTableModel.ColumnID columnID = columnM<0 ? null : tableModel.getColumnID(columnM);
 				
 				String valueStr = value==null ? null : value.toString();
+				Icon icon = null;
 				
 				if (value instanceof Long && columnID == GamesTableModel.ColumnID.InGeneralSize || columnID == GamesTableModel.ColumnID.InGameSize)
 					valueStr = getSizeStr((Long) value);
 				
-				labelComp.configureAsTableCellRendererComponent(table, null, valueStr, isSelected, hasFocus);
+				if (value instanceof Icon)
+				{
+					icon = (Icon) value;
+					valueStr = null;
+				}
+				
+				labelComp.configureAsTableCellRendererComponent(table, icon, valueStr, isSelected, hasFocus);
 				
 				int alignment = SwingConstants.LEFT;
 				if (value instanceof Number)
@@ -1343,26 +1454,13 @@ class SteamScreenshotsCleanUp {
 				
 				return labelComp;
 			}
-			
-			private String getSizeStr(long size)
-			{
-				double sizeD = size;
-				if (sizeD < 1024) return String.format(Locale.ENGLISH, "%d B", size);
-				sizeD = sizeD / 1024;
-				if (sizeD < 1024) return String.format(Locale.ENGLISH, "%1.2f kB", sizeD);
-				sizeD = sizeD / 1024;
-				if (sizeD < 1024) return String.format(Locale.ENGLISH, "%1.2f MB", sizeD);
-				sizeD = sizeD / 1024;
-				if (sizeD < 1024) return String.format(Locale.ENGLISH, "%1.2f GB", sizeD);
-				sizeD = sizeD / 1024;
-				return String.format(Locale.ENGLISH, "%1.2f TB", sizeD);
-			}
 		}
 
 		private class GamesTableModel extends Tables.SimplifiedTableModel<GamesTableModel.ColumnID> {
 
 			enum ColumnID implements Tables.SimplifiedColumnIDInterface {
 				ID           ("ID"          , Integer.class,  55),
+				Icon         ("I"           , Icon   .class,  20),
 				Name         ("Name"        , String .class, 280),
 				InGeneral    ("In General"  , Integer.class,  65),
 				InGeneralSize("(Size)"      , Long   .class,  65),
@@ -1384,10 +1482,21 @@ class SteamScreenshotsCleanUp {
 				rebuildData();
 			}
 			
+			void rebuildGame(int gameID)
+			{
+				if (data==null) return;
+				for (int i=0; i<data.size(); i++)
+					if (data.get(i).gameID==gameID)
+					{
+						data.set(i, new Game(gameID));
+						fireTableRowUpdate(i);
+					}
+			}
+
 			void rebuildData()
 			{
 				data = new Vector<Game>();
-				for (int gameID : base.getGameIDs_sorted())
+				for (int gameID : main.getGameIDs_sorted())
 					data.add(new Game(gameID));
 				fireTableUpdate();
 			}
@@ -1414,6 +1523,7 @@ class SteamScreenshotsCleanUp {
 				switch (columnID)
 				{
 					case ID  : return row.gameID;
+					case Icon: return row.icon;
 					case Name: return row.name;
 					case InGeneral    : return row.generalScreenshotsCount;
 					case InGeneralSize: return row.generalScreenshotsSize;

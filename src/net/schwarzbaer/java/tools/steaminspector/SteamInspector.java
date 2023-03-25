@@ -439,9 +439,14 @@ class SteamInspector {
 
 
 	static void showIndeterminateTask(ProgressDialog pd, String taskTitle) {
+		showIndeterminateTask(pd, taskTitle, null);
+	}
+	static void showIndeterminateTask(ProgressDialog pd, String taskTitle, Runnable eventThreadTask) {
 		SwingUtilities.invokeLater(()->{
 			pd.setTaskTitle(taskTitle);
 			pd.setIndeterminate(true);
+			if (eventThreadTask!=null)
+				eventThreadTask.run();
 		});
 	}
 	
@@ -449,10 +454,15 @@ class SteamInspector {
 		return configure(comp, isEnabled, false, bg, al);
 	}
 	private static <BTN extends AbstractButton> BTN configure(BTN comp, boolean isEnabled, boolean leftAligned, ButtonGroup bg, ActionListener al) {
+		return configure(comp, null, null, isEnabled, leftAligned, bg, al);
+	}
+	private static <BTN extends AbstractButton> BTN configure(BTN comp, Icon icon, Icon disabledIcon, boolean isEnabled, boolean leftAligned, ButtonGroup bg, ActionListener al) {
 		comp.setEnabled(isEnabled);
 		if (leftAligned) comp.setHorizontalAlignment(AbstractButton.LEFT);
 		if (bg!=null) bg.add(comp);
 		if (al!=null) comp.addActionListener(al);
+		if (icon        !=null) comp.setIcon        (icon        );
+		if (disabledIcon!=null) comp.setDisabledIcon(disabledIcon);
 		return comp;
 	}
 	private static <BTN extends AbstractButton> BTN configure(BTN comp, boolean isEnabled, ButtonGroup bg, Consumer<Boolean> setValue) {
@@ -461,6 +471,9 @@ class SteamInspector {
 
 	static JRadioButton createRadioButton(String title, boolean isSelected, boolean isEnabled, ButtonGroup bg, Consumer<Boolean> setValue) {
 		return configure(new JRadioButton(title, isSelected), isEnabled, bg, setValue);
+	}
+	static JButton createButton(String title, Icon icon, Icon disabledIcon, boolean enabled, boolean leftAligned, ActionListener al) {
+		return configure(new JButton(title), icon, disabledIcon, enabled, leftAligned, null, al);
 	}
 	static JButton createButton(String title, boolean enabled, boolean leftAligned, ActionListener al) {
 		return configure(new JButton(title), enabled, leftAligned, null, al);
