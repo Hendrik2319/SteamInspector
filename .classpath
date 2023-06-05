@@ -3,7 +3,7 @@
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
 	<classpathentry kind="src" path="src"/>
 	<classpathentry kind="src" path="res"/>
-	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_gui_essentials"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_Essentials"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/JavaLib_JSON_Parser"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/CommonLib_Dialogs"/>
 	<classpathentry kind="output" path="bin"/>
