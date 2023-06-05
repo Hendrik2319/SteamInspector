@@ -55,10 +55,11 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
-import net.schwarzbaer.gui.IconSource;
-import net.schwarzbaer.gui.ValueListOutput;
+import net.schwarzbaer.java.lib.gui.IconSource;
+import net.schwarzbaer.java.lib.gui.ValueListOutput;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
+import net.schwarzbaer.java.lib.system.ClipboardTools;
 import net.schwarzbaer.java.tools.steaminspector.Data.AppManifest;
 import net.schwarzbaer.java.tools.steaminspector.Data.Base64String;
 import net.schwarzbaer.java.tools.steaminspector.Data.Game;
@@ -104,7 +105,6 @@ import net.schwarzbaer.java.tools.steaminspector.TreeNodes.FileSystem.FolderNode
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.PlayersNGames.GameTitleChangeListeners.GameTitleChangeListener;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFParseException;
 import net.schwarzbaer.java.tools.steaminspector.VDFParser.VDFTreeNode;
-import net.schwarzbaer.system.ClipboardTools;
 
 class TreeNodes {
 	

@@ -90,15 +90,15 @@ import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 
-import net.schwarzbaer.gui.ImageView;
-import net.schwarzbaer.gui.ProgressDialog;
-import net.schwarzbaer.gui.StandardDialog;
-import net.schwarzbaer.gui.StandardMainWindow;
+import net.schwarzbaer.java.lib.gui.ImageView;
+import net.schwarzbaer.java.lib.gui.ProgressDialog;
+import net.schwarzbaer.java.lib.gui.StandardDialog;
+import net.schwarzbaer.java.lib.gui.StandardMainWindow;
+import net.schwarzbaer.java.lib.system.ClipboardTools;
+import net.schwarzbaer.java.lib.system.Settings;
 import net.schwarzbaer.java.tools.steaminspector.Data.Game;
 import net.schwarzbaer.java.tools.steaminspector.Data.GameURL;
 import net.schwarzbaer.java.tools.steaminspector.TreeNodes.TreeIcons;
-import net.schwarzbaer.system.ClipboardTools;
-import net.schwarzbaer.system.Settings;
 
 class SteamInspector {
 
