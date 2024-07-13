@@ -15,6 +15,8 @@ import java.io.OutputStreamWriter;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.charset.Charset;
@@ -183,9 +185,11 @@ class TreeNodes {
 	private static BufferedImage readImageFromURL(String url, String itemLabel) {
 		if (url==null) return createImageOfMessage("No URL.",200,25,Color.RED);
 		try {
-			return readImageFromURL(new URL(url));
+			return readImageFromURL(new URI(url).toURL());
 		} catch (MalformedURLException e) {
 			System.err.printf("MalformedURLException while reading %s:%n    URL: \"%s\"%n    Exception: %s%n", itemLabel, url, e.getMessage());
+		} catch (URISyntaxException e) {
+			System.err.printf("URISyntaxException while reading %s:%n    URL: \"%s\"%n    Exception: %s%n", itemLabel, url, e.getMessage());
 		} catch (IOException e) {
 			System.err.printf("IOException while reading %s:%n    URL: \"%s\"%n    Exception: %s%n", itemLabel, url, e.getMessage());
 		}

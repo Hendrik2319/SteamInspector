@@ -20,6 +20,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
@@ -1561,8 +1563,9 @@ class SteamInspector {
 			showIndeterminateTask(pd,"["+gameID+"] Get Connection to Server");
 			
 			URL url;
-			try { url = new URL(urlStr); }
+			try { url = new URI(urlStr).toURL(); }
 			catch (MalformedURLException e) { System.err.printf("MalformedURLException: %s (URL:%s)", e.getMessage(), urlStr); return null; }
+			catch (URISyntaxException    e) { System.err.printf("URISyntaxException: %s (URL:%s)", e.getMessage(), urlStr); return null; }
 			if (Thread.currentThread().isInterrupted()) return null;
 			
 			HttpURLConnection conn;
