@@ -1851,7 +1851,12 @@ class SteamInspector {
 			if (game==null) return;
 			
 			boolean withHeaderImage = false;
-			File headerImageFile = game.imageFiles==null ? null : game.imageFiles.get("header");
+			File headerImageFile = null;
+			if (game.imageFiles != null)
+			{
+				if (headerImageFile == null) headerImageFile = game.imageFiles.get("header");
+				if (headerImageFile == null) headerImageFile = game.imageFiles.get("library_header");
+			}
 			if (headerImageFile!=null) {
 				BufferedImage image = null;
 				try { image = ImageIO.read(headerImageFile); }
