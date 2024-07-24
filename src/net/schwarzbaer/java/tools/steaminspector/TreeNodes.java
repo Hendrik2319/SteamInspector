@@ -1411,9 +1411,13 @@ class TreeNodes {
 						if (app.appID               !=null) out.add(0, "App ID   ", "%d%s", app.appID, Data.hasGameATitle(app.appID) ? "  ->  "+Data.getGameTitle(app.appID) : "");
 						else                                out.add(0, "Node Name", app.nodeName);
 						
-						addDateLine_ks (out, 0, app.lastPlayed_ks          , app.str_lastPlayed          , "Last Time Played"       );
-						addTimeLine_min(out, 0, app.playtime_min           , app.str_playtime            , "Playtime"               );
-						addTimeLine_min(out, 0, app.playtime_2weeks_min    , app.str_playtime_2wks       , "Playtime (last 2 Weeks)");
+						addDateLine_ks (out, 0, app.lastPlayed_ks            , app.str_lastPlayed           , "Last Time Played"       );
+						addTimeLine_min(out, 0, app.playtime_min             , app.str_playtime             , "Playtime"               );
+						addTimeLine_min(out, 0, app.playtime_2weeks_min      , app.str_playtime_2wks        , "Playtime (last 2 Weeks)");
+						addTimeLine_min(out, 0, app.playtime_disconnected_min, app.str_playtime_disconnected, "Playtime (disconnected)");
+						//if (app.str_playtime             !=null) out.add(0, "[R] Playtime"               , app.str_playtime             );
+						//if (app.str_playtime_2wks        !=null) out.add(0, "[R] Playtime (last 2 Weeks)", app.str_playtime_2wks        );
+						//if (app.str_playtime_disconnected!=null) out.add(0, "[R] Playtime (disconnected)", app.str_playtime_disconnected);
 						
 						if (app.badgeData!=null) out.add(0, "Badge Data", app.badgeData);
 						if (app.news     !=null) out.add(0, "News"      , app.news     );
@@ -1447,6 +1451,8 @@ class TreeNodes {
 						if (app.viewedLaunchEULA    !=null
 							|| app.eula_47870    !=null
 							|| app.eula_332310_1 !=null
+							|| app.eula_648800_0 !=null
+							|| app.eula_731040_0 !=null
 							|| app.eula_876160_0 !=null
 							|| app.eula_1161580_0!=null
 							|| app.eula_1465360_0!=null
@@ -1455,6 +1461,8 @@ class TreeNodes {
 							if (app.viewedLaunchEULA!=null) out.add(1, "Launch EULA viewed", app.viewedLaunchEULA);
 							if (app.eula_47870      !=null) out.add(1, "47870"      , app.eula_47870    );
 							if (app.eula_332310_1   !=null) out.add(1, "332310 (1)" , app.eula_332310_1 );
+							if (app.eula_648800_0   !=null) out.add(1, "648800 (0)" , app.eula_648800_0 );
+							if (app.eula_731040_0   !=null) out.add(1, "731040 (0)" , app.eula_731040_0 );
 							if (app.eula_876160_0   !=null) out.add(1, "876160 (0)" , app.eula_876160_0 );
 							if (app.eula_1161580_0  !=null) out.add(1, "1161580 (0)", app.eula_1161580_0);
 							if (app.eula_1465360_0  !=null) out.add(1, "1465360 (0)", app.eula_1465360_0);
@@ -2353,8 +2361,8 @@ class TreeNodes {
 						return "Entry == <null>";
 					if (data.hasParsedData) {
 						String str = data.name;
-						if (data.isAchieved) str = "[+] "+str;
-						if (data.isHidden!=null && data.isHidden.booleanValue()) str += " (hidden)";
+						if (data.isAchieved!=null && data.isAchieved.booleanValue()) str = "[+] "+str;
+						if (data.isHidden  !=null && data.isHidden  .booleanValue()) str = str+" (hidden)";
 						return str;
 					}
 					if (data.rawData!=null)

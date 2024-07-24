@@ -38,7 +38,6 @@ import net.schwarzbaer.java.lib.jsonparser.JSON_Data;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Array;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.JSON_Object;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Data.TraverseException;
-import net.schwarzbaer.java.lib.jsonparser.JSON_Data.Value;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Helper;
 import net.schwarzbaer.java.lib.jsonparser.JSON_Parser;
 import net.schwarzbaer.java.tools.steaminspector.SteamInspector.LabeledUrl;
@@ -1430,6 +1429,8 @@ class Data {
 					        .add(VDFTreeNode.Type.String, "1161580_eula_0")
 					        .add(VDFTreeNode.Type.String, "1465360_eula_0")
 					        .add(VDFTreeNode.Type.Array , "332310_eula_1")
+					        .add(VDFTreeNode.Type.String, "648800_eula_0")
+					        .add(VDFTreeNode.Type.String, "731040_eula_0")
 					        .add(VDFTreeNode.Type.String, "876160_eula_0")
 							.add(VDFTreeNode.Type.Array , "autocloud")
 							.add(VDFTreeNode.Type.String, "autocloud", "lastexit")
@@ -1446,6 +1447,7 @@ class Data {
 							.add(VDFTreeNode.Type.String, "News")
 							.add(VDFTreeNode.Type.String, "Playtime")
 							.add(VDFTreeNode.Type.String, "Playtime2wks")
+							.add(VDFTreeNode.Type.String, "PlaytimeDisconnected")
 							.add(VDFTreeNode.Type.String, "ViewedLaunchEULA");
 					
 					final VDFTreeNode rawData;
@@ -1456,12 +1458,14 @@ class Data {
 					final String str_lastPlayed;
 					final String str_playtime;
 					final String str_playtime_2wks;
+					final String str_playtime_disconnected;
 					final String str_autocloud_lastexit;
 					final String str_autocloud_lastlaunch;
 
 					final Long    lastPlayed_ks;
 					final Integer playtime_min;
 					final Integer playtime_2weeks_min;
+					final Integer playtime_disconnected_min;
 					final Long    autocloud_lastexit_ks;
 					final Long    autocloud_lastlaunch_ks;
 					
@@ -1471,6 +1475,8 @@ class Data {
 					final String viewedLaunchEULA;
 					final String eula_47870;
 					final String eula_332310_1;
+					final String eula_648800_0;
+					final String eula_731040_0;
 					final String eula_876160_0;
 					final String eula_1161580_0;
 					final String eula_1465360_0;
@@ -1491,17 +1497,19 @@ class Data {
 						appID = parseNumber(this.nodeName = nodeName);
 						hasParsedData = false;
 
-						str_lastPlayed           = null;
-						str_playtime             = null;
-						str_playtime_2wks        = null;
-						str_autocloud_lastexit   = null;
-						str_autocloud_lastlaunch = null;
+						str_lastPlayed            = null;
+						str_playtime              = null;
+						str_playtime_2wks         = null;
+						str_playtime_disconnected = null;
+						str_autocloud_lastexit    = null;
+						str_autocloud_lastlaunch  = null;
 						
-						lastPlayed_ks           = null;
-						playtime_min            = null;
-						playtime_2weeks_min     = null;
-						autocloud_lastexit_ks   = null;
-						autocloud_lastlaunch_ks = null;
+						lastPlayed_ks             = null;
+						playtime_min              = null;
+						playtime_2weeks_min       = null;
+						playtime_disconnected_min = null;
+						autocloud_lastexit_ks     = null;
+						autocloud_lastlaunch_ks   = null;
 						
 						str_cloud_quota_bytes = null;
 						str_cloud_quota_files = null;
@@ -1521,6 +1529,8 @@ class Data {
 						viewedLaunchEULA = null;
 						eula_47870       = null;
 						eula_332310_1    = null;
+						eula_648800_0    = null;
+						eula_731040_0    = null;
 						eula_876160_0    = null;
 						eula_1161580_0   = null;
 						eula_1465360_0   = null;
@@ -1537,9 +1547,10 @@ class Data {
 						
 						//DevHelper.optional.vdfValues.scan(node, getClass());
 						
-						lastPlayed_ks       = parseLongNumber(str_lastPlayed    = node.getString_optional("LastPlayed"  ));
-						playtime_min        = parseNumber    (str_playtime      = node.getString_optional("Playtime"    ));
-						playtime_2weeks_min = parseNumber    (str_playtime_2wks = node.getString_optional("Playtime2wks"));
+						lastPlayed_ks             = parseLongNumber(str_lastPlayed            = node.getString_optional("LastPlayed"          ));
+						playtime_min              = parseNumber    (str_playtime              = node.getString_optional("Playtime"            ));
+						playtime_2weeks_min       = parseNumber    (str_playtime_2wks         = node.getString_optional("Playtime2wks"        ));
+						playtime_disconnected_min = parseNumber    (str_playtime_disconnected = node.getString_optional("PlaytimeDisconnected"));
 						
 						autocloud_lastexit_ks   = parseLongNumber(str_autocloud_lastexit   = node.getString_optional("autocloud","lastexit"  ));
 						autocloud_lastlaunch_ks = parseLongNumber(str_autocloud_lastlaunch = node.getString_optional("autocloud","lastlaunch"));
@@ -1557,6 +1568,8 @@ class Data {
 						viewedLaunchEULA = node.getString_optional("ViewedLaunchEULA");
 						eula_47870       = node.getString_optional("eula_47870"    );
 						eula_332310_1_Arr = node.getArray_optional("332310_eula_1" );
+						eula_648800_0    = node.getString_optional("648800_eula_0" );
+						eula_731040_0    = node.getString_optional("731040_eula_0" );
 						eula_876160_0    = node.getString_optional("876160_eula_0" );
 						eula_1161580_0   = node.getString_optional("1161580_eula_0");
 						eula_1465360_0   = node.getString_optional("1465360_eula_0");
@@ -1574,6 +1587,9 @@ class Data {
 						//showValue("1161580_eula_0"  , _1161580_eula_0 );
 						//showValue("eula_47870"      , eula_47870      );
 						//showValue("News"            , news            );
+						//showValue("[%s] 648800_eula_0"       .formatted(appID), eula_648800_0   );
+						//showValue("[%s] 731040_eula_0"       .formatted(appID), eula_731040_0   );
+						//showValue("[%s] PlaytimeDisconnected".formatted(appID), str_playtime_disconnected );
 						
 						KNOWN_VDF_VALUES.scanUnexpectedValues(node); //, "SoftwareValveSteamApps.Apps[]");
 					}
@@ -1593,6 +1609,8 @@ class Data {
 							return appData.viewedLaunchEULA!=null
 								|| appData.eula_47870    !=null
 								|| appData.eula_332310_1 !=null
+								|| appData.eula_648800_0 !=null
+								|| appData.eula_731040_0 !=null
 								|| appData.eula_876160_0 !=null
 								|| appData.eula_1161580_0!=null
 								|| appData.eula_1465360_0!=null;
@@ -1762,14 +1780,15 @@ class Data {
 		static class AchievementProgress {
 			private static final DevHelper.KnownJsonValues KNOWN_JSON_VALUES = new DevHelper.KnownJsonValues(AchievementProgress.class)
 					.add("nVersion", JSON_Data.Value.Type.Integer)
-					.add("mapCache", JSON_Data.Value.Type.Object);
+					.add("mapCache", JSON_Data.Value.Type.Object)
+					.add("mapCache", JSON_Data.Value.Type.Array);
 
 			final File file;
 			final JSON_Data.Value<NV, V> rawData;
 			final boolean hasParsedData;
 			final Long version;
-			final HashMap<Integer,AchievementProgress.AchievementProgressInGame> gameStates;
-			final Vector<AchievementProgress.AchievementProgressInGame> gameStates_withoutID;
+			final HashMap<Integer,AchievementProgressInGame> gameStates;
+			final Vector<AchievementProgressInGame> gameStates_withoutID;
 
 			AchievementProgress(File file, JSON_Data.Value<NV, V> rawData) {
 				this.file = file;
@@ -1785,14 +1804,62 @@ class Data {
 				hasParsedData = true;
 				//DevHelper.scanJsonStructure(object, "AchievementProgress");
 				
-				JSON_Object<NV,V> object   = JSON_Data.getObjectValue (value, debugOutputPrefixStr);
-				version                    = JSON_Data.getIntegerValue(object, "nVersion", debugOutputPrefixStr);
-				JSON_Object<NV,V> mapCache = JSON_Data.getObjectValue (object, "mapCache", debugOutputPrefixStr);
+				JSON_Object<NV,V> object       = JSON_Data.getObjectValue (value, debugOutputPrefixStr);
+				version                        = JSON_Data.getIntegerValue(object, "nVersion", debugOutputPrefixStr);
+				JSON_Object<NV,V> mapCache_obj = JSON_Data.getObjectValue (object, "mapCache", false, true, debugOutputPrefixStr);
+				JSON_Array<NV,V>  mapCache_arr = JSON_Data.getArrayValue  (object, "mapCache", false, true, debugOutputPrefixStr);
 				
 				gameStates = new HashMap<>();
-				gameStates_withoutID = new Vector<AchievementProgress.AchievementProgressInGame>();
+				gameStates_withoutID = new Vector<AchievementProgressInGame>();
+				if (mapCache_obj!=null) scanMap(mapCache_obj, gameStates, gameStates_withoutID, file, debugOutputPrefixStr+".mapCache");
+				if (mapCache_arr!=null) scanMap(mapCache_arr, gameStates, gameStates_withoutID, file, debugOutputPrefixStr+".mapCache");
+				if (mapCache_obj==null && mapCache_arr==null)
+					throw new TraverseException("%s.%s isn't an object nor an array", debugOutputPrefixStr, "mapCache");
+				
+				KNOWN_JSON_VALUES.scanUnexpectedValues(object); //, "TreeNodes.Player.AchievementProgress");
+			}
+			
+			private static void scanMap(
+					JSON_Array<NV, V> mapCache,
+					final HashMap<Integer,AchievementProgressInGame> gameStates,
+					final Vector<AchievementProgressInGame> gameStates_withoutID,
+					File file, String debugOutputPrefixStr
+			)
+			{
+				for (int i=0; i<mapCache.size(); i++)
+					try {
+						String debugOutputPrefixStr_arrVal = debugOutputPrefixStr+"["+i+"]";
+						JSON_Array<NV, V> arr = JSON_Data.getArrayValue(mapCache.get(i), debugOutputPrefixStr_arrVal);
+						if (arr.size()!=2) throw new TraverseException("%s:Array has wrong length: %d entries expected, %d entries found", debugOutputPrefixStr_arrVal, 2, arr.size());
+						
+						long gameID = JSON_Data.getIntegerValue(arr.get(0), debugOutputPrefixStr_arrVal+"[0]");
+						String name = ""+gameID;
+						JSON_Data.Value<NV, V> value = arr.get(1);
+						
+						AchievementProgressInGame progress;
+						try {
+							progress = new AchievementProgressInGame(name, value);
+						} catch (TraverseException e) {
+							showException(e, file);
+							progress = new AchievementProgressInGame(new JSON_Data.NamedValue<>(name, value, null));
+						}
+						
+						gameStates.put((int) gameID, progress);
+						
+					} catch (TraverseException e) {
+						showException(e, file);
+					}
+			}
+			
+			private static void scanMap(
+					JSON_Object<NV, V> mapCache,
+					final HashMap<Integer,AchievementProgressInGame> gameStates,
+					final Vector<AchievementProgressInGame> gameStates_withoutID,
+					File file, String debugOutputPrefixStr
+			)
+			{
 				for (JSON_Data.NamedValue<NV,V> nv:mapCache) {
-					AchievementProgress.AchievementProgressInGame progress;
+					AchievementProgressInGame progress;
 					try {
 						progress = new AchievementProgressInGame(nv.name,nv.value);
 					} catch (TraverseException e) {
@@ -1809,7 +1876,6 @@ class Data {
 					else
 						gameStates_withoutID.add(progress);
 				}
-				KNOWN_JSON_VALUES.scanUnexpectedValues(object); //, "TreeNodes.Player.AchievementProgress");
 			}
 			
 			static class AchievementProgressInGame {
@@ -1865,7 +1931,7 @@ class Data {
 					cacheTime   = JSON_Data.getIntegerValue(object, "cache_time"  , prefixStr);
 					total       = JSON_Data.getIntegerValue(object, "total"       , prefixStr);
 					unlocked    = JSON_Data.getIntegerValue(object, "unlocked"    , prefixStr);
-					percentage  = JSON_Data.getNumber(object, "percentage"  , prefixStr);
+					percentage  = JSON_Data.getNumber      (object, "percentage"  , prefixStr);
 					KNOWN_JSON_VALUES.scanUnexpectedValues(object); //, "TreeNodes.Player.AchievementProgress.AchievementProgressInGame");
 				}
 
@@ -2406,7 +2472,7 @@ class Data {
 						//       tag:String
 						final boolean adminonly;
 						final String tag;
-						Tag(Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
+						Tag(JSON_Data.Value<NV, V> value, String debugOutputPrefixStr) throws TraverseException {
 							JSON_Object<NV, V> object = JSON_Data.getObjectValue(value, debugOutputPrefixStr);
 							adminonly = JSON_Data.getBoolValue  (object, "adminonly", debugOutputPrefixStr);
 							tag       = JSON_Data.getStringValue(object, "tag"      , debugOutputPrefixStr);
@@ -3330,7 +3396,7 @@ class Data {
 					final String name;
 					final String image;
 					final String description;
-					final boolean isAchieved;
+					final Boolean isAchieved;
 					final double achievedRatio;
 					final Boolean isHidden;
 
@@ -3343,7 +3409,7 @@ class Data {
 						name          = null;
 						image         = null;
 						description   = null;
-						isAchieved    = false;
+						isAchieved    = null;
 						achievedRatio = Double.NaN;
 						isHidden      = null;
 					}
@@ -3362,7 +3428,7 @@ class Data {
 						// DevHelper.optional.jsonValues.scan(object, "GameInfos.AchievementMap.Entry");
 						
 						isHidden      = JSON_Data.getBoolValue   (object,"bHidden"       , true, false, debugOutputPrefixStr+"[1]");
-						isAchieved    = JSON_Data.getBoolValue   (object,"bAchieved"     ,debugOutputPrefixStr+"[1]");
+						isAchieved    = JSON_Data.getBoolValue   (object,"bAchieved"     , true, false, debugOutputPrefixStr+"[1]");
 						achievedRatio = JSON_Data.getNumber      (object,"flAchieved"    ,debugOutputPrefixStr+"[1]");
 						description   = JSON_Data.getStringValue (object,"strDescription",debugOutputPrefixStr+"[1]");
 						image         = JSON_Data.getStringValue (object,"strImage"      ,debugOutputPrefixStr+"[1]");
