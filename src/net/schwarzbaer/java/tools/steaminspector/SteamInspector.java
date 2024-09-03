@@ -517,7 +517,7 @@ class SteamInspector {
 	}
 	
 	static <A> ModifiedTextField<A> createModifiedTextField(String initialValue, Function<String,A> convert, Predicate<A> check, Consumer<A> setValue) {
-		return new ModifiedTextField<A>(initialValue, convert, check, setValue);
+		return new ModifiedTextField<>(initialValue, convert, check, setValue);
 	}
 	
 	static <A> JTextField createTextField(String initialValue, Function<String,A> convert, Predicate<A> check, Consumer<A> setValue) {
@@ -2270,7 +2270,7 @@ class SteamInspector {
 
 		MultiOutput() {
 			mainPanel = new JTabbedPane();
-			subPanels = new Vector<FileContentOutput>();
+			subPanels = new Vector<>();
 		}
 		
 		@Override Component getMainComponent() { return mainPanel; }

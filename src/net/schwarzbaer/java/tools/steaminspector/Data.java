@@ -58,7 +58,7 @@ class Data {
 		static OptionalValues optional = new OptionalValues();
 		static class OptionalValues {
 			final OptionalVdfValues                vdfValues      = new OptionalVdfValues();
-			final JSON_Helper.OptionalValues<NV,V> jsonValues     = new JSON_Helper.OptionalValues<NV,V>();
+			final JSON_Helper.OptionalValues<NV,V> jsonValues     = new JSON_Helper.OptionalValues<>();
 			final OptionalJsonValues_Old           jsonValues_old = new OptionalJsonValues_Old();
 			void clear() {
 				vdfValues     .clear();
@@ -1106,7 +1106,7 @@ class Data {
 			this.folder = folder;
 			
 			File[] gameNumberFolders = folder.listFiles(file->file.isDirectory() && parseNumber(file.getName())!=null);
-			steamCloudFolders = new HashMap<Integer,File>();
+			steamCloudFolders = new HashMap<>();
 			for (File subFolder:gameNumberFolders) {
 				String name = subFolder.getName();
 				if (!name.equals("7") && !name.equals("760")) {
@@ -1322,7 +1322,7 @@ class Data {
 					ValueContainer<String> playerLevel = new ValueContainer<>();
 					ValueContainer<String> lastSyncTime = new ValueContainer<>();
 					
-					apps = new Vector<SoftwareValveSteamApps.AppData>();
+					apps = new Vector<>();
 					appsWithID = new HashMap<>();
 					appsWithoutID = new Vector<>();
 					blockNode.forEach((subNode, type, name, value)->{
@@ -1756,7 +1756,7 @@ class Data {
 						avatar   = node.getString(VDFTreeNode.OptionalType.LastValueIsOptional, "avatar");
 						VDFTreeNode arrayNode = node.getArray(VDFTreeNode.OptionalType.LastValueIsOptional, "NameHistory");
 						if (arrayNode!=null) {
-							nameHistory = new HashMap<Integer,String>();
+							nameHistory = new HashMap<>();
 							arrayNode.forEach((subNode,t,n,v) -> {
 								if (t==VDFTreeNode.Type.String) {
 									Integer index = parseNumber(n);
@@ -1810,7 +1810,7 @@ class Data {
 				JSON_Array<NV,V>  mapCache_arr = JSON_Data.getArrayValue  (object, "mapCache", false, true, debugOutputPrefixStr);
 				
 				gameStates = new HashMap<>();
-				gameStates_withoutID = new Vector<AchievementProgressInGame>();
+				gameStates_withoutID = new Vector<>();
 				if (mapCache_obj!=null) scanMap(mapCache_obj, gameStates, gameStates_withoutID, file, debugOutputPrefixStr+".mapCache");
 				if (mapCache_arr!=null) scanMap(mapCache_arr, gameStates, gameStates_withoutID, file, debugOutputPrefixStr+".mapCache");
 				if (mapCache_obj==null && mapCache_arr==null)

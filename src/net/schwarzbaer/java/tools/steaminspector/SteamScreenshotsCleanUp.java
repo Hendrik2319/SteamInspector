@@ -304,7 +304,7 @@ class SteamScreenshotsCleanUp {
 			
 			imageView = new ImageView(300, 200);
 			
-			comboBox = new JComboBox<ImageVariant>();
+			comboBox = new JComboBox<>();
 			comboBox.addActionListener(e->{
 				int index = comboBox.getSelectedIndex();
 				ImageVariant selectedVariant = index<0 ? null : comboBox.getItemAt(index);
@@ -449,7 +449,7 @@ class SteamScreenshotsCleanUp {
 			this.generalScreenshot = generalScreenshot;
 			this.gameScreenShots = gameScreenShots;
 			
-			Vector<ImageVariant> variants = new Vector<ImageVariant>();
+			Vector<ImageVariant> variants = new Vector<>();
 			
 			if (this.generalScreenshot!=null && this.generalScreenshot.isFile())
 				variants.add(new ImageVariant(true,null));
@@ -473,7 +473,7 @@ class SteamScreenshotsCleanUp {
 			
 			selectionIsCausedByApp = true;
 			dontChangeImageView = true;
-			comboBox.setModel(new DefaultComboBoxModel<ImageVariant>(variants));
+			comboBox.setModel(new DefaultComboBoxModel<>(variants));
 			dontChangeImageView = false;
 			comboBox.setSelectedItem(selectedVariant);
 			selectionIsCausedByApp = false;
@@ -1495,7 +1495,7 @@ class SteamScreenshotsCleanUp {
 
 			void rebuildData()
 			{
-				data = new Vector<Game>();
+				data = new Vector<>();
 				for (int gameID : main.getGameIDs_sorted())
 					data.add(new Game(gameID));
 				fireTableUpdate();

@@ -649,13 +649,13 @@ class TreeNodes {
 			return create(parent, title, values, sortOrder, null, createChildNode);
 		}
 		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<VT> sortOrder, Icon icon, NodeCreator1<VT> createChildNode) {
-			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), createMapValueOrder(sortOrder), icon, (p,e)->createChildNode.create(p,e.getValue()), null);
+			return new GroupingNode<>(parent, title, values.entrySet(), createMapValueOrder(sortOrder), icon, (p,e)->createChildNode.create(p,e.getValue()), null);
 		}
 		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<Map.Entry<IT,VT>> sortOrder, NodeCreator2<IT,VT> createChildNode) {
 			return create(parent, title, values, sortOrder, null, createChildNode);
 		}
 		private static <IT,VT> GroupingNode<Map.Entry<IT,VT>> create(TreeNode parent, String title, HashMap<IT,VT> values, Comparator<Map.Entry<IT,VT>> sortOrder, Icon icon, NodeCreator2<IT,VT> createChildNode) {
-			return new GroupingNode<Map.Entry<IT,VT>>(parent, title, values.entrySet(), sortOrder, icon, (p,e)->createChildNode.create(p,e.getKey(),e.getValue()), null);
+			return new GroupingNode<>(parent, title, values.entrySet(), sortOrder, icon, (p,e)->createChildNode.create(p,e.getKey(),e.getValue()), null);
 		}
 		private static <VT> GroupingNode<VT> create(TreeNode parent, String title, Collection<VT> values, Comparator<VT> sortOrder, NodeCreator1<VT> createChildNode) {
 			return new GroupingNode<>(parent, title, values, sortOrder, null, createChildNode, null);
@@ -737,7 +737,7 @@ class TreeNodes {
 				Function<FilterOption,FilterOptType> cast,
 				BiPredicate<VT,FilterOptType> valueMeetsOption
 		) {
-			return new GroupingNodeFilter<Map.Entry<IT,VT>,FilterOptType>(filterOptionClass, options) {
+			return new GroupingNodeFilter<>(filterOptionClass, options) {
 				@Override protected FilterOptType cast(FilterOption opt) {
 					if (opt==null) return null;
 					return cast.apply(opt);
@@ -757,7 +757,7 @@ class TreeNodes {
 				Function<FilterOption,FilterOptType> cast,
 				BiPredicate<VT,FilterOptType> valueMeetsOption
 		) {
-			return new GroupingNodeFilter<VT,FilterOptType>(filterOptionClass, options) {
+			return new GroupingNodeFilter<>(filterOptionClass, options) {
 				@Override protected FilterOptType cast(FilterOption opt) {
 					if (opt==null) return null;
 					return cast.apply(opt);
@@ -2653,8 +2653,8 @@ class TreeNodes {
 				Vector<String>  keySet2 = gameImages.getSortedImageTypes();
 				
 				Vector<TreeNode> children = new Vector<>();
-				children.add(new ImageGroup1<Integer, String>(this, "Images (by Game)" ,  true, keySet1, keySet2, gameImages::getImageFile));
-				children.add(new ImageGroup1<String, Integer>(this, "Images (by Label)", false, keySet2, keySet1, gameImages::getImageFile));
+				children.add(new ImageGroup1<>(this, "Images (by Game)" ,  true, keySet1, keySet2, gameImages::getImageFile));
+				children.add(new ImageGroup1<>(this, "Images (by Label)", false, keySet2, keySet1, gameImages::getImageFile));
 				children.add(new FolderNode(this, "Other Images", gameImages.imageFiles, TreeIcons.Folder));
 				children.add(new FolderNode(this, "Other Files", gameImages.otherFiles, TreeIcons.Folder));
 				return children;
@@ -2679,7 +2679,7 @@ class TreeNodes {
 				protected Vector<? extends TreeNode> createChildren() {
 					Vector<TreeNode> children = new Vector<>();
 					for (KeyType1 k1:keys1)
-						children.add(new ImageGroup2<KeyType2>(this, k1.toString(), showNullValues, TreeIcons.Folder, keys2, k2->getFile.apply(k1,k2)));
+						children.add(new ImageGroup2<>(this, k1.toString(), showNullValues, TreeIcons.Folder, keys2, k2->getFile.apply(k1,k2)));
 					return children;
 				}
 			}
