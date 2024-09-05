@@ -155,7 +155,7 @@ class SteamScreenshotsCleanUp {
 	private void loadData(String title, boolean forceReload)
 	{
 		ProgressDialog.runWithProgressDialog(mainWindow, title, 300, pd->{
-			generalScreenshotFolder = getFolder(pd, "Determine General Screenshot Folder", ValueKey.SSCU_GeneralScreenshotFolder);
+			generalScreenshotFolder = getFolder(pd, "Determine General Screenshot Folder", "Select General Screenshot Folder", ValueKey.SSCU_GeneralScreenshotFolder);
 			if (generalScreenshotFolder==null) return;
 			
 			SteamInspector.showIndeterminateTask(pd, "Load Game Data");
@@ -205,11 +205,12 @@ class SteamScreenshotsCleanUp {
 		System.out.printf("Found %d images from %d games.%n", counter, generalScreenshots.size());
 	}
 	
-	private File getFolder(ProgressDialog pd, String taskTitle, ValueKey valueKey) {
+	private File getFolder(ProgressDialog pd, String taskTitle, String dialogTitle, ValueKey valueKey) {
 		SteamInspector.showIndeterminateTask(pd, taskTitle);
 		File folder = SteamInspector.settings.getFile(valueKey, null);
 		if (folder==null || !folder.isDirectory()) {
 			folder = null;
+			folderChooser.setDialogTitle(dialogTitle);
 			if (folderChooser.showOpenDialog(mainWindow)==JFileChooser.APPROVE_OPTION) {
 				folder = folderChooser.getSelectedFile();
 				SteamInspector.settings.putFile(valueKey, folder);
