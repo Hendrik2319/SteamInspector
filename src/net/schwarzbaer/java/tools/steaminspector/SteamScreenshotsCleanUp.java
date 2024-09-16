@@ -876,24 +876,25 @@ class SteamScreenshotsCleanUp {
 				Supplier<Color> getCustomBackground = ()->{
 					if (row==null) return null;
 					Color bgColor = null;
-					switch (columnID)
-					{
-						case Name:
-							break;
-						
-						case InGeneral:
-						case DeleteGeneral:
-							if (row.isDeleteGeneralScreenshot())
-								bgColor = COLOR_DELETED_ITEM;
-							break;
-						
-						case InGame:
-						case Player:
-						case DeleteGame:
-							if (row.isDeleteGameScreenshot())
-								bgColor = COLOR_DELETED_ITEM;
-							break;
-					}
+					if (columnID!=null)
+						switch (columnID)
+						{
+							case Name:
+								break;
+							
+							case InGeneral:
+							case DeleteGeneral:
+								if (row.isDeleteGeneralScreenshot())
+									bgColor = COLOR_DELETED_ITEM;
+								break;
+							
+							case InGame:
+							case Player:
+							case DeleteGame:
+								if (row.isDeleteGameScreenshot())
+									bgColor = COLOR_DELETED_ITEM;
+								break;
+						}
 					if (bgColor==null && tableModel.isCellEditable(rowM, columnM, columnID))
 						bgColor = COLOR_EDITABLE;
 					return bgColor;
@@ -1437,8 +1438,8 @@ class SteamScreenshotsCleanUp {
 				String valueStr = value==null ? null : value.toString();
 				Icon icon = null;
 				
-				if (value instanceof Long && columnID == GamesTableModel.ColumnID.InGeneralSize || columnID == GamesTableModel.ColumnID.InGameSize)
-					valueStr = getSizeStr((Long) value);
+				if (value instanceof Long valueL && (columnID == GamesTableModel.ColumnID.InGeneralSize || columnID == GamesTableModel.ColumnID.InGameSize))
+					valueStr = getSizeStr(valueL);
 				
 				if (value instanceof Icon)
 				{

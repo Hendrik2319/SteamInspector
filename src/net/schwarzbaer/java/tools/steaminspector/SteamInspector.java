@@ -1383,10 +1383,10 @@ class SteamInspector {
 			
 			fillOptionMenu(
 				clickedFilter, menuFilterChildren, this.getCurrentTreeModel.get(), Filter::getFilterOptions,
-				treeModel->{
+				clickedFilter==null ? null : treeModel->{
 					return createMenuItem("Clear Filter", true, e->clickedFilter.clearFilter(treeModel));
 				},
-				(opt,treeModel)->{
+				clickedFilter==null ? null : (opt,treeModel)->{
 					return createCheckBoxMenuItem(
 						opt.toString(),
 						clickedFilter.isFilterOptionSet(opt),
@@ -1398,10 +1398,10 @@ class SteamInspector {
 			
 			fillOptionMenu(
 				clickedSorter, menuReorderChildren, this.getCurrentTreeModel.get(), Sorter::getSortOptions,
-				treeModel->{
+				clickedSorter==null ? null : treeModel->{
 					return createRadioButtonMenuItem("Original Order", clickedSorter.isOriginalOrder(), true, e->clickedSorter.resetToOriginalOrder(treeModel));
 				},
-				(opt,treeModel)->{
+				clickedSorter==null ? null : (opt,treeModel)->{
 					return createRadioButtonMenuItem(
 						opt.toString(),
 						clickedSorter.isSortOptionSet(opt),
