@@ -129,18 +129,6 @@ class TreeNodes {
 		private static IconSource.CachedIcons<VdfTreeIcons> VdfTreeIconsIS = IconSource.createCachedIcons(16, 16, "/images/VdfTreeIcons.png" , VdfTreeIcons.values());
 	}
 	
-	private static boolean fileNameEndsWith(File file, String... suffixes) {
-		String name = file.getName().toLowerCase();
-		for (String suffix:suffixes)
-			if (name.endsWith(suffix))
-				return true;
-		return false;
-	}
-
-	static boolean isImageFile(File file) {
-		return file.isFile() && fileNameEndsWith(file,".jpg",".jpeg",".png",".bmp",".ico",".tga");
-	}
-	
 	static String getTimeStr(long millis) {
 		Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("CET"), Locale.GERMANY);
 		cal.setTimeInMillis(millis);
@@ -158,16 +146,6 @@ class TreeNodes {
 		if (length/1024/1024     <1100) return String.format(Locale.ENGLISH, "%1.1f MB", length/1024f/1024f);
 		if (length/1024/1024/1024<1100) return String.format(Locale.ENGLISH, "%1.1f GB", length/1024f/1024f/1024f);
 		return "["+length+"]";
-	}
-	
-	static File[] getFilesAndFolders(File folder) {
-		File[] files = folder.listFiles((FileFilter) file -> {
-			String name = file.getName();
-			if (file.isDirectory())
-				return !name.equals(".") && !name.equals("..");
-			return file.isFile();
-		});
-		return files;
 	}
 
 	static BufferedImage createImageOfMessage(String message, int width, int height, Color textColor) {
@@ -2854,7 +2832,7 @@ class TreeNodes {
 		
 			@Override
 			protected Vector<? extends FileSystemNode> createChildren() {
-				File[] files_ = files!=null ? files : getFilesAndFolders(fileObj);
+				File[] files_ = files!=null ? files : FileTools.getFilesAndFolders(fileObj);
 				if (!keepFileOrder) sortFiles(files_);
 				return createNodes(this,files_,getNodeTitle,getNodeIcon);
 			}
@@ -2989,7 +2967,7 @@ class TreeNodes {
 			}
 			
 			static boolean is(File file) {
-				return file.isFile() && fileNameEndsWith(file, ".zip", ".7z", ".rar");
+				return file.isFile() && FileTools.fileNameEndsWith(file, ".zip", ".7z", ".rar");
 			}
 		}
 
@@ -3003,7 +2981,7 @@ class TreeNodes {
 			}
 			
 			static boolean is(File file) {
-				return isImageFile(file);
+				return FileTools.isImageFile(file);
 			}
 
 			@Override ContentType getContentType() {
@@ -3043,7 +3021,7 @@ class TreeNodes {
 			}
 
 			static boolean is(File file) {
-				return file.isFile() && fileNameEndsWith(file, ".txt", ".sii", ".lua");
+				return file.isFile() && FileTools.fileNameEndsWith(file, ".txt", ".sii", ".lua");
 			}
 
 			@Override ContentType getContentType() {
@@ -3073,7 +3051,7 @@ class TreeNodes {
 			}
 
 			static boolean is(File file) {
-				return file.isFile() && fileNameEndsWith(file,".json");
+				return file.isFile() && FileTools.fileNameEndsWith(file,".json");
 			}
 			
 			@Override ContentType getContentType() {
@@ -3127,7 +3105,7 @@ class TreeNodes {
 				return super.toString();
 			}
 			static boolean is(File file) {
-				return file.isFile() && fileNameEndsWith(file,".vdf");
+				return file.isFile() && FileTools.fileNameEndsWith(file,".vdf");
 			}
 			
 			@Override ContentType getContentType() {
@@ -3160,7 +3138,7 @@ class TreeNodes {
 			}
 		
 			static boolean is(File file) {
-				return file.isFile() && fileNameEndsWith(file,".acf");
+				return file.isFile() && FileTools.fileNameEndsWith(file,".acf");
 			}
 		}
 

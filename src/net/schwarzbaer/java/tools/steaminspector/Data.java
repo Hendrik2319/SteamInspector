@@ -4081,36 +4081,84 @@ class Data {
 
 	static class GameImages {
 		
-		@SuppressWarnings("unused")
 		private final File folder;
-		final Vector<File> otherFiles;
-		final Vector<File> imageFiles;
+		        final Vector<File> otherFiles;
+		        final Vector<File> imageFiles;
 		private final HashMatrix<Integer, String, File> appImages;
 	
 		GameImages(File folder) {
 			this.folder = folder;
-			File[] files = TreeNodes.getFilesAndFolders(folder);
 			
 			otherFiles = new Vector<>();
 			imageFiles = new Vector<>();
 			appImages = new HashMatrix<>();
 			
-			for (File file:files) {
-				if (file.isDirectory()) {
-					otherFiles.add(file);
-					
-				} else if (TreeNodes.isImageFile(file)) {
-					ImageFileName ifn = ImageFileName.parse(file.getName());
-					if (ifn==null || ifn.label==null || ifn.number==null)
-						imageFiles.add(file);
+			FileTools.forEachSubFile(
+				this.folder,
+				folder1 -> {
+					Integer number = parseNumber(folder1.getName());
+					if (number==null)
+						otherFiles.add(folder1);
 					else
-						appImages.put(ifn.number, ifn.label, file);
-					
-				} else
-					otherFiles.add(file);
-			}
+						FileTools.forEachSubFile(
+							folder1,
+							folder2 -> {
+								String name2 = folder2.getName();
+								if (!isMysteriousNumber(name2))
+									otherFiles.add(folder2);
+								else
+									FileTools.forEachSubFile(
+										folder2,
+										otherFiles::add,
+										imageFile3 -> {
+											String label = getLabel(imageFile3);
+											appImages.put(number, label, imageFile3);
+										},
+										otherFiles::add
+									);
+							},
+							imageFile2 -> {
+								String label = getLabel(imageFile2);
+								if (isMysteriousNumber(label)) label = "icon";
+								appImages.put(number, label, imageFile2);
+							},
+							otherFiles::add
+						);
+				},
+				imageFile1 -> {
+					ImageFileName ifn = ImageFileName.parse(imageFile1.getName());
+					if (ifn==null || ifn.label==null || ifn.number==null)
+						imageFiles.add(imageFile1);
+					else
+						appImages.put(ifn.number, ifn.label, imageFile1);
+				},
+				otherFiles::add
+			);
+		}
+
+		private String getLabel(File file)
+		{
+			String name = file.getName();
+			int pos = name.lastIndexOf('.');
+			return (pos>=0) ? name.substring(0, pos) : name;
 		}
 		
+		private boolean isMysteriousNumber(String label)
+		{
+			
+			int length = label.length();
+			if (length != "050fff353212159607331411d67c8bbcfd47c682".length())
+				return false;
+			
+			for (int i=0; i<length; i++)
+			{
+				char ch = label.charAt(i);
+				if ( ( ch<'a' || 'f'<ch ) && ( ch<'0' || '9'<ch ))
+					return false;
+			}
+			return true;
+		}
+
 		public Collection<? extends Integer> getGameIDs() {
 			return appImages.keySet1;
 		}
@@ -4234,7 +4282,7 @@ class Data {
 			public ScreenShotList(File imagesFolder, File thumbnailsFolder) {
 				this.imagesFolder = imagesFolder;
 				this.thumbnailsFolder = thumbnailsFolder;
-				File[] imageFiles = imagesFolder.listFiles(TreeNodes::isImageFile);
+				File[] imageFiles = imagesFolder.listFiles(FileTools::isImageFile);
 				for (File image:imageFiles) {
 					File thumbnail = null;
 					if (thumbnailsFolder!=null)
